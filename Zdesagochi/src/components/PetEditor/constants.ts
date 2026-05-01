@@ -9,6 +9,7 @@ export const CATEGORIES: { id: CategoryId; emoji: string; label: string }[] = [
   { id: 'skin',        emoji: '✨', label: 'Скин' },
   { id: 'aura',        emoji: '💫', label: 'Аура' },
   { id: 'bg',          emoji: '🌌', label: 'Фон' },
+  { id: 'accessories', emoji: '🕶️', label: 'Вещи' },
   { id: 'presets',     emoji: '👗', label: 'Гардероб' },
 ];
 

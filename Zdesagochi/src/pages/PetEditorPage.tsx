@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePetStore } from '../store/petStore';
 
@@ -27,13 +27,30 @@ import { PresetsPanel } from '../components/PetEditor/panels/PresetsPanel';
 
 export function PetEditorPage() {
   const {
-    setActiveTab, equipBody, equipSkin, equipAura, equipBg, setPetColorOverride,
+    pet, setActiveTab, equipBody, equipSkin, equipAura, equipBg, setPetColorOverride,
     setPetMorph, setAccessory, setAccessoryConfig,
     ownedSkins, ownedAuras, ownedBgs, coins,
   } = usePetStore();
 
   const [category, setCategory] = useState<CategoryId>('body');
   const [previewMood, setPreviewMood] = useState<PetMood>('happy');
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isZ = e.key.toLowerCase() === 'z';
+      const isY = e.key.toLowerCase() === 'y';
+      if ((e.ctrlKey || e.metaKey) && isZ && !e.shiftKey) {
+        e.preventDefault();
+        usePetStore.getState().undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (isY || (e.shiftKey && isZ))) {
+        e.preventDefault();
+        usePetStore.getState().redo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const randomize = useCallback(() => {
     const shapes = BODY_SHAPES.map(s => s.id);
@@ -60,12 +77,13 @@ export function PetEditorPage() {
     setAccessory('head', pick(heads).id);
     setAccessory('face', pick(faces).id);
     setAccessory('back', pick(backs).id);
-    setAccessoryConfig('head', { scale: 1, x: 0, y: 0 });
-    setAccessoryConfig('face', { scale: 1, x: 0, y: 0 });
-    setAccessoryConfig('back', { scale: 1, x: 0, y: 0 });
+    setAccessoryConfig('head', { scale: 1, x: 0, y: 0, rotation: 0, behind: false });
+    setAccessoryConfig('face', { scale: 1, x: 0, y: 0, rotation: 0, behind: false });
+    setAccessoryConfig('back', { scale: 1, x: 0, y: 0, rotation: 0, behind: true });
   }, [ownedSkins, ownedAuras, ownedBgs, equipBody, equipSkin, equipAura, equipBg, setPetColorOverride, setPetMorph, setAccessory, setAccessoryConfig]);
 
   const resetAll = useCallback(() => {
+    usePetStore.getState().recordHistory();
     equipBody('blob');
     setPetColorOverride(null);
     setPetMorph({ scale: 1, width: 1, height: 1 });
@@ -75,9 +93,9 @@ export function PetEditorPage() {
     setAccessory('head', 'none_head');
     setAccessory('face', 'none_face');
     setAccessory('back', 'none_back');
-    setAccessoryConfig('head', { scale: 1, x: 0, y: 0 });
-    setAccessoryConfig('face', { scale: 1, x: 0, y: 0 });
-    setAccessoryConfig('back', { scale: 1, x: 0, y: 0 });
+    setAccessoryConfig('head', { scale: 1, x: 0, y: 0, rotation: 0, behind: false });
+    setAccessoryConfig('face', { scale: 1, x: 0, y: 0, rotation: 0, behind: false });
+    setAccessoryConfig('back', { scale: 1, x: 0, y: 0, rotation: 0, behind: true });
   }, [equipBody, setPetColorOverride, setPetMorph, equipSkin, equipAura, equipBg, setAccessory, setAccessoryConfig]);
 
   const PANEL_MAP: Record<CategoryId, React.ReactNode> = {
@@ -90,6 +108,16 @@ export function PetEditorPage() {
     bg:          <BgPanel />,
     presets:     <PresetsPanel />,
   };
+
+  if (!pet) {
+    return (
+      <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white">
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+          className="text-4xl">🫧</motion.div>
+        <p className="mt-4 font-bold text-lumio-text">Загрузка питомца...</p>
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -116,6 +144,25 @@ export function PetEditorPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-1 p-1 rounded-xl bg-slate-100 mr-2">
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+              onClick={() => usePetStore.getState().undo()}
+              disabled={usePetStore(s => s.history.length === 0)}
+              className="p-1.5 rounded-lg text-lumio-text disabled:opacity-30 hover:bg-white transition-all"
+              title="Отменить (Ctrl+Z)">
+              ↩️
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+              onClick={() => usePetStore.getState().redo()}
+              disabled={usePetStore(s => s.future.length === 0)}
+              className="p-1.5 rounded-lg text-lumio-text disabled:opacity-30 hover:bg-white transition-all"
+              title="Вернуть (Ctrl+Y)">
+              ↪️
+            </motion.button>
+          </div>
+
           <motion.button
             whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
             onClick={resetAll}

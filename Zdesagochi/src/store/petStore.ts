@@ -45,9 +45,9 @@ interface PetStore {
   ownedAuras: string[];
   equippedAccessories: { head: string; face: string; back: string };
   accessoryConfigs: {
-    head: { scale: number; x: number; y: number };
-    face: { scale: number; x: number; y: number };
-    back: { scale: number; x: number; y: number };
+    head: { scale: number; x: number; y: number; rotation: number; behind: boolean };
+    face: { scale: number; x: number; y: number; rotation: number; behind: boolean };
+    back: { scale: number; x: number; y: number; rotation: number; behind: boolean };
   };
   eyeStyleOverride: string | null;
   overlayOverride: string | null;
@@ -56,6 +56,12 @@ interface PetStore {
   savePreset: (name: string) => void;
   loadPreset: (name: string) => void;
   deletePreset: (name: string) => void;
+
+  history: any[];
+  future: any[];
+  undo: () => void;
+  redo: () => void;
+  recordHistory: () => void;
 
   setActiveTab(tab: TabId): void;
   setApiMode(mode: ApiMode): void;
@@ -70,7 +76,7 @@ interface PetStore {
   buyAura(auraId: string): void;
   equipAura(auraId: string): void;
   setAccessory(slot: 'head' | 'face' | 'back', id: string): void;
-  setAccessoryConfig(slot: 'head' | 'face' | 'back', config: { scale: number; x: number; y: number }): void;
+  setAccessoryConfig(slot: 'head' | 'face' | 'back', config: { scale: number; x: number; y: number; rotation: number; behind: boolean }): void;
   setEyeStyleOverride(s: string | null): void;
   setOverlayOverride(s: string | null): void;
 
@@ -142,9 +148,9 @@ export const usePetStore = create<PetStore>((set, get) => {
     ownedAuras: ['none'],
     equippedAccessories: { head: 'none_head', face: 'none_face', back: 'none_back' },
     accessoryConfigs: {
-      head: { scale: 1, x: 0, y: 0 },
-      face: { scale: 1, x: 0, y: 0 },
-      back: { scale: 1, x: 0, y: 0 },
+      head: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
+      face: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
+      back: { scale: 1, x: 0, y: 0, rotation: 0, behind: true },
     },
     eyeStyleOverride: null,
     overlayOverride: null,
@@ -185,6 +191,75 @@ export const usePetStore = create<PetStore>((set, get) => {
       set({ petPresets: newPresets });
       localStorage.setItem('petPresets', JSON.stringify(newPresets));
       state.notify(`Пресет "${name}" удалён`, 'info');
+    },
+
+    history: [],
+    future: [],
+
+    recordHistory() {
+      const state = get();
+      const snapshot = {
+        equippedSkinId: state.equippedSkinId,
+        equippedBodyId: state.equippedBodyId,
+        equippedBgId: state.equippedBgId,
+        petColorOverride: state.petColorOverride,
+        petMorph: state.petMorph,
+        equippedAuraId: state.equippedAuraId,
+        equippedAccessories: state.equippedAccessories,
+        accessoryConfigs: state.accessoryConfigs,
+      };
+      set({ 
+        history: [snapshot, ...state.history].slice(0, 50),
+        future: [] 
+      });
+    },
+
+    undo() {
+      const { history, future, recordHistory, ...currentState } = get();
+      if (history.length === 0) return;
+
+      const [prev, ...rest] = history;
+      const currentSnapshot = {
+        equippedSkinId: currentState.equippedSkinId,
+        equippedBodyId: currentState.equippedBodyId,
+        equippedBgId: currentState.equippedBgId,
+        petColorOverride: currentState.petColorOverride,
+        petMorph: currentState.petMorph,
+        equippedAuraId: currentState.equippedAuraId,
+        equippedAccessories: currentState.equippedAccessories,
+        accessoryConfigs: currentState.accessoryConfigs,
+      };
+
+      set({
+        ...prev,
+        history: rest,
+        future: [currentSnapshot, ...future].slice(0, 50)
+      });
+      get().notify('Действие отменено', 'info');
+    },
+
+    redo() {
+      const { history, future, recordHistory, ...currentState } = get();
+      if (future.length === 0) return;
+
+      const [next, ...rest] = future;
+      const currentSnapshot = {
+        equippedSkinId: currentState.equippedSkinId,
+        equippedBodyId: currentState.equippedBodyId,
+        equippedBgId: currentState.equippedBgId,
+        petColorOverride: currentState.petColorOverride,
+        petMorph: currentState.petMorph,
+        equippedAuraId: currentState.equippedAuraId,
+        equippedAccessories: currentState.equippedAccessories,
+        accessoryConfigs: currentState.accessoryConfigs,
+      };
+
+      set({
+        ...next,
+        future: rest,
+        history: [currentSnapshot, ...history].slice(0, 50)
+      });
+      get().notify('Действие возвращено', 'info');
     },
 
     // ── Navigation ─────────────────────────────────────────────────────────
@@ -405,12 +480,14 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
 
     equipSkin(skinId) {
+      get().recordHistory();
       const skin = getSkin(skinId);
       set({ equippedSkinId: skinId });
       get().notify(`🎨 Надет «${skin.name}»`, 'success');
     },
 
     equipBody(shapeId) {
+      get().recordHistory();
       set({ equippedBodyId: shapeId });
     },
 
@@ -428,12 +505,14 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
 
     equipBg(bgId) {
+      get().recordHistory();
       const bg = getBackground(bgId);
       set({ equippedBgId: bgId });
       get().notify(`🌌 Фон «${bg.name}» активирован`, 'success');
     },
 
     setPetColorOverride(c) {
+      get().recordHistory();
       set({ petColorOverride: c });
     },
 
@@ -450,12 +529,14 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
 
     equipAura(auraId) {
+      get().recordHistory();
       const aura = getAura(auraId);
       set({ equippedAuraId: auraId });
       if (auraId !== 'none') get().notify(`💫 Аура «${aura.name}» активирована`, 'success');
     },
 
     setAccessory(slot, id) {
+      get().recordHistory();
       set(s => ({ equippedAccessories: { ...s.equippedAccessories, [slot]: id } }));
     },
     setAccessoryConfig(slot, config) {

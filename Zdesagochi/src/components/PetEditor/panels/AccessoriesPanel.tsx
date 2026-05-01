@@ -90,8 +90,27 @@ export function AccessoriesPanel() {
               onChange={e => setAccessoryConfig(slot, { ...config, y: parseInt(e.target.value) })}
               className="w-full accent-indigo-400" />
           </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-lumio-muted">
+              <span>Поворот: {config.rotation}°</span>
+            </div>
+            <input type="range" min="-180" max="180" step="1" value={config.rotation}
+              onChange={e => setAccessoryConfig(slot, { ...config, rotation: parseInt(e.target.value) })}
+              className="w-full accent-indigo-400" />
+          </div>
+
+          <div className="flex items-center justify-between p-2 rounded-xl" style={{ background: '#F3F4F6' }}>
+            <span className="text-[10px] font-bold text-lumio-text">Отображать ЗА питомцем</span>
+            <button
+              onClick={() => setAccessoryConfig(slot, { ...config, behind: !config.behind })}
+              className={`w-10 h-5 rounded-full relative transition-colors ${config.behind ? 'bg-indigo-500' : 'bg-gray-300'}`}
+            >
+              <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${config.behind ? 'right-1' : 'left-1'}`} />
+            </button>
+          </div>
           
-          <button onClick={() => setAccessoryConfig(slot, { scale: 1, x: 0, y: 0 })}
+          <button onClick={() => setAccessoryConfig(slot, { scale: 1, x: 0, y: 0, rotation: 0, behind: slot === 'back' })}
             className="w-full py-1.5 rounded-xl text-xs font-bold text-lumio-muted transition-all hover:bg-slate-200"
             style={{ background: '#F3F4F6' }}>
             Сбросить
