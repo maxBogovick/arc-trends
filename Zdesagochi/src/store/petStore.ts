@@ -111,10 +111,10 @@ interface PetStore {
   wakePet(): Promise<void>;
   bathePet(): Promise<void>;
   healPet(): Promise<void>;
-  bondWithPet(): Promise<void>;
-  syncPet(): Promise<void>;
   updatePetName(name: string): Promise<void>;
   savePetAppearance(): Promise<void>;
+  exportAppearanceCode(): string;
+  importAppearanceCode(code: string): boolean;
   loadEvents(): Promise<void>;
 
   loadCoins(): Promise<void>;
@@ -416,6 +416,41 @@ export const usePetStore = create<PetStore>((set, get) => {
         localStorage.setItem('pet_appearance_debug', JSON.stringify(config));
         get().notify('✨ Внешний вид сохранён!', 'success');
       });
+    },
+    exportAppearanceCode() {
+      const s = get();
+      const config = {
+        s: s.equippedSkinId,
+        b: s.equippedBodyId,
+        bg: s.equippedBgId,
+        c: s.petColorOverride,
+        m: s.petMorph,
+        a: s.equippedAuraId,
+        acc: s.equippedAccessories,
+        cfg: s.accessoryConfigs,
+      };
+      return btoa(JSON.stringify(config));
+    },
+    importAppearanceCode(code) {
+      try {
+        const config = JSON.parse(atob(code));
+        get().recordHistory();
+        set({
+          equippedSkinId: config.s,
+          equippedBodyId: config.b,
+          equippedBgId: config.bg,
+          petColorOverride: config.c,
+          petMorph: config.m,
+          equippedAuraId: config.a,
+          equippedAccessories: config.acc,
+          accessoryConfigs: config.cfg,
+        });
+        get().notify('👗 Облик импортирован!', 'success');
+        return true;
+      } catch {
+        get().notify('❌ Ошибка импорта кода', 'error');
+        return false;
+      }
     },
     async loadEvents() {
       try { set({ events: await api().getPetEvents() }); } catch { /* silent */ }

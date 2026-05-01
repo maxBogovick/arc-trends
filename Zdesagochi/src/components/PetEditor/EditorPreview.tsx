@@ -8,10 +8,18 @@ import { getAura } from '../../data/auras';
 import { MOODS } from './constants';
 import type { PetMood } from '../../api';
 
-export function EditorPreview({ previewMood, setPreviewMood }: { previewMood: PetMood; setPreviewMood: (m: PetMood) => void }) {
+export function EditorPreview({ previewMood, setPreviewMood, comparisonState }: { 
+  previewMood: PetMood; 
+  setPreviewMood: (m: PetMood) => void;
+  comparisonState?: any;
+}) {
   const { pet, equippedAuraId, equippedBgId } = usePetStore();
-  const bg = getBackground(equippedBgId);
-  const aura = getAura(equippedAuraId);
+  
+  const activeBgId = comparisonState?.equippedBgId ?? equippedBgId;
+  const activeAuraId = comparisonState?.equippedAuraId ?? equippedAuraId;
+  
+  const bg = getBackground(activeBgId);
+  const aura = getAura(activeAuraId);
 
   if (!pet) return null;
 
@@ -38,8 +46,9 @@ export function EditorPreview({ previewMood, setPreviewMood }: { previewMood: Pe
         )}
 
         {/* Pet */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <PetDisplay pet={fakePet} moodOverride={previewMood} />
+        <div className="absolute inset-0 flex items-center justify-center transition-all duration-300"
+          style={{ filter: comparisonState ? 'grayscale(0.2) contrast(0.9)' : 'none' }}>
+          <PetDisplay pet={fakePet} moodOverride={previewMood} overrideState={comparisonState} />
         </div>
       </div>
 

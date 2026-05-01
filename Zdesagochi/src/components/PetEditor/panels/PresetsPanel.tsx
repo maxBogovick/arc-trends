@@ -15,6 +15,19 @@ export function PresetsPanel() {
     }
   };
 
+  const handleShare = () => {
+    const code = usePetStore.getState().exportAppearanceCode();
+    navigator.clipboard.writeText(code);
+    usePetStore.getState().notify('Код облика скопирован! 📋', 'success');
+  };
+
+  const handleImport = async () => {
+    const code = await navigator.clipboard.readText();
+    if (code) {
+      usePetStore.getState().importAppearanceCode(code);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <SectionLabel>👗 Гардероб (Пресеты)</SectionLabel>
@@ -71,6 +84,24 @@ export function PresetsPanel() {
             </motion.div>
           ))
         )}
+      </div>
+
+      <div className="pt-4 border-t border-slate-100 space-y-3">
+        <p className="text-[10px] font-bold text-lumio-muted uppercase tracking-wider">Поделиться обликом</p>
+        <div className="flex gap-2">
+          <button
+            onClick={handleShare}
+            className="flex-1 py-2 rounded-xl text-xs font-bold text-indigo-600 bg-white border border-indigo-100 hover:bg-indigo-50 transition-all flex items-center justify-center gap-2"
+          >
+            📋 Копировать код
+          </button>
+          <button
+            onClick={handleImport}
+            className="flex-1 py-2 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+          >
+            📥 Импорт из буфера
+          </button>
+        </div>
       </div>
     </div>
   );

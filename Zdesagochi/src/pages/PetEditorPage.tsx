@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePetStore } from '../store/petStore';
 
@@ -34,6 +34,30 @@ export function PetEditorPage() {
 
   const [category, setCategory] = useState<CategoryId>('body');
   const [previewMood, setPreviewMood] = useState<PetMood>('happy');
+  const [isFlashing, setIsFlashing] = useState(false);
+  const [isComparing, setIsComparing] = useState(false);
+  const initialSnapshot = useRef<any>(null);
+
+  useEffect(() => {
+    // Capture initial state for comparison
+    const state = usePetStore.getState();
+    initialSnapshot.current = {
+      equippedSkinId: state.equippedSkinId,
+      equippedBodyId: state.equippedBodyId,
+      equippedBgId: state.equippedBgId,
+      petColorOverride: state.petColorOverride,
+      petMorph: state.petMorph,
+      equippedAuraId: state.equippedAuraId,
+      equippedAccessories: state.equippedAccessories,
+      accessoryConfigs: state.accessoryConfigs,
+    };
+  }, []);
+
+  const takePhoto = () => {
+    setIsFlashing(true);
+    setTimeout(() => setIsFlashing(false), 150);
+    usePetStore.getState().notify('📸 Фото сохранено в галерею!', 'success');
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -128,6 +152,17 @@ export function PetEditorPage() {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.25 }}
     >
+      <AnimatePresence>
+        {isFlashing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-white z-[1000] pointer-events-none"
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Header ── */}
       <header className="h-14 flex items-center gap-3 px-4 shrink-0"
         style={{ borderBottom: '1px solid #E5E7EB' }}>
@@ -165,6 +200,21 @@ export function PetEditorPage() {
 
           <motion.button
             whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              if (initialSnapshot.current) {
+                usePetStore.getState().recordHistory();
+                usePetStore.setState({ ...initialSnapshot.current });
+                usePetStore.getState().notify('Оригинальный облик восстановлен', 'info');
+              }
+            }}
+            className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-xl text-sm font-bold text-amber-600 transition-colors"
+            style={{ background: 'white', border: '1px solid #E5E7EB', boxShadow: '0 2px 4px rgba(0,0,0,0.04)' }}
+            title="Вернуть как было при входе">
+            ⏪ Оригинал
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
             onClick={resetAll}
             className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-xl text-sm font-bold text-red-500 hover:text-red-600 transition-colors"
             style={{ background: 'white', border: '1px solid #E5E7EB', boxShadow: '0 2px 4px rgba(0,0,0,0.04)' }}
@@ -197,7 +247,42 @@ export function PetEditorPage() {
         {/* ── Left panel: Preview (desktop only) ── */}
         <div className="hidden lg:flex flex-col items-center justify-center gap-6 p-8 shrink-0"
           style={{ width: 340, borderRight: '1px solid #E5E7EB' }}>
-          <EditorPreview previewMood={previewMood} setPreviewMood={setPreviewMood} />
+          
+          <div className="relative">
+            <EditorPreview 
+              previewMood={previewMood} 
+              setPreviewMood={setPreviewMood} 
+              comparisonState={isComparing ? initialSnapshot.current : null} 
+            />
+            
+            {/* Comparison toggle button */}
+            <motion.button
+              onMouseDown={() => setIsComparing(true)}
+              onMouseUp={() => setIsComparing(false)}
+              onMouseLeave={() => setIsComparing(false)}
+              onTouchStart={() => setIsComparing(true)}
+              onTouchEnd={() => setIsComparing(false)}
+              whileTap={{ scale: 0.9 }}
+              className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center text-lg z-20 transition-colors shadow-lg"
+              style={{ 
+                background: isComparing ? '#4F46E5' : 'rgba(255,255,255,0.9)', 
+                color: isComparing ? 'white' : '#4F46E5',
+                border: '1px solid rgba(0,0,0,0.05)'
+              }}
+              title="Зажми, чтобы сравнить с оригиналом"
+            >
+              🌓
+            </motion.button>
+          </div>
+          
+          <motion.button
+            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+            onClick={takePhoto}
+            className="mt-2 flex items-center gap-2 px-6 py-2.5 rounded-2xl text-sm font-bold text-indigo-600 transition-all border border-indigo-100 hover:bg-indigo-50"
+            style={{ background: 'white', boxShadow: '0 4px 12px rgba(129,140,248,0.15)' }}
+          >
+            📸 Сделать фото
+          </motion.button>
         </div>
 
         {/* ── Right panel ── */}

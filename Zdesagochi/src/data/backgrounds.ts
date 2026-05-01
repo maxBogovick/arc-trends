@@ -241,6 +241,23 @@ export const BACKGROUNDS: BackgroundDefinition[] = [
       { type: 'particles', color: '#F0ABFC', count: 12 },
     ],
   },
+  {
+    id: 'event_horizon',
+    name: 'Горизонт событий',
+    tagline: 'Путь в один конец.',
+    description: 'Центр чёрной дыры. Время и пространство здесь теряют смысл. Только свет и пустота.',
+    emoji: '⚛️',
+    price: 800,
+    rarity: 'legendary',
+    requiredLevel: 25,
+    gradient: 'radial-gradient(circle at 50% 50%, #000 0%, #050010 70%, #0A0020 100%)',
+    floorGradient: 'linear-gradient(180deg, transparent, rgba(0,212,255,0.25))',
+    accentColor: '#00D4FF',
+    effects: [
+      { type: 'void_rings', color: '#00D4FF' },
+      { type: 'particles', color: '#FFF', count: 30 },
+    ],
+  },
 ];
 
 export const getBackground = (id: string): BackgroundDefinition =>

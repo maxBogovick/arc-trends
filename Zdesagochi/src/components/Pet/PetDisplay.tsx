@@ -12,6 +12,17 @@ interface Props {
   pet: Pet;
   moodOverride?: PetMood;
   size?: number;
+  overrideState?: {
+    equippedSkinId?: string;
+    equippedBodyId?: BodyShapeId;
+    petColorOverride?: any;
+    petMorph?: any;
+    equippedAuraId?: string;
+    equippedAccessories?: any;
+    accessoryConfigs?: any;
+    eyeStyleOverride?: string | null;
+    overlayOverride?: string | null;
+  } | null;
 }
 
 // ─── Mouth generator ──────────────────────────────────────────────────────────
@@ -488,19 +499,21 @@ function useGlitch(enabled: boolean) {
 
 // ─── PetDisplay ──────────────────────────────────────────────────────────────
 
-export function PetDisplay({ pet, moodOverride, size = 220 }: Props) {
-  const equippedSkinId     = usePetStore(s => s.equippedSkinId);
-  const equippedBodyId     = usePetStore(s => s.equippedBodyId);
-  const colorOverride      = usePetStore(s => s.petColorOverride);
-  const petMorph           = usePetStore(s => s.petMorph);
-  const equippedAuraId     = usePetStore(s => s.equippedAuraId);
-  const equippedAccessories = usePetStore(s => s.equippedAccessories);
-  const accessoryConfigs   = usePetStore(s => s.accessoryConfigs);
-  const eyeStyleOverride   = usePetStore(s => s.eyeStyleOverride);
-  const overlayOverride    = usePetStore(s => s.overlayOverride);
-  const setAccessoryConfig = usePetStore(s => s.setAccessoryConfig);
-  const recordHistory      = usePetStore(s => s.recordHistory);
-  const isEditor           = usePetStore(s => s.activeTab) === 'editor';
+export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Props) {
+  const store = usePetStore();
+  
+  const equippedSkinId      = overrideState?.equippedSkinId      ?? store.equippedSkinId;
+  const equippedBodyId      = overrideState?.equippedBodyId      ?? store.equippedBodyId;
+  const petColorOverride    = overrideState?.petColorOverride    ?? store.petColorOverride;
+  const petMorph            = overrideState?.petMorph           ?? store.petMorph;
+  const equippedAuraId      = overrideState?.equippedAuraId      ?? store.equippedAuraId;
+  const equippedAccessories = overrideState?.equippedAccessories ?? store.equippedAccessories;
+  const accessoryConfigs    = overrideState?.accessoryConfigs   ?? store.accessoryConfigs;
+  const eyeStyleOverride    = overrideState?.eyeStyleOverride   ?? store.eyeStyleOverride;
+  const overlayOverride     = overrideState?.overlayOverride    ?? store.overlayOverride;
+  
+  const setAccessoryConfig  = store.setAccessoryConfig;
+  const isEditor            = store.activeTab === 'editor';
 
   const renderAccessory = (slot: 'head' | 'face' | 'back', behind: boolean) => {
     const id = equippedAccessories[slot];
@@ -562,9 +575,9 @@ export function PetDisplay({ pet, moodOverride, size = 220 }: Props) {
   const baseBody1 = skin.animStyle === 'rainbow' ? `hsl(${hue},65%,72%)` : skin.colors.body1;
   const baseBody2 = skin.animStyle === 'rainbow' ? `hsl(${(hue + 120) % 360},65%,50%)` : skin.colors.body2;
 
-  const glowColor = colorOverride?.glow  ?? baseGlow;
-  const body1     = colorOverride?.body1 ?? baseBody1;
-  const body2     = colorOverride?.body2 ?? baseBody2;
+  const glowColor = petColorOverride?.glow  ?? baseGlow;
+  const body1     = petColorOverride?.body1 ?? baseBody1;
+  const body2     = petColorOverride?.body2 ?? baseBody2;
 
   const floatAnim = pet?.isAsleep
     ? { y: [0, -4, 0] as number[], transition: { duration: 4, repeat: Infinity, ease: 'easeInOut' as const } }
@@ -579,9 +592,18 @@ export function PetDisplay({ pet, moodOverride, size = 220 }: Props) {
     : { y: [0, -10, 0] as number[], transition: { duration: 3, repeat: Infinity, ease: 'easeInOut' as const } };
 
   const gradId = `bg_${skin.id}`;
-  const colors = { body1, body2, glow: glowColor, cheek: colorOverride?.cheek ?? skin.colors.cheek };
+  const colors = { body1, body2, glow: glowColor, cheek: petColorOverride?.cheek ?? skin.colors.cheek };
 
   const mouthPath = getMouthPath(effectiveMood, shape?.mouthCy || 130, shape?.mouthHW || 28);
+
+  const [showSparkles, setShowSparkles] = useState(false);
+
+  // Trigger sparkles on appearance change
+  useEffect(() => {
+    setShowSparkles(true);
+    const t = setTimeout(() => setShowSparkles(false), 800);
+    return () => clearTimeout(t);
+  }, [equippedSkinId, equippedBodyId, JSON.stringify(equippedAccessories), petColorOverride]);
 
   const morphStyle: React.CSSProperties = (petMorph.scale !== 1 || petMorph.width !== 1 || petMorph.height !== 1)
     ? { transform: `scale(${petMorph.scale}) scaleX(${petMorph.width}) scaleY(${petMorph.height})` }
@@ -669,6 +691,40 @@ export function PetDisplay({ pet, moodOverride, size = 220 }: Props) {
               ✨
             </motion.text>
           ))}
+          {/* Change sparkles burst */}
+          <AnimatePresence>
+            {showSparkles && (
+              <motion.g
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                {[...Array(6)].map((_, i) => {
+                  const angle = (i * Math.PI * 2) / 6;
+                  const dist = 60;
+                  return (
+                    <motion.text
+                      key={i}
+                      x={100}
+                      y={100}
+                      fontSize={14}
+                      textAnchor="middle"
+                      initial={{ x: 100, y: 100, scale: 0 }}
+                      animate={{ 
+                        x: 100 + Math.cos(angle) * dist, 
+                        y: 100 + Math.sin(angle) * dist,
+                        scale: [0, 1.5, 0],
+                        rotate: [0, 90, 180]
+                      }}
+                      transition={{ duration: 0.6, ease: "easeOut" }}
+                    >
+                      ✨
+                    </motion.text>
+                  );
+                })}
+              </motion.g>
+            )}
+          </AnimatePresence>
         </svg>
       </motion.div>
     </div>
