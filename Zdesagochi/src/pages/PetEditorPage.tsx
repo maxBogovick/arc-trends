@@ -27,9 +27,9 @@ import { PresetsPanel } from '../components/PetEditor/panels/PresetsPanel';
 
 export function PetEditorPage() {
   const {
-    pet, setActiveTab, equipBody, equipSkin, equipAura, equipBg, setPetColorOverride,
+    setActiveTab, equipBody, equipSkin, equipAura, equipBg, setPetColorOverride,
     setPetMorph, setAccessory, setAccessoryConfig,
-    ownedSkins, ownedAuras, ownedBgs, coins,
+    ownedSkins, ownedAuras, ownedBgs, coins, pet, savePetAppearance
   } = usePetStore();
 
   const [category, setCategory] = useState<CategoryId>('body');
@@ -183,7 +183,7 @@ export function PetEditorPage() {
 
           <motion.button
             whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-            onClick={() => setActiveTab('home')}
+            onClick={() => { savePetAppearance(); setActiveTab('home'); }}
             className="px-4 py-1.5 rounded-xl text-sm font-bold text-white transition-colors"
             style={{ background: 'linear-gradient(135deg,#7C3AED,#EC4899)', boxShadow: '0 4px 16px rgba(124,58,237,0.4)' }}>
             ✓ Готово

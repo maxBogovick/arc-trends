@@ -6,6 +6,7 @@ import { PetTalk } from './PetTalk';
 import { SceneEffects } from './SceneEffects';
 import type { PetMood } from '../../api';
 import { getBackground } from '../../data/backgrounds';
+import { getFurniture } from '../../data/roomFurniture';
 
 export const MOOD_LABELS: Record<PetMood, { text: string; emoji: string; color: string }> = {
   ecstatic: { text: 'В восторге!', emoji: '🤩', color: 'text-yellow-600' },
@@ -26,8 +27,17 @@ const STAGE_INFO: Record<string, { label: string; emoji: string }> = {
   elder: { label: 'Мудрец',    emoji: '🦋' },
 };
 
+function applyColorOverride(hex: string, base: ReturnType<typeof getBackground>) {
+  return {
+    ...base,
+    gradient: `radial-gradient(ellipse at 40% 30%, ${hex}55 0%, ${hex}1A 55%, #030008 100%)`,
+    floorGradient: `linear-gradient(180deg, transparent, ${hex}2E)`,
+    accentColor: hex,
+  };
+}
+
 export function PetScene() {
-  const { pet, updatePetName, actionLoading, equippedBgId } = usePetStore();
+  const { pet, updatePetName, actionLoading, equippedBgId, placedFurniture, roomBgColorOverride } = usePetStore();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
 
@@ -35,7 +45,8 @@ export function PetScene() {
 
   const moodInfo  = MOOD_LABELS[pet.mood];
   const stageInfo = STAGE_INFO[pet.stage];
-  const bg        = getBackground(equippedBgId ?? 'void_dark');
+  const rawBg     = getBackground(equippedBgId ?? 'void_dark');
+  const bg        = roomBgColorOverride ? applyColorOverride(roomBgColorOverride, rawBg) : rawBg;
 
   const handleNameSubmit = async () => {
     if (nameInput.trim()) await updatePetName(nameInput.trim());
@@ -141,6 +152,28 @@ export function PetScene() {
           }}
         />
 
+        {/* Placed furniture items */}
+        {placedFurniture.map(placed => {
+          const def = getFurniture(placed.itemId);
+          if (!def) return null;
+          return (
+            <div
+              key={placed.uid}
+              className="absolute pointer-events-none select-none"
+              style={{
+                left: `${placed.x}%`,
+                top: `${placed.y}%`,
+                transform: `translate(-50%, -50%) scaleX(${placed.flipped ? -1 : 1})`,
+                fontSize: `${placed.scale * 2.5}rem`,
+                zIndex: placed.zIndex + 10,
+                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
+              }}
+            >
+              {def.emoji}
+            </div>
+          );
+        })}
+
         {/* Mood badge */}
         <motion.div
           key={pet.mood}
@@ -160,7 +193,7 @@ export function PetScene() {
         {/* Pet + speech bubble — shifted slightly up so feet rest on floor */}
         <div
           className="absolute inset-0 flex items-center justify-center pointer-events-none"
-          style={{ paddingBottom: '8%', zIndex: 6 }}
+          style={{ paddingBottom: '8%', zIndex: 25 }}
         >
           <div className="relative pointer-events-auto">
             <PetTalk pet={pet} />

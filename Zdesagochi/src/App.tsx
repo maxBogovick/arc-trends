@@ -13,6 +13,7 @@ import { AchievementsPage } from './pages/AchievementsPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { SkinsPage } from './pages/SkinsPage';
 import { PetEditorPage } from './pages/PetEditorPage';
+import { RoomEditorPage } from './pages/RoomEditorPage';
 
 type GameType = 'stars' | 'memory' | null;
 
@@ -77,6 +78,11 @@ export default function App() {
       {/* Full-screen pet editor */}
       <AnimatePresence>
         {activeTab === 'editor' && <PetEditorPage />}
+      </AnimatePresence>
+
+      {/* Full-screen room editor */}
+      <AnimatePresence>
+        {activeTab === 'room' && <RoomEditorPage />}
       </AnimatePresence>
 
       <Notifications />

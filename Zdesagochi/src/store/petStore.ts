@@ -6,10 +6,22 @@ import {
 } from '../api';
 import { getSkin, SKINS } from '../data/skins';
 import { type BodyShapeId } from '../data/bodyShapes';
-import { BACKGROUNDS, getBackground } from '../data/backgrounds';
+import { getBackground, BACKGROUNDS } from '../data/backgrounds';
 import { getAura } from '../data/auras';
+import { getAccessoriesBySlot } from '../data/accessories';
+import { FURNITURE, getFurniture } from '../data/roomFurniture';
 
-export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 'leaderboard' | 'skins' | 'editor';
+export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 'leaderboard' | 'skins' | 'editor' | 'room';
+
+export interface PlacedFurnitureItem {
+  uid: string;
+  itemId: string;
+  x: number;      // % from left edge (0-100)
+  y: number;      // % from top edge (0-100)
+  scale: number;  // 0.5 - 3.0
+  flipped: boolean;
+  zIndex: number;
+}
 
 interface Notification {
   id: number;
@@ -43,6 +55,16 @@ interface PetStore {
   petMorph: { scale: number; width: number; height: number };
   equippedAuraId: string;
   ownedAuras: string[];
+  ownedAccessoriesList: string[];
+  buyAccessory(id: string): void;
+
+  ownedFurnitureIds: string[];
+  placedFurniture: PlacedFurnitureItem[];
+  addRoomFurniture(itemId: string): void;
+  removeRoomFurniture(uid: string): void;
+  updateRoomFurniture(uid: string, changes: Partial<PlacedFurnitureItem>): void;
+  buyRoomFurniture(itemId: string): void;
+  clearRoomFurniture(): void;
   equippedAccessories: { head: string; face: string; back: string };
   accessoryConfigs: {
     head: { scale: number; x: number; y: number; rotation: number; behind: boolean };
@@ -51,6 +73,7 @@ interface PetStore {
   };
   eyeStyleOverride: string | null;
   overlayOverride: string | null;
+  roomBgColorOverride: string | null;
 
   petPresets: Record<string, any>;
   savePreset: (name: string) => void;
@@ -79,6 +102,7 @@ interface PetStore {
   setAccessoryConfig(slot: 'head' | 'face' | 'back', config: { scale: number; x: number; y: number; rotation: number; behind: boolean }): void;
   setEyeStyleOverride(s: string | null): void;
   setOverlayOverride(s: string | null): void;
+  setRoomBgColorOverride(color: string | null): void;
 
   loadPet(): Promise<void>;
   feedPet(foodId: string): Promise<void>;
@@ -90,6 +114,7 @@ interface PetStore {
   bondWithPet(): Promise<void>;
   syncPet(): Promise<void>;
   updatePetName(name: string): Promise<void>;
+  savePetAppearance(): Promise<void>;
   loadEvents(): Promise<void>;
 
   loadCoins(): Promise<void>;
@@ -142,11 +167,14 @@ export const usePetStore = create<PetStore>((set, get) => {
     equippedBodyId: 'blob',
     equippedBgId: 'void_dark',
     ownedBgs: BACKGROUNDS.filter(b => b.price === 0).map(b => b.id),
+    ownedFurnitureIds: FURNITURE.filter(f => f.price === 0).map(f => f.id),
+    placedFurniture: [],
     petColorOverride: null,
     petMorph: { scale: 1, width: 1, height: 1 },
     equippedAuraId: 'none',
     ownedAuras: ['none'],
     equippedAccessories: { head: 'none_head', face: 'none_face', back: 'none_back' },
+    ownedAccessoriesList: [],
     accessoryConfigs: {
       head: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
       face: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
@@ -154,6 +182,7 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
     eyeStyleOverride: null,
     overlayOverride: null,
+    roomBgColorOverride: null,
 
     petPresets: JSON.parse(localStorage.getItem('petPresets') || '{}'),
 
@@ -358,6 +387,36 @@ export const usePetStore = create<PetStore>((set, get) => {
         get().notify(`✏️ Имя: «${pet.name}»`, 'success');
       });
     },
+    async savePetAppearance() {
+      await action('save_appearance', async () => {
+        const s = get();
+        const equippedAccessories = { ...s.equippedAccessories };
+        const owned = s.ownedAccessoriesList;
+        
+        // Filter out unowned preview items
+        if (!owned.includes(equippedAccessories.head) && !equippedAccessories.head.startsWith('none')) equippedAccessories.head = 'none_head';
+        if (!owned.includes(equippedAccessories.face) && !equippedAccessories.face.startsWith('none')) equippedAccessories.face = 'none_face';
+        if (!owned.includes(equippedAccessories.back) && !equippedAccessories.back.startsWith('none')) equippedAccessories.back = 'none_back';
+
+        const config = {
+          equippedSkinId: s.equippedSkinId,
+          equippedBodyId: s.equippedBodyId,
+          equippedBgId: s.equippedBgId,
+          petColorOverride: s.petColorOverride,
+          petMorph: s.petMorph,
+          equippedAuraId: s.equippedAuraId,
+          equippedAccessories,
+          accessoryConfigs: s.accessoryConfigs,
+        };
+        
+        // Sync local state if we changed something
+        set({ equippedAccessories });
+        // In a real app, we'd send this to the API
+        // For now, we simulate persistence
+        localStorage.setItem('pet_appearance_debug', JSON.stringify(config));
+        get().notify('✨ Внешний вид сохранён!', 'success');
+      });
+    },
     async loadEvents() {
       try { set({ events: await api().getPetEvents() }); } catch { /* silent */ }
     },
@@ -543,8 +602,75 @@ export const usePetStore = create<PetStore>((set, get) => {
       set(s => ({ accessoryConfigs: { ...s.accessoryConfigs, [slot]: config } }));
     },
 
+    buyAccessory(id) {
+      const { coins, ownedAccessoriesList } = get();
+      const acc = getAccessoriesBySlot('head').find(a => a.id === id) 
+               || getAccessoriesBySlot('face').find(a => a.id === id)
+               || getAccessoriesBySlot('back').find(a => a.id === id);
+      
+      if (!acc) return;
+      if (ownedAccessoriesList.includes(id)) return;
+      if (coins < acc.price) { get().notify('Недостаточно монет 🪙', 'error'); return; }
+
+      set(s => ({ 
+        coins: s.coins - acc.price, 
+        ownedAccessoriesList: [...s.ownedAccessoriesList, id] 
+      }));
+      get().notify(`🕶️ «${acc.name}» куплен!`, 'coins');
+    },
+
     setEyeStyleOverride(s) { set({ eyeStyleOverride: s }); },
     setOverlayOverride(s) { set({ overlayOverride: s }); },
+    setRoomBgColorOverride(color) { set({ roomBgColorOverride: color }); },
+
+    // ── Room Furniture ─────────────────────────────────────────────────────
+
+    addRoomFurniture(itemId) {
+      const { placedFurniture } = get();
+      const def = getFurniture(itemId);
+      if (!def) return;
+      const newItem: PlacedFurnitureItem = {
+        uid: Date.now().toString(),
+        itemId,
+        x: 50,
+        y: 45,
+        scale: def.defaultScale,
+        flipped: false,
+        zIndex: placedFurniture.length + 1,
+      };
+      set(s => ({ placedFurniture: [...s.placedFurniture, newItem] }));
+    },
+
+    removeRoomFurniture(uid) {
+      set(s => ({ placedFurniture: s.placedFurniture.filter(p => p.uid !== uid) }));
+    },
+
+    updateRoomFurniture(uid, changes) {
+      set(s => ({
+        placedFurniture: s.placedFurniture.map(p => p.uid === uid ? { ...p, ...changes } : p),
+      }));
+    },
+
+    buyRoomFurniture(itemId) {
+      const { coins, ownedFurnitureIds } = get();
+      const def = getFurniture(itemId);
+      if (!def) return;
+      if (ownedFurnitureIds.includes(itemId)) {
+        get().addRoomFurniture(itemId);
+        return;
+      }
+      if (coins < def.price) { get().notify('Недостаточно монет 🪙', 'error'); return; }
+      set(s => ({
+        coins: s.coins - def.price,
+        ownedFurnitureIds: [...s.ownedFurnitureIds, itemId],
+      }));
+      get().notify(`🛋️ «${def.name}» куплено!`, 'coins');
+      get().addRoomFurniture(itemId);
+    },
+
+    clearRoomFurniture() {
+      set({ placedFurniture: [] });
+    },
 
     // ── Notifications ──────────────────────────────────────────────────────
 

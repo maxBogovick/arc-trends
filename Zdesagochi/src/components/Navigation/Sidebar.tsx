@@ -13,6 +13,7 @@ const ITEMS: NavItem[] = [
   { id: 'home',         emoji: '🏠', label: 'Главная' },
   { id: 'shop',         emoji: '🛒', label: 'Магазин' },
   { id: 'skins',        emoji: '🎨', label: 'Скины' },
+  { id: 'room',         emoji: '🛋️', label: 'Комната' },
   { id: 'inventory',    emoji: '🎒', label: 'Рюкзак' },
   { id: 'quests',       emoji: '🎯', label: 'Задания' },
   { id: 'achievements', emoji: '🏆', label: 'Достижения' },

@@ -8,7 +8,7 @@ import { SectionLabel } from '../Shared';
 
 export function AccessoriesPanel() {
   const [slot, setSlot] = useState<AccessorySlot>('head');
-  const { equippedAccessories, setAccessory, accessoryConfigs, setAccessoryConfig } = usePetStore();
+  const { equippedAccessories, setAccessory, accessoryConfigs, setAccessoryConfig, ownedAccessoriesList, buyAccessory, coins } = usePetStore();
 
   const SLOT_TABS: { id: AccessorySlot; emoji: string; label: string }[] = [
     { id: 'head', emoji: '👒', label: 'Голова' },
@@ -23,7 +23,10 @@ export function AccessoriesPanel() {
   return (
     <div className="space-y-3">
       <SectionLabel>👒 Аксессуары</SectionLabel>
-      <p className="text-xs text-lumio-muted">Бесплатно — экипируй что хочешь</p>
+      <div className="flex justify-between items-center px-1">
+        <p className="text-[10px] text-lumio-muted">Примерь любые вещи перед покупкой</p>
+        <div className="text-[10px] font-bold text-lumio-text">🪙 {coins.toLocaleString()}</div>
+      </div>
 
       {/* Slot tabs */}
       <div className="flex gap-1 p-1 rounded-xl" style={{ background: '#F3F4F6' }}>
@@ -42,19 +45,56 @@ export function AccessoriesPanel() {
       <div className="grid grid-cols-3 gap-2">
         {items.map(acc => {
           const isEquipped = equipped === acc.id;
+          const isOwned = ownedAccessoriesList.includes(acc.id) || acc.id.startsWith('none');
           const rc = RARITY_COLOR[acc.rarity];
+
           return (
             <motion.button key={acc.id}
               whileHover={{ scale: 1.05, y: -2 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => setAccessory(slot, acc.id)}
-              className="flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all"
+              onClick={() => {
+                setAccessory(slot, acc.id);
+                // recordHistory is handled by store now
+              }}
+              className="flex flex-col items-center gap-1 p-2 rounded-2xl transition-all relative overflow-hidden"
               style={isEquipped ? ACTIVE_GLOW('#818CF8') : GLASS}
             >
               <span className="text-2xl">{acc.id.startsWith('none') ? '—' : acc.emoji}</span>
-              <span className="text-[10px] font-semibold text-lumio-text text-center leading-tight">{acc.name}</span>
-              <span className="text-[8px] font-bold" style={{ color: rc }}>{acc.rarity}</span>
-              {isEquipped && <span className="text-[9px] font-bold text-emerald-600">✓</span>}
+              <span className="text-[9px] font-semibold text-lumio-text text-center leading-tight h-6 flex items-center">{acc.name}</span>
+              
+              {!isOwned && (
+                <div className="mt-1 flex flex-col items-center gap-0.5">
+                  <div className="text-[8px] font-bold text-amber-600 bg-amber-50 px-1.5 rounded-full border border-amber-200">
+                    🪙 {acc.price}
+                  </div>
+                  <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      buyAccessory(acc.id);
+                    }}
+                    className="mt-0.5 px-2 py-0.5 bg-indigo-500 text-white text-[8px] font-black rounded-lg uppercase tracking-tighter"
+                  >
+                    Купить
+                  </motion.button>
+                </div>
+              )}
+
+              {isOwned && !acc.id.startsWith('none') && (
+                <span className="text-[8px] font-bold mt-1" style={{ color: rc }}>{acc.rarity}</span>
+              )}
+
+              {isEquipped && isOwned && (
+                <div className="absolute top-1 right-1 w-3 h-3 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-white">
+                  <span className="text-[6px] text-white font-bold">✓</span>
+                </div>
+              )}
+
+              {isEquipped && !isOwned && (
+                <div className="absolute top-1 right-1 px-1 rounded bg-amber-500 text-[6px] text-white font-bold border border-white">
+                  ПРЕВЬЮ
+                </div>
+              )}
             </motion.button>
           );
         })}
