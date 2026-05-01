@@ -513,6 +513,7 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   const overlayOverride     = overrideState?.overlayOverride    ?? store.overlayOverride;
   
   const setAccessoryConfig  = store.setAccessoryConfig;
+  const recordHistory       = store.recordHistory;
   const isEditor            = store.activeTab === 'editor';
 
   const renderAccessory = (slot: 'head' | 'face' | 'back', behind: boolean) => {
@@ -594,7 +595,7 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   const gradId = `bg_${skin.id}`;
   const colors = { body1, body2, glow: glowColor, cheek: petColorOverride?.cheek ?? skin.colors.cheek };
 
-  const mouthPath = getMouthPath(effectiveMood, shape?.mouthCy || 130, shape?.mouthHW || 28);
+  const mouthPath = getMouthPath(effectiveMood, shape?.mouthCy || 130, shape?.mouthHW || 28) || "";
 
   const [showSparkles, setShowSparkles] = useState(false);
 
@@ -659,12 +660,14 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
           <Eyes skin={skin} shapeId={equippedBodyId} mood={effectiveMood} />
 
           {/* Mouth */}
-          <motion.path
-            d={mouthPath}
-            stroke={['led','hologram'].includes(skin.eyeStyle) ? skin.eyeColor : 'white'}
-            strokeWidth="3.5" fill="none" strokeLinecap="round"
-            animate={{ d: mouthPath }} transition={{ duration: 0.4 }}
-          />
+          {mouthPath && (
+            <motion.path
+              d={mouthPath}
+              stroke={['led','hologram'].includes(skin.eyeStyle) ? skin.eyeColor : 'white'}
+              strokeWidth="3.5" fill="none" strokeLinecap="round"
+              animate={{ d: mouthPath }} transition={{ duration: 0.4 }}
+            />
+          )}
 
           <LevelAccessory level={pet.level} />
 

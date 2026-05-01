@@ -149,7 +149,7 @@ export function PetEditorPage() {
       style={{ background: '#F9FAFB' }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      exit={{ opacity: 0, pointerEvents: 'none' }}
       transition={{ duration: 0.25 }}
     >
       <AnimatePresence>
