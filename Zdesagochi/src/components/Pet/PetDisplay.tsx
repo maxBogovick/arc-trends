@@ -494,8 +494,11 @@ export function PetDisplay({ pet, moodOverride }: Props) {
   const petMorph           = usePetStore(s => s.petMorph);
   const equippedAuraId     = usePetStore(s => s.equippedAuraId);
   const equippedAccessories = usePetStore(s => s.equippedAccessories);
+  const accessoryConfigs   = usePetStore(s => s.accessoryConfigs);
   const eyeStyleOverride   = usePetStore(s => s.eyeStyleOverride);
   const overlayOverride    = usePetStore(s => s.overlayOverride);
+  const setAccessoryConfig = usePetStore(s => s.setAccessoryConfig);
+  const isEditor           = usePetStore(s => s.activeTab) === 'editor';
 
   const baseSkin = getSkin(equippedSkinId);
   const skin: SkinDefinition = {
@@ -575,9 +578,19 @@ export function PetDisplay({ pet, moodOverride }: Props) {
 
           {/* Back accessories rendered behind body */}
           {backAcc && backAcc.id !== 'none_back' && backAcc.behindBody && (
-            <text x="100" y="130" fontSize="52" textAnchor="middle" dominantBaseline="middle" style={{ filter: `drop-shadow(0 0 8px ${glowColor}88)` }}>
+            <motion.text
+              drag={isEditor} dragMomentum={false}
+              onDragEnd={(e, info) => setAccessoryConfig('back', { ...accessoryConfigs.back, x: accessoryConfigs.back.x + info.offset.x, y: accessoryConfigs.back.y + info.offset.y })}
+              initial={{ x: accessoryConfigs.back.x, y: accessoryConfigs.back.y }}
+              animate={{ x: accessoryConfigs.back.x, y: accessoryConfigs.back.y }}
+              whileDrag={{ scale: 1.1, cursor: 'grabbing' }}
+              style={{ cursor: isEditor ? 'grab' : 'auto', filter: `drop-shadow(0 0 8px ${glowColor}88)` }}
+              x={100}
+              y={130}
+              fontSize={52 * accessoryConfigs.back.scale}
+              textAnchor="middle" dominantBaseline="middle">
               {backAcc.emoji}
-            </text>
+            </motion.text>
           )}
 
           <BodyRenderer shapeId={equippedBodyId} gradId={gradId} c={colors} isAsleep={pet.isAsleep} />
@@ -586,9 +599,19 @@ export function PetDisplay({ pet, moodOverride }: Props) {
 
           {/* Back accessories rendered in front of body */}
           {backAcc && backAcc.id !== 'none_back' && !backAcc.behindBody && (
-            <text x="162" y="112" fontSize="28" textAnchor="middle" dominantBaseline="middle" style={{ filter: `drop-shadow(0 0 6px ${glowColor}88)` }}>
+            <motion.text
+              drag={isEditor} dragMomentum={false}
+              onDragEnd={(e, info) => setAccessoryConfig('back', { ...accessoryConfigs.back, x: accessoryConfigs.back.x + info.offset.x, y: accessoryConfigs.back.y + info.offset.y })}
+              initial={{ x: accessoryConfigs.back.x, y: accessoryConfigs.back.y }}
+              animate={{ x: accessoryConfigs.back.x, y: accessoryConfigs.back.y }}
+              whileDrag={{ scale: 1.1, cursor: 'grabbing' }}
+              style={{ cursor: isEditor ? 'grab' : 'auto', filter: `drop-shadow(0 0 6px ${glowColor}88)` }}
+              x={162}
+              y={112}
+              fontSize={28 * accessoryConfigs.back.scale}
+              textAnchor="middle" dominantBaseline="middle">
               {backAcc.emoji}
-            </text>
+            </motion.text>
           )}
 
           {/* Cheeks */}
@@ -605,9 +628,19 @@ export function PetDisplay({ pet, moodOverride }: Props) {
 
           {/* Face accessories */}
           {faceAcc && faceAcc.id !== 'none_face' && (
-            <text x="100" y="86" fontSize="30" textAnchor="middle" dominantBaseline="middle" style={{ filter: `drop-shadow(0 0 6px ${glowColor}88)` }}>
+            <motion.text
+              drag={isEditor} dragMomentum={false}
+              onDragEnd={(e, info) => setAccessoryConfig('face', { ...accessoryConfigs.face, x: accessoryConfigs.face.x + info.offset.x, y: accessoryConfigs.face.y + info.offset.y })}
+              initial={{ x: accessoryConfigs.face.x, y: accessoryConfigs.face.y }}
+              animate={{ x: accessoryConfigs.face.x, y: accessoryConfigs.face.y }}
+              whileDrag={{ scale: 1.1, cursor: 'grabbing' }}
+              style={{ cursor: isEditor ? 'grab' : 'auto', filter: `drop-shadow(0 0 6px ${glowColor}88)` }}
+              x={100}
+              y={86}
+              fontSize={30 * accessoryConfigs.face.scale}
+              textAnchor="middle" dominantBaseline="middle">
               {faceAcc.emoji}
-            </text>
+            </motion.text>
           )}
 
           {/* Mouth */}
@@ -620,9 +653,19 @@ export function PetDisplay({ pet, moodOverride }: Props) {
 
           {/* Head accessories */}
           {headAcc && headAcc.id !== 'none_head' && (
-            <text x="100" y="14" fontSize="26" textAnchor="middle" dominantBaseline="middle" style={{ filter: `drop-shadow(0 0 6px ${glowColor}88)` }}>
+            <motion.text
+              drag={isEditor} dragMomentum={false}
+              onDragEnd={(e, info) => setAccessoryConfig('head', { ...accessoryConfigs.head, x: accessoryConfigs.head.x + info.offset.x, y: accessoryConfigs.head.y + info.offset.y })}
+              initial={{ x: accessoryConfigs.head.x, y: accessoryConfigs.head.y }}
+              animate={{ x: accessoryConfigs.head.x, y: accessoryConfigs.head.y }}
+              whileDrag={{ scale: 1.1, cursor: 'grabbing' }}
+              style={{ cursor: isEditor ? 'grab' : 'auto', filter: `drop-shadow(0 0 6px ${glowColor}88)` }}
+              x={100}
+              y={14}
+              fontSize={26 * accessoryConfigs.head.scale}
+              textAnchor="middle" dominantBaseline="middle">
               {headAcc.emoji}
-            </text>
+            </motion.text>
           )}
 
           <LevelAccessory level={pet.level} />

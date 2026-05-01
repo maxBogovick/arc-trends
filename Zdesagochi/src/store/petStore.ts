@@ -44,8 +44,18 @@ interface PetStore {
   equippedAuraId: string;
   ownedAuras: string[];
   equippedAccessories: { head: string; face: string; back: string };
+  accessoryConfigs: {
+    head: { scale: number; x: number; y: number };
+    face: { scale: number; x: number; y: number };
+    back: { scale: number; x: number; y: number };
+  };
   eyeStyleOverride: string | null;
   overlayOverride: string | null;
+
+  petPresets: Record<string, any>;
+  savePreset: (name: string) => void;
+  loadPreset: (name: string) => void;
+  deletePreset: (name: string) => void;
 
   setActiveTab(tab: TabId): void;
   setApiMode(mode: ApiMode): void;
@@ -60,6 +70,7 @@ interface PetStore {
   buyAura(auraId: string): void;
   equipAura(auraId: string): void;
   setAccessory(slot: 'head' | 'face' | 'back', id: string): void;
+  setAccessoryConfig(slot: 'head' | 'face' | 'back', config: { scale: number; x: number; y: number }): void;
   setEyeStyleOverride(s: string | null): void;
   setOverlayOverride(s: string | null): void;
 
@@ -130,8 +141,51 @@ export const usePetStore = create<PetStore>((set, get) => {
     equippedAuraId: 'none',
     ownedAuras: ['none'],
     equippedAccessories: { head: 'none_head', face: 'none_face', back: 'none_back' },
+    accessoryConfigs: {
+      head: { scale: 1, x: 0, y: 0 },
+      face: { scale: 1, x: 0, y: 0 },
+      back: { scale: 1, x: 0, y: 0 },
+    },
     eyeStyleOverride: null,
     overlayOverride: null,
+
+    petPresets: JSON.parse(localStorage.getItem('petPresets') || '{}'),
+
+    savePreset(name: string) {
+      const state = get();
+      const preset = {
+        equippedSkinId: state.equippedSkinId,
+        equippedBodyId: state.equippedBodyId,
+        equippedBgId: state.equippedBgId,
+        petColorOverride: state.petColorOverride,
+        petMorph: state.petMorph,
+        equippedAuraId: state.equippedAuraId,
+        equippedAccessories: state.equippedAccessories,
+        accessoryConfigs: state.accessoryConfigs,
+      };
+      const newPresets = { ...state.petPresets, [name]: preset };
+      set({ petPresets: newPresets });
+      localStorage.setItem('petPresets', JSON.stringify(newPresets));
+      state.notify(`Пресет "${name}" сохранён`, 'success');
+    },
+
+    loadPreset(name: string) {
+      const state = get();
+      const preset = state.petPresets[name];
+      if (preset) {
+        set({ ...preset });
+        state.notify(`Пресет "${name}" загружен`, 'info');
+      }
+    },
+
+    deletePreset(name: string) {
+      const state = get();
+      const newPresets = { ...state.petPresets };
+      delete newPresets[name];
+      set({ petPresets: newPresets });
+      localStorage.setItem('petPresets', JSON.stringify(newPresets));
+      state.notify(`Пресет "${name}" удалён`, 'info');
+    },
 
     // ── Navigation ─────────────────────────────────────────────────────────
 
@@ -403,6 +457,9 @@ export const usePetStore = create<PetStore>((set, get) => {
 
     setAccessory(slot, id) {
       set(s => ({ equippedAccessories: { ...s.equippedAccessories, [slot]: id } }));
+    },
+    setAccessoryConfig(slot, config) {
+      set(s => ({ accessoryConfigs: { ...s.accessoryConfigs, [slot]: config } }));
     },
 
     setEyeStyleOverride(s) { set({ eyeStyleOverride: s }); },
