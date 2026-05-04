@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import {
-  createApiService, MockApiService,
+  createApiService, MockApiService, syncPersonalityFromSkin, setPersonalityDirectly,
   type ApiMode, type Pet, type FoodItem, type ShopItem, type InventoryItem,
   type Achievement, type DailyQuest, type Room, type LeaderboardEntry, type PetEvent,
 } from '../api';
@@ -91,6 +91,7 @@ interface PetStore {
   setApiBaseUrl(url: string): void;
   buySkin(skinId: string): void;
   equipSkin(skinId: string): void;
+  setPersonality(personalityId: string): void;
   equipBody(shapeId: BodyShapeId): void;
   buyBg(bgId: string): void;
   equipBg(bgId: string): void;
@@ -577,7 +578,18 @@ export const usePetStore = create<PetStore>((set, get) => {
       get().recordHistory();
       const skin = getSkin(skinId);
       set({ equippedSkinId: skinId });
+      if (get().apiMode === 'mock') {
+        syncPersonalityFromSkin(skinId);
+        get().loadPet();
+      }
       get().notify(`🎨 Надет «${skin.name}»`, 'success');
+    },
+
+    setPersonality(personalityId) {
+      if (get().apiMode === 'mock') {
+        setPersonalityDirectly(personalityId);
+        get().loadPet();
+      }
     },
 
     equipBody(shapeId) {

@@ -638,14 +638,9 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
           {renderAccessory('head', true)}
           {renderAccessory('face', true)}
 
+          {/* Body and base features */}
           <BodyRenderer shapeId={equippedBodyId} gradId={gradId} c={colors} isAsleep={pet.isAsleep} />
-
           <Overlay skin={skin} />
-
-          {/* Layer: In front of body */}
-          {renderAccessory('back', false)}
-          {renderAccessory('head', false)}
-          {renderAccessory('face', false)}
 
           {/* Cheeks */}
           <AnimatePresence>
@@ -670,6 +665,11 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
           )}
 
           <LevelAccessory level={pet.level} />
+
+          {/* Layer: Topmost Accessories (In front of everything) */}
+          {renderAccessory('back', false)}
+          {renderAccessory('head', false)}
+          {renderAccessory('face', false)}
 
           {/* Zzz */}
           {pet.isAsleep && (

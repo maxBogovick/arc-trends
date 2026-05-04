@@ -74,6 +74,14 @@ export interface Pet {
   equippedRoomId: string;
   createdAt: string;
   lastUpdated: string;
+
+  // ── Система характеров ──────────────────────────────────────────
+  personality: string;                          // PersonalityId
+  behavioralFlags: import('../personality/types').BehavioralFlag[];
+  emergentState: import('../personality/types').EmergentStateType | null;
+  emergentStateEnteredAt?: string;
+  behavioralCounters: import('../personality/types').BehavioralCounters;
+  moodHistory: import('../personality/types').MoodSnapshot[];
 }
 
 export interface PetEvent {

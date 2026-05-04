@@ -1,6 +1,7 @@
 /**
  * Mock API v2 — симулирует полноценный сервер для обучения.
  * Хранит всё состояние в памяти. Имитирует задержки (150-500ms).
+ * Интегрирован PersonalityEngine v1.1.
  */
 
 import type {
@@ -8,12 +9,22 @@ import type {
   Achievement, ClaimResult, DailyQuest, QuestClaimResult, Room, LeaderboardEntry,
   PetEvent, PetMood, PetStage,
 } from './types';
+import type { StatKey, BehavioralFlag, BehavioralCounters, MoodSnapshot } from '../personality/types';
+import {
+  applyDecay, applyActionModifiers, isActionBlocked,
+  computeEmergentState, runPatternEngine, updateCounters,
+  computeNaturalPassives, calcMoodWithBias, getPeakPerformanceMult,
+  getParanoidRestoreMult, createDefaultCounters,
+} from '../personality/PersonalityEngine';
+import { getPersonality, getPersonalityBySkin } from '../personality/personalities';
 
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 const rand = (min: number, max: number) => Math.random() * (max - min) + min;
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
+// Счётчик действий Меланхолика (чётные/нечётные)
+let melancholicActionCount = 0;
 
 // ─── Справочники ──────────────────────────────────────────────────────────────
 
@@ -197,15 +208,8 @@ function makeQuests(): DailyQuest[] {
 }
 
 function calcMood(pet: Pet): PetMood {
-  if (pet.isAsleep) return 'sleeping';
-  const { hunger, happiness, energy, health } = pet.stats;
-  if (health < 25) return 'sick';
-  if (energy < 20) return 'tired';
-  const avg = (hunger + happiness + energy + health) / 4;
-  if (avg >= 85) return 'ecstatic';
-  if (avg >= 65) return 'happy';
-  if (avg >= 45) return 'content';
-  return 'sad';
+  const personality = getPersonality(pet.personality);
+  return calcMoodWithBias(pet.stats as any, personality, pet.isAsleep) as PetMood;
 }
 
 function calcStage(ageHours: number): PetStage {
@@ -225,6 +229,13 @@ const S = {
     color: '#818CF8', equippedRoomId: 'default',
     createdAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
     lastUpdated: new Date().toISOString(),
+    // Personality system
+    personality: 'playful',
+    behavioralFlags: [] as BehavioralFlag[],
+    emergentState: null as null | string,
+    emergentStateEnteredAt: undefined as string | undefined,
+    behavioralCounters: createDefaultCounters() as BehavioralCounters,
+    moodHistory: [] as MoodSnapshot[],
   } as Pet,
   coins: 200,
   inventory: new Map<string, number>(),
@@ -294,10 +305,49 @@ function tickQuest(id: string, by = 1) {
 }
 
 function finalizePet(): Pet {
+  const personality = getPersonality(S.pet.personality);
+  // Обновить mood с учётом moodBias характера
   S.pet.mood = calcMood(S.pet);
   S.pet.stage = calcStage(S.pet.ageHours);
   S.pet.lastUpdated = new Date().toISOString();
+
+  // Обновить emergentState
+  const newState = computeEmergentState(
+    S.pet.stats as any,
+    personality,
+    S.pet.behavioralFlags,
+    S.pet.behavioralCounters,
+    { clientLocalHour: new Date().getHours(), sessionGapHours: S.pet.behavioralCounters.sessionGapHours, coinBalance: S.coins },
+    S.pet.emergentState as any,
+    S.pet.emergentStateEnteredAt,
+  );
+  if (newState !== S.pet.emergentState) {
+    S.pet.emergentState = newState;
+    S.pet.emergentStateEnteredAt = newState ? new Date().toISOString() : undefined;
+  }
+
+  // Обновить флаги (lazy Pattern Engine)
+  S.pet.behavioralFlags = runPatternEngine(S.pet.behavioralCounters, S.pet.behavioralFlags, personality);
+
   return { ...S.pet };
+}
+
+// Синхронизировать personality с надетым скином
+export function syncPersonalityFromSkin(skinId: string) {
+  const p = getPersonalityBySkin(skinId);
+  S.pet.personality = p.id;
+}
+
+// Напрямую установить характер (для каталога / начального выбора)
+export function setPersonalityDirectly(personalityId: string) {
+  const p = getPersonality(personalityId as any);
+  if (!p) return;
+  S.pet.personality = p.id;
+  // Сбросить счётчики и флаги — новый характер начинается чисто
+  S.pet.behavioralFlags = [];
+  S.pet.behavioralCounters = createDefaultCounters();
+  S.pet.emergentState = null;
+  S.pet.emergentStateEnteredAt = undefined;
 }
 
 // ─── Класс MockApiService ─────────────────────────────────────────────────────
@@ -313,10 +363,30 @@ export class MockApiService implements ApiService {
     if (S.pet.isAsleep) throw new Error('Питомец спит!');
     if (S.pet.stats.hunger > 90) throw new Error('Питомец и так сыт!');
 
-    S.pet.stats.hunger = clamp(S.pet.stats.hunger + food.hungerRestore);
-    S.pet.stats.happiness = clamp(S.pet.stats.happiness + food.happinessBonus);
-    S.pet.stats.health = clamp(S.pet.stats.health + food.healthBonus);
-    gainXp(8);
+    const personality = getPersonality(S.pet.personality);
+    const ctx = { foodId, clientLocalHour: new Date().getHours(), coinBalance: S.coins };
+
+    // Проверить блокировку эмерджентного состояния
+    const blocked = isActionBlocked('feed', S.pet.emergentState as any);
+    if (blocked) throw new Error(blocked.reason);
+
+    // Базовый результат
+    const baseResult = { statDeltas: { hunger: food.hungerRestore, happiness: food.happinessBonus, health: food.healthBonus }, xp: 8, coins: 0 };
+
+    // Применить модификаторы характера
+    const modified = applyActionModifiers(baseResult, 'feed', personality, S.pet.behavioralFlags, S.pet.emergentState as any, S.pet.behavioralCounters, ctx);
+
+    // Параноик: множитель restore
+    const paranoidMult = personality.id === 'paranoid' ? getParanoidRestoreMult(S.pet.behavioralCounters) : 1.0;
+
+    for (const [s, v] of Object.entries(modified.statDeltas)) {
+      const stat = s as StatKey;
+      (S.pet.stats as any)[stat] = clamp((S.pet.stats as any)[stat] + (v ?? 0) * (stat !== 'health' ? paranoidMult : 1.0));
+    }
+    gainXp(modified.xp);
+
+    // Обновить счётчики
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'feed', S.pet.stats as any, ctx);
 
     S.feedCount++;
     S.foodsTried.add(foodId);
@@ -333,30 +403,65 @@ export class MockApiService implements ApiService {
     if (S.pet.isAsleep) throw new Error('Питомец спит!');
     if (S.pet.stats.energy < 10) throw new Error('Питомец слишком устал для игр');
 
-    const score = Math.floor(rand(40, 220));
-    const xpGained = Math.floor(score * 0.5);
-    const coinsGained = Math.floor(score * 0.1) + 2;
+    const personality = getPersonality(S.pet.personality);
+    const ctx = { clientLocalHour: new Date().getHours(), coinBalance: S.coins };
 
-    S.pet.stats.happiness = clamp(S.pet.stats.happiness + 20);
-    S.pet.stats.energy = clamp(S.pet.stats.energy - 15);
-    S.pet.stats.bond = clamp(S.pet.stats.bond + 8);
-    gainXp(xpGained);
-    S.coins += coinsGained;
+    const blocked = isActionBlocked('play', S.pet.emergentState as any);
+    if (blocked) throw new Error(blocked.reason);
+
+    const score = Math.floor(rand(40, 220));
+    const baseXp = Math.floor(score * 0.5);
+    const baseCoins = Math.floor(score * 0.1) + 2;
+
+    const baseResult = { statDeltas: { happiness: 20, energy: -15, bond: 8 }, xp: baseXp, coins: baseCoins };
+    const modified = applyActionModifiers(baseResult, 'play', personality, S.pet.behavioralFlags, S.pet.emergentState as any, S.pet.behavioralCounters, ctx);
+
+    // Нервный пик-перфоманс
+    const peak = getPeakPerformanceMult(S.pet.stats as any, personality);
+
+    // Меланхолик: XP только на чётных действиях
+    let finalXp = modified.xp;
+    if (personality.specialRules?.xpEveryOtherAction) {
+      melancholicActionCount++;
+      if (melancholicActionCount % 2 !== 0) finalXp = 0;
+    }
+    finalXp = Math.round(finalXp * peak.xpMult);
+    const finalCoins = Math.round(modified.coins * peak.coinMult);
+
+    for (const [s, v] of Object.entries(modified.statDeltas)) {
+      if (s !== 'energy') (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
+    }
+    // energy отдельно — может быть отрицательным
+    S.pet.stats.energy = clamp(S.pet.stats.energy + (modified.statDeltas.energy ?? -15));
+
+    gainXp(finalXp);
+    S.coins += finalCoins;
+
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'play', S.pet.stats as any, ctx);
 
     S.playCount++;
     if (score > S.maxStarScore) S.maxStarScore = score;
-    addEvent('play', `Сыграл в игру (счёт: ${score})`, '🎮', { xpGained, coinsGained });
+    addEvent('play', `Сыграл в игру (счёт: ${score})`, '🎮', { xpGained: finalXp, coinsGained: finalCoins });
     tickQuest('q_play2');
     checkAchievement('playful', S.playCount);
     checkAchievement('star_catcher', S.maxStarScore);
 
     const message = score >= 180 ? 'Феноменально! 🌟' : score >= 130 ? 'Невероятно! ✨' : score >= 80 ? 'Отлично! 🎉' : 'Хорошо! 👏';
-    return { pet: finalizePet(), score, xpGained, coinsGained, message };
+    return { pet: finalizePet(), score, xpGained: finalXp, coinsGained: finalCoins, message };
   }
 
   async sleepPet() {
     await delay(rand(200, 350));
     if (S.pet.isAsleep) throw new Error('Уже спит!');
+    const blocked = isActionBlocked('sleep', S.pet.emergentState as any);
+    if (blocked) throw new Error(blocked.reason);
+    // Дерзкий: не ляжет при energy > 30
+    const personality = getPersonality(S.pet.personality);
+    if (personality.specialRules?.rejectSleepWhenEnergized && S.pet.stats.energy > 30) {
+      throw new Error('Слишком бодрый чтобы спать!');
+    }
+    S.pet.stats.energy = clamp(S.pet.stats.energy > 70 ? S.pet.stats.energy : S.pet.stats.energy);
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'sleep', S.pet.stats as any, { clientLocalHour: new Date().getHours(), coinBalance: S.coins });
     S.pet.isAsleep = true;
     S.sleepCount++;
     addEvent('sleep', 'Пошёл спать', '😴');
@@ -368,6 +473,7 @@ export class MockApiService implements ApiService {
     await delay(rand(200, 350));
     if (!S.pet.isAsleep) throw new Error('Питомец и так не спит!');
     S.pet.isAsleep = false;
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'wake', S.pet.stats as any, { clientLocalHour: new Date().getHours(), coinBalance: S.coins });
     addEvent('wake', 'Проснулся', '☀️');
     return finalizePet();
   }
@@ -376,12 +482,24 @@ export class MockApiService implements ApiService {
     await delay(rand(350, 520));
     if (S.pet.isAsleep) throw new Error('Питомец спит!');
     if (S.pet.stats.cleanliness > 90) throw new Error('Питомец уже чистый!');
-    S.pet.stats.cleanliness = clamp(S.pet.stats.cleanliness + 40);
-    S.pet.stats.happiness = clamp(S.pet.stats.happiness + 5);
-    S.pet.stats.health = clamp(S.pet.stats.health + 5);
-    gainXp(12);
+
+    const personality = getPersonality(S.pet.personality);
+    const ctx = { clientLocalHour: new Date().getHours(), coinBalance: S.coins };
+    const blocked = isActionBlocked('bathe', S.pet.emergentState as any);
+    if (blocked) throw new Error(blocked.reason);
+
+    // Дикий: ненавидит купание
+    const isFeral = personality.id === 'feral';
+    const baseResult = { statDeltas: { cleanliness: 40, happiness: isFeral ? -20 : 5, health: 5 }, xp: 12, coins: 0 };
+    const modified = applyActionModifiers(baseResult, 'bathe', personality, S.pet.behavioralFlags, S.pet.emergentState as any, S.pet.behavioralCounters, ctx);
+
+    for (const [s, v] of Object.entries(modified.statDeltas)) {
+      (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
+    }
+    gainXp(modified.xp);
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'bathe', S.pet.stats as any, ctx);
     S.batheCount++;
-    addEvent('bathe', 'Принял ванну', '🛁');
+    addEvent('bathe', isFeral ? 'Купался против воли 😤' : 'Принял ванну', '🛁');
     tickQuest('q_bathe');
     checkAchievement('clean_freak', S.batheCount);
     return finalizePet();
@@ -389,10 +507,25 @@ export class MockApiService implements ApiService {
 
   async healPet() {
     await delay(rand(300, 480));
+    const personality = getPersonality(S.pet.personality);
+    // Параноик: отказывается лечиться при health > 50
+    if (personality.id === 'paranoid' && S.pet.stats.health > 50) {
+      throw new Error('Не верит что болен!');
+    }
     if (S.pet.stats.health >= 90) throw new Error('Питомец уже здоров!');
-    S.pet.stats.health = clamp(S.pet.stats.health + 35);
-    S.pet.stats.happiness = clamp(S.pet.stats.happiness - 5);
-    gainXp(18);
+
+    const ctx = { clientLocalHour: new Date().getHours(), coinBalance: S.coins };
+    const blocked = isActionBlocked('heal', S.pet.emergentState as any);
+    if (blocked) throw new Error(blocked.reason);
+
+    const baseResult = { statDeltas: { health: 35, happiness: -5 }, xp: 18, coins: 0 };
+    const modified = applyActionModifiers(baseResult, 'heal', personality, S.pet.behavioralFlags, S.pet.emergentState as any, S.pet.behavioralCounters, ctx);
+
+    for (const [s, v] of Object.entries(modified.statDeltas)) {
+      (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
+    }
+    gainXp(modified.xp);
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'heal', S.pet.stats as any, ctx);
     S.healCount++;
     addEvent('heal', 'Получил лечение', '💊');
     tickQuest('q_heal');
@@ -403,9 +536,21 @@ export class MockApiService implements ApiService {
   async bondWithPet() {
     await delay(rand(180, 320));
     if (S.pet.isAsleep) throw new Error('Питомец спит!');
-    S.pet.stats.happiness = clamp(S.pet.stats.happiness + 15);
-    S.pet.stats.bond = clamp(S.pet.stats.bond + 20);
-    gainXp(6);
+
+    const personality = getPersonality(S.pet.personality);
+    const ctx = { clientLocalHour: new Date().getHours(), coinBalance: S.coins };
+    const blocked = isActionBlocked('bond', S.pet.emergentState as any);
+    if (blocked) throw new Error(blocked.reason);
+
+    // Для Эмпата bond восстанавливает все статы (+5 каждый)
+    const baseResult = { statDeltas: { happiness: 15, bond: 20 }, xp: 6, coins: 0 };
+    const modified = applyActionModifiers(baseResult, 'bond', personality, S.pet.behavioralFlags, S.pet.emergentState as any, S.pet.behavioralCounters, ctx);
+
+    for (const [s, v] of Object.entries(modified.statDeltas)) {
+      (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
+    }
+    gainXp(modified.xp);
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'bond', S.pet.stats as any, ctx);
     S.bondCount++;
     addEvent('bond', 'Получил объятия', '🤗');
     tickQuest('q_bond3');
@@ -416,24 +561,77 @@ export class MockApiService implements ApiService {
 
   async syncPet() {
     await delay(rand(80, 160));
+    const personality = getPersonality(S.pet.personality);
+    const now = new Date();
+    const lastUpdated = new Date(S.pet.lastUpdated);
+    const elapsedMinutes = Math.max(0, (now.getTime() - lastUpdated.getTime()) / 60000);
+    const ctx = { clientLocalHour: now.getHours(), sessionGapHours: S.pet.behavioralCounters.sessionGapHours, coinBalance: S.coins };
+
     if (!S.pet.isAsleep) {
-      S.pet.stats.hunger = clamp(S.pet.stats.hunger - 3);
-      S.pet.stats.happiness = clamp(S.pet.stats.happiness - 2);
-      S.pet.stats.energy = clamp(S.pet.stats.energy - 1.5);
-      S.pet.stats.health = clamp(S.pet.stats.health - (S.pet.stats.cleanliness < 30 ? 2 : 0));
-      S.pet.stats.cleanliness = clamp(S.pet.stats.cleanliness - 1);
-      S.pet.stats.bond = clamp(S.pet.stats.bond - 0.5);
+      // Decay с модификаторами характера
+      const decayed = applyDecay(S.pet.stats as any, personality, elapsedMinutes, S.pet.behavioralCounters, ctx);
+      // Дополнительный урон здоровью при грязи
+      if (S.pet.stats.cleanliness < 30) {
+        (decayed as any).health = clamp((decayed as any).health - 0.5 * elapsedMinutes);
+      }
+      S.pet.stats = decayed as any;
+
+      // Авто-сон
+      if (personality.autoSleep.enabled && S.pet.stats.energy <= personality.autoSleep.energyThreshold) {
+        if (Math.random() < personality.autoSleep.probability) {
+          S.pet.isAsleep = true;
+          addEvent('sleep', 'Задремал сам', '😴');
+        }
+      }
     } else {
-      S.pet.stats.energy = clamp(S.pet.stats.energy + 5);
-      S.pet.stats.hunger = clamp(S.pet.stats.hunger - 2);
-      S.pet.stats.health = clamp(S.pet.stats.health + 1);
+      // Пока спит: energy восстанавливается (с бонусом Сонливого)
+      const restoreBonus = personality.restoreBonus['sleep']?.energy ?? 0;
+      const energyGain = (5 + restoreBonus) * (elapsedMinutes / 15);
+      S.pet.stats.energy = clamp(S.pet.stats.energy + energyGain);
+      S.pet.stats.hunger = clamp(S.pet.stats.hunger - 0.8 * (elapsedMinutes / 15));
+      S.pet.stats.health = clamp(S.pet.stats.health + 0.5 * (elapsedMinutes / 15));
     }
-    S.pet.ageHours += 0.02;
+
+    // Пассивные эффекты характера (Гурман, Чистюля, Эмпат, натуральная регенерация)
+    const passives = computeNaturalPassives(S.pet.stats as any, personality, S.pet.behavioralCounters);
+    for (const [s, v] of Object.entries(passives)) {
+      (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
+    }
+
+    // Обновить счётчики и снапшот настроения
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'sync', S.pet.stats as any, { clientLocalHour: now.getHours(), coinBalance: S.coins });
+
+    // Bad mood streak
+    const currentMood = calcMoodWithBias(S.pet.stats as any, personality, S.pet.isAsleep);
+    if (currentMood === 'sad') {
+      S.pet.behavioralCounters.consecutiveBadMoodSyncs++;
+    } else {
+      S.pet.behavioralCounters.consecutiveBadMoodSyncs = 0;
+    }
+    // Good sync streak
+    const statsArr = Object.values(S.pet.stats) as number[];
+    const avg = statsArr.reduce((a, b) => a + b, 0) / statsArr.length;
+    if (avg > 70) {
+      S.pet.behavioralCounters.consecutiveGoodSyncs++;
+    } else {
+      S.pet.behavioralCounters.consecutiveGoodSyncs = 0;
+    }
+
+    // Снапшот настроения
+    const snapshot: MoodSnapshot = {
+      timestamp: now.toISOString(),
+      mood: currentMood,
+      avgStats: avg,
+    };
+    S.pet.moodHistory.unshift(snapshot);
+    if (S.pet.moodHistory.length > 168) S.pet.moodHistory.pop();
+
+    S.pet.ageHours += elapsedMinutes / 60;
     if (S.pet.stats.health > 80) {
       S.healthySyncs++;
       checkAchievement('healthy_streak', S.healthySyncs);
     }
-    // Detect stage evolution
+
     const prevStage = S.pet.stage;
     const newStage = calcStage(S.pet.ageHours);
     if (newStage !== prevStage) {
