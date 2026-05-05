@@ -43,6 +43,109 @@ export type PersonalityId =
   | 'greedy'     | 'melancholic'| 'chaotic'  | 'stoic'
   | 'adventurer' | 'paranoid';
 
+// ── Trait Evolution System — пространство черт ─────────────────────────────
+
+export const TRAIT_KEYS = [
+  'vitality',
+  'sociality',
+  'order',
+  'appetite',
+  'caution',
+  'curiosity',
+] as const;
+
+export type TraitKey = typeof TRAIT_KEYS[number];
+
+export type TraitVector = Record<TraitKey, number>;
+
+export type InfluenceCategory =
+  | 'action'
+  | 'item'
+  | 'training'
+  | 'discipline'
+  | 'cosmetic'
+  | 'environment'
+  | 'social'
+  | 'system';
+
+export interface TraitSnapshot {
+  date: string;
+  vector: TraitVector;
+}
+
+export interface CoreMemory {
+  id: string;
+  timestamp: string;
+  tier: 'rare' | 'common';
+  emoji: string;
+  text: string;
+  category: InfluenceCategory;
+  traitKey: TraitKey;
+  direction: 'up' | 'down' | 'origin';
+  personalityHint?: PersonalityId;
+}
+
+export interface EvolutionProposal {
+  targetPersonalityId: PersonalityId;
+  readiness: number;
+  depth: number;
+  proposedAt: string;
+  coreMemoryIds: string[];
+}
+
+export interface EvolutionRecord {
+  fromPersonalityId: PersonalityId;
+  toPersonalityId: PersonalityId;
+  evolvedAt: string;
+  trigger: 'formation' | 'stability' | 'singularity' | 'manual';
+  coreMemoryIds?: string[];
+}
+
+export type InfluenceConditionType =
+  | 'time_of_day'
+  | 'flag_active'
+  | 'personality_is'
+  | 'trait_above'
+  | 'trait_below'
+  | 'streak_days'
+  | 'formation_period';
+
+export interface InfluenceCondition {
+  type: InfluenceConditionType;
+  params: Record<string, number | string | boolean>;
+}
+
+export interface IntensityRule {
+  condition: InfluenceCondition;
+  multiplier: number;
+}
+
+export interface RegisteredInfluence {
+  id: string;
+  category: InfluenceCategory;
+  label: string;
+  traitDeltas: Partial<Record<TraitKey, number>>;
+  traumaDelta?: number;
+  cooldownSyncs?: number;
+  conditions?: InfluenceCondition[];
+  intensityRules?: IntensityRule[];
+  onApply?: 'sleep_start' | 'sleep_wake_natural' | 'sleep_wake_early';
+}
+
+export interface GlobalBalancePatch {
+  influenceId: string;
+  intensityMultiplier: number;
+  reason: 'meta_balance';
+  appliedAt: string;
+}
+
+export interface EvolutionBonus {
+  description: string;
+  xpMultiplierBonus?: number;
+  coinMultiplierBonus?: number;
+  uniqueTrait: string;
+}
+
 // ── Предпочтения в еде ───────────────────────────────────────────────────────
 
 export interface FoodPreferences {
@@ -282,7 +385,9 @@ export type EmergentStateType =
   | 'food_panic'           | 'breakdown'         | 'contamination_crisis'
   | 'trust_collapse'       | 'coin_obsession'    | 'deep_melancholy'
   | 'enlightenment'        | 'wanderlust'        | 'stoic_peak'
-  | 'chaos_surge'          | 'feast_frenzy';
+  | 'chaos_surge'          | 'feast_frenzy'
+  | 'singularity'          | 'identity_crisis'   | 'shadow_form'
+  | 'confused';
 
 export interface BlockedAction {
   actionType:       ActionType;

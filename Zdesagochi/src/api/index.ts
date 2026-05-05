@@ -4,7 +4,11 @@ export type {
   PetEvent, PetStats, PetMood, PetStage, ItemType, ItemRarity,
 } from './types';
 
-export { MockApiService, FOODS, syncPersonalityFromSkin, setPersonalityDirectly } from './mockApi';
+export {
+  MockApiService, FOODS, syncPersonalityFromSkin, setPersonalityDirectly,
+  advanceMockTime, getMockTimeScale, setMockTimeScale,
+  setMockOfflineStorage, clearMockOfflineRuntimeState,
+} from './mockApi';
 export { RealApiService } from './realApi';
 
 import type { ApiService } from './types';

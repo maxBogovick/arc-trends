@@ -82,6 +82,47 @@ export interface Pet {
   emergentStateEnteredAt?: string;
   behavioralCounters: import('../personality/types').BehavioralCounters;
   moodHistory: import('../personality/types').MoodSnapshot[];
+
+  // ── Trait Evolution System v5.0 (§13 field checklist) ───────────
+  // Trait space: traitVector, dailyTraitBudget
+  traitVector: import('../personality/types').TraitVector;
+  dailyTraitBudget: Partial<Record<import('../personality/types').TraitKey, number>>;
+  // O(1) evolution counters: currentTargetZone, ticksInTargetZone, voidSyncs
+  currentTargetZone: import('../personality/types').PersonalityId | null;
+  ticksInTargetZone: number;
+  voidSyncs: number;
+  // UI snapshots: dailyTraitSnapshots
+  dailyTraitSnapshots: import('../personality/types').TraitSnapshot[];
+  // Core Memories: coreMemories, lastMemoryTimestamp, visitedZones
+  coreMemories: import('../personality/types').CoreMemory[];
+  lastMemoryTimestamp: Partial<Record<`${import('../personality/types').TraitKey}_${'up' | 'down'}`, string>>;
+  visitedZones: import('../personality/types').PersonalityId[];
+  // Evolution: evolutionProposal, evolutionHistory
+  evolutionProposal?: import('../personality/types').EvolutionProposal;
+  evolutionHistory: import('../personality/types').EvolutionRecord[];
+  // Formation: formationComplete, formationProgress
+  formationComplete: boolean;
+  formationProgress: number;
+  // Trauma / Catharsis
+  traumaLevel: number;
+  catharsisProgress: number;
+  catharsisAchieved: boolean;
+  traumaCooldownUntil: string | null;
+  // Cognitive dissonance / sleep lifecycle
+  dailyVectorVariance: number;
+  confusedState: boolean;
+  sleepStartedAt: string | null;
+  lastSleepTimestamp: string | null;
+  // Singularity
+  ticksInSingularity: number;
+  singularityZones: import('../personality/types').PersonalityId[];
+}
+
+export interface Account {
+  legacyVector?: import('../personality/types').TraitVector;
+  legacyCoefficient?: number;
+  legacyGeneration?: number;
+  legacyDescription?: string;
 }
 
 export interface PetEvent {

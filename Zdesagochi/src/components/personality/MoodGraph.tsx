@@ -24,7 +24,45 @@ const MOOD_LABEL: Record<string, string> = {
 
 export function MoodGraph() {
   const pet = usePetStore(s => s.pet);
-  if (!pet || !pet.moodHistory || pet.moodHistory.length < 2) {
+  const history = useMemo(() => [...(pet?.moodHistory ?? [])].reverse(), [pet?.moodHistory]);
+  const recent = useMemo(() => history.slice(-48), [history]);
+
+  const dayLabels = useMemo(() => {
+    const seen = new Set<string>();
+    return recent.map((s, i) => {
+      const day = s.timestamp.slice(5, 10); // MM-DD
+      if (!seen.has(day)) { seen.add(day); return { i, label: day.replace('-', '/') }; }
+      return null;
+    }).filter((d): d is { i: number; label: string } => d !== null);
+  }, [recent]);
+
+  const hasEnoughData = recent.length >= 2;
+
+  const W = 280;
+  const H = 64;
+  const pad = 4;
+  const innerW = W - pad * 2;
+  const innerH = H - pad * 2;
+
+  // Нормализация avgStats 0–100 → 0–innerH
+  const points = hasEnoughData ? recent.map((s, i) => {
+    const x = pad + (i / (recent.length - 1)) * innerW;
+    const y = pad + innerH - (s.avgStats / 100) * innerH;
+    return { x, y, mood: s.mood, avg: s.avgStats };
+  }) : [];
+
+  const pathD = points.reduce((d, p, i) =>
+    i === 0 ? `M ${p.x} ${p.y}` : `${d} L ${p.x} ${p.y}`, '');
+
+  const fillD = points.length >= 2
+    ? `${pathD} L ${points[points.length - 1].x} ${H} L ${points[0].x} ${H} Z`
+    : '';
+
+  // Текущее настроение
+  const current = pet?.moodHistory?.[0];
+  const currentColor = MOOD_COLOR[current?.mood ?? 'content'] ?? '#60A5FA';
+
+  if (!pet || !hasEnoughData) {
     return (
       <div className="rounded-3xl p-5 glass">
         <h3 className="font-bold text-lumio-text text-sm mb-3">📈 История настроения</h3>
@@ -34,41 +72,6 @@ export function MoodGraph() {
       </div>
     );
   }
-
-  const history = [...pet.moodHistory].reverse(); // хронологически
-  const recent = history.slice(-48); // последние 48 точек (~2 дня)
-
-  const W = 280;
-  const H = 64;
-  const pad = 4;
-  const innerW = W - pad * 2;
-  const innerH = H - pad * 2;
-
-  // Нормализация avgStats 0–100 → 0–innerH
-  const points = recent.map((s, i) => {
-    const x = pad + (i / (recent.length - 1)) * innerW;
-    const y = pad + innerH - (s.avgStats / 100) * innerH;
-    return { x, y, mood: s.mood, avg: s.avgStats };
-  });
-
-  const pathD = points.reduce((d, p, i) =>
-    i === 0 ? `M ${p.x} ${p.y}` : `${d} L ${p.x} ${p.y}`, '');
-
-  const fillD = `${pathD} L ${points[points.length - 1].x} ${H} L ${points[0].x} ${H} Z`;
-
-  // Текущее настроение
-  const current = pet.moodHistory[0];
-  const currentColor = MOOD_COLOR[current?.mood ?? 'content'] ?? '#60A5FA';
-
-  // Группировка по дням для оси X
-  const dayLabels = useMemo(() => {
-    const seen = new Set<string>();
-    return recent.map((s, i) => {
-      const day = s.timestamp.slice(5, 10); // MM-DD
-      if (!seen.has(day)) { seen.add(day); return { i, label: day.replace('-', '/') }; }
-      return null;
-    }).filter(Boolean);
-  }, [recent]);
 
   return (
     <div className="rounded-3xl p-5 glass space-y-3">
@@ -99,20 +102,22 @@ export function MoodGraph() {
               <stop offset="100%" stopColor={currentColor} stopOpacity="0.02" />
             </linearGradient>
           </defs>
-          <path d={fillD} fill="url(#moodFill)" />
+          {fillD && <path d={fillD} fill="url(#moodFill)" />}
 
           {/* Линия */}
-          <motion.path
-            d={pathD}
-            fill="none"
-            stroke={currentColor}
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 1.2, ease: 'easeOut' }}
-          />
+          {pathD && (
+            <motion.path
+              d={pathD}
+              fill="none"
+              stroke={currentColor}
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 1.2, ease: 'easeOut' }}
+            />
+          )}
 
           {/* Цветные точки по mood */}
           {points.filter((_, i) => i % 6 === 0).map((p, i) => (

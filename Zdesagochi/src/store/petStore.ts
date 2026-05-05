@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   createApiService, MockApiService, syncPersonalityFromSkin, setPersonalityDirectly,
+  advanceMockTime, getMockTimeScale, setMockTimeScale,
   type ApiMode, type Pet, type FoodItem, type ShopItem, type InventoryItem,
   type Achievement, type DailyQuest, type Room, type LeaderboardEntry, type PetEvent,
 } from '../api';
@@ -46,6 +47,7 @@ interface PetStore {
   apiMode: ApiMode;
   apiBaseUrl: string;
   notifications: Notification[];
+  debugTimeScale: number;
   ownedSkins: string[];
   equippedSkinId: string;
   equippedBodyId: BodyShapeId;
@@ -112,6 +114,8 @@ interface PetStore {
   wakePet(): Promise<void>;
   bathePet(): Promise<void>;
   healPet(): Promise<void>;
+  bondWithPet(): Promise<void>;
+  syncPet(): Promise<void>;
   updatePetName(name: string): Promise<void>;
   savePetAppearance(): Promise<void>;
   exportAppearanceCode(): string;
@@ -140,6 +144,8 @@ interface PetStore {
   notify(message: string, type: Notification['type']): void;
   dismissNotification(id: number): void;
   refreshProgress(): void;
+  setDebugTimeScale(scale: number): void;
+  advanceDebugTime(hours: number): Promise<void>;
 
   unclaimedAchievements(): number;
   completedUnclaimedQuests(): number;
@@ -162,7 +168,7 @@ export const usePetStore = create<PetStore>((set, get) => {
     foods: [], shopItems: [], inventory: [], achievements: [], quests: [],
     rooms: [], leaderboard: [], events: [],
     apiMode: 'mock', apiBaseUrl: 'http://localhost:3000',
-    notifications: [],
+    notifications: [], debugTimeScale: getMockTimeScale(),
     ownedSkins: SKINS.filter(s => s.price === 0).map(s => s.id),
     equippedSkinId: 'default',
     equippedBodyId: 'blob',
@@ -313,6 +319,26 @@ export const usePetStore = create<PetStore>((set, get) => {
       get().loadCoins();
     },
     setApiBaseUrl(url) { set({ apiBaseUrl: url }); },
+
+    setDebugTimeScale(scale) {
+      const next = setMockTimeScale(scale);
+      set({ debugTimeScale: next });
+      get().notify(`⏱ Время ×${next}`, 'info');
+    },
+
+    async advanceDebugTime(hours) {
+      if (get().apiMode !== 'mock') {
+        get().notify('Ускорение времени доступно только в Mock-режиме', 'error');
+        return;
+      }
+      advanceMockTime(hours);
+      try {
+        set({ pet: await api().syncPet() });
+        get().notify(`⏩ +${hours}ч`, 'info');
+      } catch (e) {
+        get().notify((e as Error).message, 'error');
+      }
+    },
 
     // ── Pet ────────────────────────────────────────────────────────────────
 

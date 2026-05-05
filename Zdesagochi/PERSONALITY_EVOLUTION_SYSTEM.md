@@ -1044,6 +1044,21 @@ legacyDescription?:    string;
 - [ ] `createInitialTraitVector()` с Dynasty Legacy
 - [ ] UX-индикатор прогресса
 
+### Phase A.1 — Offline-first Core Contract
+- [x] `PetCommand` — структурные команды с идемпотентным `commandId`
+- [x] `DomainEvent` — машинно-читаемые события для replay/sync
+- [x] `OfflinePetSave` — snapshot + append-only command log + sync cursor
+- [x] Serializable `influenceCooldowns` для replay-friendly cooldown state
+- [x] `PERSONALITY_ENGINE_VERSION` и `STATIC_REGISTRY_VERSION`
+- [x] Pure helpers для append/deduplicate/getUnsynced/markSynced
+- [x] Personality-side command handler для trait/sleep/sync эффектов
+- [x] Replay helper для последовательного применения command log
+- [x] Persist adapter contract для offline-сохранения
+- [x] Mock runtime сохраняет/восстанавливает offline snapshot + command log
+- [ ] Full command handler для gameplay stats/economy/inventory/rewards
+- [ ] Полное подключение persist adapter к браузерному store/runtime
+- [ ] Backend replay/validation adapter
+
 ### Phase A — Фундамент
 - [ ] `evolutionTypes.ts`
 - [ ] `personalityTraitMap.ts`
@@ -1098,6 +1113,74 @@ legacyDescription?:    string;
 - [ ] Наказание → `discipline:*`
 - [ ] Одежда → `cosmetic:*`
 - [ ] Мультиплеер → реальные питомцы вместо NPC
+
+---
+
+## 15. Offline-first execution model
+
+Архитектурное решение зафиксировано в `docs/adr/0001-offline-first-personality-engine.md`.
+
+### Решение
+
+Система эволюции характера реализуется как **offline-first shared TypeScript engine**.
+
+Это означает:
+
+- питомец должен продолжать развиваться, получать Core Memories, менять настроение, проходить sleep lifecycle и реагировать на действия без интернета;
+- доменная математика должна жить в чистом TypeScript-ядре, независимом от React, Zustand, `localStorage`, `fetch` и UI;
+- frontend может применять движок локально в offline mode;
+- будущий backend должен использовать тот же движок или совместимый пакет для replay/validation/sync;
+- frontend-only не является финальной моделью авторитета для экономики, рейтингов, LiveOps, мультиплеера и account-wide legacy.
+
+### Граница ответственности
+
+Core engine:
+
+- принимает `PetState`, command, clock/context, influence registry и balance patches;
+- возвращает новый state и domain events;
+- не читает сеть, браузерное хранилище или React state напрямую.
+
+Frontend/offline adapter:
+
+- хранит latest snapshot;
+- ведёт append-only command log;
+- применяет core engine локально;
+- показывает state в UI;
+- отправляет unsynced commands при возвращении сети.
+
+Backend/future adapter:
+
+- валидирует или переигрывает command log;
+- возвращает canonical state;
+- жёстко контролирует economy, leaderboard, social/multiplayer и LiveOps;
+- мягко принимает personal progression, если нет явной порчи или abuse.
+
+### Offline storage contract
+
+Минимально хранить:
+
+```typescript
+interface OfflinePetSave {
+  petSnapshot: Pet;
+  commandLog: PetCommand[];
+  lastSyncedCommandId: string | null;
+  engineVersion: string;
+  registryVersion: string;
+  savedAt: string;
+}
+```
+
+Команды должны быть идемпотентными и иметь стабильный `commandId`.
+
+### Time policy
+
+Offline simulation использует client time, чтобы питомец оставался живым без сети. При последующей синхронизации backend может ограничивать rewards и competitive effects при аномальных скачках времени, но не должен ломать базовый personal progress без серьёзной причины.
+
+### Registry policy
+
+Core получает registry как аргумент. Загрузка `/api/influence-registry`, кеширование remote registry и выбор fallback-версии — инфраструктурная ответственность, не часть чистого движка.
+
+Если игрок offline, используется последний валидный кеш. Если кеша нет, статический registry достаточен для обычного ухода.
 
 ---
 

@@ -8,6 +8,7 @@ import { QuickQuests } from './QuickQuests';
 import { EmergentStateBanner } from '../personality/EmergentStateBanner';
 import { MoodGraph } from '../personality/MoodGraph';
 import { PersonalityCard } from '../personality/PersonalityCard';
+import { EvolutionInspector } from '../personality/EvolutionInspector';
 
 export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
   const { pet, isLoading } = usePetStore();
@@ -48,10 +49,10 @@ export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
       {/* Right column */}
       <div className="space-y-4">
         <PersonalityCard />
+        <EvolutionInspector />
         <MoodGraph />
         <QuickQuests />
       </div>
     </div>
   );
 }
-

@@ -535,7 +535,7 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
         key={`${slot}-${id}`}
         drag={isEditor} dragMomentum={false}
         onDragStart={() => recordHistory()}
-        onDragEnd={(e, info) => setAccessoryConfig(slot, { ...config, x: config.x + info.offset.x, y: config.y + info.offset.y })}
+        onDragEnd={(_, info) => setAccessoryConfig(slot, { ...config, x: config.x + info.offset.x, y: config.y + info.offset.y })}
         initial={{ x: config.x, y: config.y, rotate: config.rotation }}
         animate={{ x: config.x, y: config.y, rotate: config.rotation }}
         whileDrag={{ scale: 1.1, cursor: 'grabbing' }}
@@ -556,10 +556,6 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   };
   const shape = getBodyShape(equippedBodyId);
   const aura  = getAura(equippedAuraId);
-
-  const headAcc = getAccessory(equippedAccessories.head);
-  const faceAcc = getAccessory(equippedAccessories.face);
-  const backAcc = getAccessory(equippedAccessories.back);
 
   const glitch = useGlitch(skin.animStyle === 'glitch');
   const [hue, setHue] = useState(0);
