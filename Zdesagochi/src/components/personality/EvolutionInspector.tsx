@@ -26,11 +26,14 @@ function fmt(value: number | undefined): string {
 
 export function EvolutionInspector() {
   const pet = usePetStore(s => s.pet);
+  const account = usePetStore(s => s.account);
   const apiMode = usePetStore(s => s.apiMode);
+  const actionLoading = usePetStore(s => s.actionLoading);
   const debugTimeScale = usePetStore(s => s.debugTimeScale);
   const setDebugTimeScale = usePetStore(s => s.setDebugTimeScale);
   const advanceDebugTime = usePetStore(s => s.advanceDebugTime);
   const syncPet = usePetStore(s => s.syncPet);
+  const beginNewLife = usePetStore(s => s.beginNewLife);
   if (!pet) return null;
 
   const traitVector = pet.traitVector ?? {};
@@ -42,6 +45,12 @@ export function EvolutionInspector() {
   const formationProgress = pet.formationProgress ?? 0;
   const formationPct = pet.formationComplete ? 100 : pct(formationProgress, FORMATION_THRESHOLD);
   const variance = pet.dailyVectorVariance ?? 0;
+  const legacyVector = account.legacyVector;
+  const strongestLegacy = legacyVector
+    ? TRAIT_KEYS.reduce((best, key) => legacyVector[key] > legacyVector[best] ? key : best, TRAIT_KEYS[0])
+    : null;
+  const canBeginNewLife = apiMode === 'mock' && (pet.stage === 'adult' || pet.stage === 'elder' || IS_DEV);
+  const guardian = account.memoryGuardian;
 
   return (
     <div className="rounded-3xl p-4 glass space-y-4">
@@ -125,6 +134,44 @@ export function EvolutionInspector() {
             <span className="text-gray-400">{pet.ticksInTargetZone ?? 0}/{STABILITY_SYNCS}</span>
           </div>
         )}
+      </div>
+
+      <div className="rounded-2xl px-3 py-3 space-y-2 bg-white/60 border border-white/70">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Память пути</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              {account.legacyDescription ?? 'Хранитель памяти ещё не появился'}
+            </p>
+          </div>
+          <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">
+            жизнь {account.legacyGeneration ?? 0}
+          </span>
+        </div>
+
+        {guardian && (
+          <div className="rounded-xl px-3 py-2 bg-emerald-50/70 border border-emerald-100">
+            <p className="text-[11px] font-semibold text-emerald-700">Хранитель: {guardian.name}</p>
+            {guardian.guidance.slice(0, 2).map((hint, index) => (
+              <p key={index} className="text-[11px] text-emerald-700/80 mt-1 leading-snug">{hint}</p>
+            ))}
+          </div>
+        )}
+
+        {strongestLegacy && (
+          <p className="text-[11px] text-gray-500">
+            След: {TRAIT_LABELS[strongestLegacy].label} · коэффициент {Math.round((account.legacyCoefficient ?? 0.15) * 100)}%
+          </p>
+        )}
+
+        <button
+          type="button"
+          disabled={!canBeginNewLife || actionLoading === 'new_life'}
+          onClick={() => beginNewLife()}
+          className="w-full rounded-xl py-2 text-[11px] font-semibold bg-emerald-600 text-white disabled:opacity-40"
+        >
+          {actionLoading === 'new_life' ? 'Сохраняем память...' : 'Новое тело'}
+        </button>
       </div>
 
       <div className="space-y-2">

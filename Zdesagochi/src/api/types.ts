@@ -20,6 +20,7 @@
  *  POST   /api/pet/heal             → Pet
  *  POST   /api/pet/bond             → Pet
  *  POST   /api/pet/sync             → Pet
+ *  POST   /api/pet/new-life        → NewLifeResult
  *  PATCH  /api/pet/name             → Pet         body: { name }
  *  GET    /api/pet/events           → PetEvent[]
  *  ─── Экономика ──────────────────────────────────────────────
@@ -123,6 +124,26 @@ export interface Account {
   legacyCoefficient?: number;
   legacyGeneration?: number;
   legacyDescription?: string;
+  memoryGuardian?: MemoryGuardian;
+}
+
+export interface MemoryGuardian {
+  name: string;
+  personalityId: import('../personality/types').PersonalityId;
+  archivedMemories: Array<{
+    emoji: string;
+    text: string;
+    tier: 'rare' | 'common';
+    traitKey: import('../personality/types').TraitKey;
+    personalityHint?: import('../personality/types').PersonalityId;
+  }>;
+  guidance: string[];
+  updatedAt: string;
+}
+
+export interface NewLifeResult {
+  pet: Pet;
+  account: Account;
 }
 
 export interface PetEvent {
@@ -278,6 +299,7 @@ export interface ApiService {
   healPet(): Promise<Pet>;
   bondWithPet(): Promise<Pet>;
   syncPet(): Promise<Pet>;
+  beginNewLife(): Promise<NewLifeResult>;
   updatePetName(name: string): Promise<Pet>;
   getPetEvents(): Promise<PetEvent[]>;
 

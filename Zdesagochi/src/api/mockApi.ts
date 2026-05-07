@@ -5,9 +5,9 @@
  */
 
 import type {
-  ApiService, Pet, FoodItem, PlayResult, ShopItem, InventoryItem, BuyResult,
+  Account, ApiService, Pet, FoodItem, PlayResult, ShopItem, InventoryItem, BuyResult,
   Achievement, ClaimResult, DailyQuest, QuestClaimResult, Room, LeaderboardEntry,
-  PetEvent, PetMood, PetStage,
+  PetEvent, PetMood, PetStage, NewLifeResult,
 } from './types';
 import type {
   StatKey, BehavioralFlag, BehavioralCounters, MoodSnapshot,
@@ -24,13 +24,16 @@ import {
   applyRegression,
   canApplyInfluenceAtSync,
   applyInfluence,
+  addCatharsisProgress,
   checkEvolution,
   checkVarianceHardReset,
   checkThresholdCrossings,
   checkWeeklyDrift,
+  recordLegacy,
   onStartSleep,
   onWakeFromSleep,
   recordDailyTraitSnapshot,
+  createInitialTraitVector,
 } from '../personality/TraitEvolutionEngine';
 import {
   getInfluenceRegistry,
@@ -309,22 +312,31 @@ function calcStage(ageHours: number): PetStage {
   return 'elder';
 }
 
-const S = {
-  pet: {
-    id: 'lumio-001', name: 'Люмио', stage: 'baby' as PetStage, mood: 'happy' as PetMood,
+function createInitialMockPet(account: Account = {}): Pet {
+  const now = mockNow();
+  const generation = account.legacyGeneration ?? 0;
+  return {
+    id: `lumio-${String(generation + 1).padStart(3, '0')}`,
+    name: generation > 0 ? `Люмио ${generation + 1}` : 'Люмио',
+    stage: 'baby' as PetStage,
+    mood: 'happy' as PetMood,
     stats: { hunger: 75, happiness: 80, energy: 70, health: 90, cleanliness: 85, bond: 60 },
-    ageHours: 3, level: 1, xp: 0, xpToNext: 150, isAsleep: false,
-    color: '#818CF8', equippedRoomId: 'default',
-    createdAt: new Date(mockNow().getTime() - 3 * 3600_000).toISOString(),
-    lastUpdated: mockNow().toISOString(),
-    // Personality system
+    ageHours: 3,
+    level: 1,
+    xp: 0,
+    xpToNext: 150,
+    isAsleep: false,
+    color: '#818CF8',
+    equippedRoomId: 'default',
+    createdAt: new Date(now.getTime() - 3 * 3600_000).toISOString(),
+    lastUpdated: now.toISOString(),
     personality: 'playful',
     behavioralFlags: [] as BehavioralFlag[],
-    emergentState: null as null | string,
-    emergentStateEnteredAt: undefined as string | undefined,
+    emergentState: null,
+    emergentStateEnteredAt: undefined,
     behavioralCounters: createDefaultCounters() as BehavioralCounters,
     moodHistory: [] as MoodSnapshot[],
-    traitVector: { ...NEUTRAL_TRAIT_VECTOR },
+    traitVector: createInitialTraitVector(account.legacyVector, account.legacyCoefficient),
     dailyTraitBudget: {},
     currentTargetZone: null,
     ticksInTargetZone: 0,
@@ -347,7 +359,12 @@ const S = {
     lastSleepTimestamp: null,
     ticksInSingularity: 0,
     singularityZones: [],
-  } as Pet,
+  };
+}
+
+const S = {
+  account: {} as Account,
+  pet: createInitialMockPet(),
   coins: 200,
   inventory: new Map<string, number>(),
   achievements: makeAchievements(),
@@ -550,15 +567,16 @@ function finalizePet(): Pet {
 
   // Обновить emergentState
   if (!isTraitEvolutionManagedState(S.pet.emergentState)) {
-    const newState = computeEmergentState(
+    const computedState = computeEmergentState(
       S.pet.stats as any,
       personality,
       S.pet.behavioralFlags,
       S.pet.behavioralCounters,
       { clientLocalHour: now.getHours(), sessionGapHours: S.pet.behavioralCounters.sessionGapHours, coinBalance: S.coins },
-      S.pet.emergentState as any,
+      S.pet.emergentState === 'confused' && !S.pet.confusedState ? null : S.pet.emergentState as any,
       S.pet.emergentStateEnteredAt,
     );
+    const newState = computedState ?? (S.pet.confusedState ? 'confused' : null);
     if (newState !== S.pet.emergentState) {
       S.pet.emergentState = newState;
       S.pet.emergentStateEnteredAt = newState ? now.toISOString() : undefined;
@@ -588,6 +606,18 @@ export function setPersonalityDirectly(personalityId: string) {
   S.pet.behavioralCounters = createDefaultCounters();
   S.pet.emergentState = null;
   S.pet.emergentStateEnteredAt = undefined;
+}
+
+export function getMockAccount(): Account {
+  ensureOfflineHydrated();
+  return { ...S.account };
+}
+
+export function completeMockPetLifecycle(): Account {
+  ensureOfflineHydrated();
+  recordLegacy(S.account, S.pet, { now: mockNow() });
+  persistOfflineState();
+  return { ...S.account };
 }
 
 // ─── Класс MockApiService ─────────────────────────────────────────────────────
@@ -787,6 +817,7 @@ export class MockApiService implements ApiService {
     gainXp(modified.xp);
     S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'heal', S.pet.stats as any, ctx);
     await applyPetInfluence('action:heal');
+    addCatharsisProgress(S.pet, 20, { now: mockNow(), memoryTextGenerator });
     S.healCount++;
     addEvent('heal', 'Получил лечение', '💊');
     tickQuest('q_heal');
@@ -814,6 +845,7 @@ export class MockApiService implements ApiService {
     gainXp(modified.xp);
     S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'bond', S.pet.stats as any, ctx);
     await applyPetInfluence('action:bond');
+    addCatharsisProgress(S.pet, 25, { now: mockNow(), memoryTextGenerator });
     S.bondCount++;
     addEvent('bond', 'Получил объятия', '🤗');
     tickQuest('q_bond3');
@@ -924,6 +956,19 @@ export class MockApiService implements ApiService {
     }
     recordOfflineCommand({ type: 'sync', at: now.toISOString() });
     return finalizePet();
+  }
+
+  async beginNewLife(): Promise<NewLifeResult> {
+    await delay(rand(250, 420));
+    const previousName = S.pet.name;
+    recordLegacy(S.account, S.pet, { now: mockNow() });
+    S.pet = createInitialMockPet(S.account);
+    traitSyncCounter = 0;
+    influenceCooldowns.clear();
+    addEvent('evolve', `${previousName} сохранил память пути и обрёл новое тело.`, '🌱');
+    recordOfflineCommand({ type: 'sync', at: currentMockIso() });
+    persistOfflineState();
+    return { pet: finalizePet(), account: { ...S.account } };
   }
 
   async updatePetName(name: string) {

@@ -3,7 +3,7 @@ import { PetMood } from '../../api';
 export type CategoryId = 'body' | 'morph' | 'color' | 'skin' | 'aura' | 'accessories' | 'bg' | 'presets';
 
 export const CATEGORIES: { id: CategoryId; emoji: string; label: string }[] = [
-  { id: 'body',        emoji: '🧬', label: 'Форма' },
+  { id: 'body',        emoji: '🧩', label: 'Конструктор' },
   { id: 'morph',       emoji: '📐', label: 'Морфинг' },
   { id: 'color',       emoji: '🎨', label: 'Цвет' },
   { id: 'skin',        emoji: '✨', label: 'Скин' },

@@ -3,11 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePetStore } from '../store/petStore';
 
 // Data & Types
-import { BODY_SHAPES } from '../data/bodyShapes';
 import { SKINS } from '../data/skins';
 import { PALETTES } from '../data/palettes';
 import { getAccessoriesBySlot } from '../data/accessories';
-import type { BodyShapeId } from '../data/bodyShapes';
+import { HEADS, EARS_OPTIONS, BODY_PARTS, LIMBS_OPTIONS, TAILS_OPTIONS } from '../data/petParts';
+import type { HeadId, EarsId, BodyPartId, LimbsId, TailId } from '../data/petParts';
 import type { PetMood } from '../api';
 
 // Editor Components
@@ -16,7 +16,7 @@ import type { CategoryId } from '../components/PetEditor/constants';
 import { EditorPreview } from '../components/PetEditor/EditorPreview';
 
 // Panels
-import { BodyPanel } from '../components/PetEditor/panels/BodyPanel';
+import { PartsPanel } from '../components/PetEditor/panels/PartsPanel';
 import { MorphPanel } from '../components/PetEditor/panels/MorphPanel';
 import { ColorPanel } from '../components/PetEditor/panels/ColorPanel';
 import { SkinPanel } from '../components/PetEditor/panels/SkinPanel';
@@ -29,6 +29,7 @@ export function PetEditorPage() {
   const {
     setActiveTab, equipBody, equipSkin, equipAura, equipBg, setPetColorOverride,
     setPetMorph, setAccessory, setAccessoryConfig,
+    equipHead, equipEars, equipBodyPart, equipLimbs, equipTail,
     ownedSkins, ownedAuras, ownedBgs, coins, pet, savePetAppearance
   } = usePetStore();
 
@@ -77,10 +78,14 @@ export function PetEditorPage() {
   }, []);
 
   const randomize = useCallback(() => {
-    const shapes = BODY_SHAPES.map(s => s.id);
     const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
-    equipBody(pick(shapes) as BodyShapeId);
+    // Randomize modular parts
+    equipHead(pick(HEADS).id as HeadId);
+    equipEars(pick(EARS_OPTIONS).id as EarsId);
+    equipBodyPart(pick(BODY_PARTS).id as BodyPartId);
+    equipLimbs(pick(LIMBS_OPTIONS).id as LimbsId);
+    equipTail(pick(TAILS_OPTIONS).id as TailId);
 
     const availSkins = SKINS.filter(s => ownedSkins.includes(s.id));
     if (availSkins.length) equipSkin(pick(availSkins).id);
@@ -95,20 +100,25 @@ export function PetEditorPage() {
     setPetColorOverride(pal);
     setPetMorph({ scale: 0.8 + Math.random() * 0.6, width: 0.8 + Math.random() * 0.6, height: 0.8 + Math.random() * 0.6 });
 
-    const heads = getAccessoriesBySlot('head');
-    const faces = getAccessoriesBySlot('face');
-    const backs = getAccessoriesBySlot('back');
-    setAccessory('head', pick(heads).id);
-    setAccessory('face', pick(faces).id);
-    setAccessory('back', pick(backs).id);
+    const accHeads = getAccessoriesBySlot('head');
+    const accFaces = getAccessoriesBySlot('face');
+    const accBacks = getAccessoriesBySlot('back');
+    setAccessory('head', pick(accHeads).id);
+    setAccessory('face', pick(accFaces).id);
+    setAccessory('back', pick(accBacks).id);
     setAccessoryConfig('head', { scale: 1, x: 0, y: 0, rotation: 0, behind: false });
     setAccessoryConfig('face', { scale: 1, x: 0, y: 0, rotation: 0, behind: false });
     setAccessoryConfig('back', { scale: 1, x: 0, y: 0, rotation: 0, behind: true });
-  }, [ownedSkins, ownedAuras, ownedBgs, equipBody, equipSkin, equipAura, equipBg, setPetColorOverride, setPetMorph, setAccessory, setAccessoryConfig]);
+  }, [ownedSkins, ownedAuras, ownedBgs, equipHead, equipEars, equipBodyPart, equipLimbs, equipTail, equipSkin, equipAura, equipBg, setPetColorOverride, setPetMorph, setAccessory, setAccessoryConfig]);
 
   const resetAll = useCallback(() => {
     usePetStore.getState().recordHistory();
     equipBody('blob');
+    equipHead('round');
+    equipEars('none');
+    equipBodyPart('chubby');
+    equipLimbs('none');
+    equipTail('none');
     setPetColorOverride(null);
     setPetMorph({ scale: 1, width: 1, height: 1 });
     equipSkin('default');
@@ -120,10 +130,10 @@ export function PetEditorPage() {
     setAccessoryConfig('head', { scale: 1, x: 0, y: 0, rotation: 0, behind: false });
     setAccessoryConfig('face', { scale: 1, x: 0, y: 0, rotation: 0, behind: false });
     setAccessoryConfig('back', { scale: 1, x: 0, y: 0, rotation: 0, behind: true });
-  }, [equipBody, setPetColorOverride, setPetMorph, equipSkin, equipAura, equipBg, setAccessory, setAccessoryConfig]);
+  }, [equipBody, equipHead, equipEars, equipBodyPart, equipLimbs, equipTail, setPetColorOverride, setPetMorph, equipSkin, equipAura, equipBg, setAccessory, setAccessoryConfig]);
 
   const PANEL_MAP: Record<CategoryId, React.ReactNode> = {
-    body:        <BodyPanel />,
+    body:        <PartsPanel />,
     morph:       <MorphPanel />,
     color:       <ColorPanel />,
     skin:        <SkinPanel />,

@@ -1,8 +1,8 @@
-import type { Pet } from '../api/types';
+import type { Account, Pet } from '../api/types';
 import { getIntensityMultiplier } from './influenceRegistry';
 import { TemplateGenerator, type MemoryTextGenerator } from './memoryTextGenerator';
 import { PERSONALITIES } from './personalities';
-import { PERSONALITY_TRAIT_MAP } from './personalityTraitMap';
+import { EVOLUTION_LEGACY, PERSONALITY_TRAIT_MAP } from './personalityTraitMap';
 import type {
   CoreMemory,
   InfluenceCategory,
@@ -35,6 +35,12 @@ export const MEMORY_COOLDOWN_MS = 72 * 60 * 60 * 1000;
 export const CONFUSED_VARIANCE_THRESHOLD = 25;
 export const MINIMUM_RESET_SLEEP_HOURS = 4;
 export const VARIANCE_HARD_RESET_HOURS = 48;
+export const SINGULARITY_EPSILON = 0.15;
+export const SINGULARITY_THRESHOLD_SYNCS = 48;
+export const SHADOW_FORM_TRAUMA_THRESHOLD = 75;
+export const SHADOW_FORM_COOLDOWN_DAYS = 14;
+export const CATHARSIS_THRESHOLD = 100;
+export const LEGACY_BLEND_RATIO = 0.70;
 
 export const FORMATION_WEIGHTS: Record<InfluenceCategory, number> = {
   action: 1.0,
@@ -62,6 +68,7 @@ export interface TraitEvolutionContext {
   getIntensityMultiplier?: (influenceId: string) => number;
   memoryTextGenerator?: MemoryTextGenerator;
   dominantInfluences?: string[];
+  random?: () => number;
 }
 
 export interface ApplyInfluenceResult {
@@ -146,6 +153,7 @@ export function applyInfluence(
 
   if (influence.traumaDelta !== undefined) {
     pet.traumaLevel = clamp(pet.traumaLevel + influence.traumaDelta, 0, 100);
+    checkShadowForm(pet, ctx);
   }
 
   updateFormationProgress(pet, influence, budgetedDelta, ctx);
@@ -220,6 +228,9 @@ export function completeFormation(pet: Pet, ctx: TraitEvolutionContext = {}): vo
 }
 
 export function checkEvolution(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+  if (checkSingularity(pet, ctx)) return;
+  if (checkShadowForm(pet, ctx)) return;
+
   const currentPersonalityId = pet.personality as PersonalityId;
   const currentHome = PERSONALITY_TRAIT_MAP[currentPersonalityId];
   if (!currentHome) return;
@@ -264,6 +275,223 @@ export function checkEvolution(pet: Pet, ctx: TraitEvolutionContext = {}): void 
     proposedAt: getNow(ctx).toISOString(),
     coreMemoryIds: selectRelevantMemories(pet, best.id),
   };
+}
+
+export interface SingularityState {
+  zones: PersonalityId[];
+}
+
+export function detectSingularity(pet: Pet): SingularityState | null {
+  const inside = PERSONALITIES
+    .map(p => ({ id: p.id, depth: depthOfImmersion(pet.traitVector, p.id, pet.ageHours) }))
+    .filter(x => x.depth > 0)
+    .sort((a, b) => b.depth - a.depth);
+
+  if (inside.length < 3) return null;
+  if (inside[0].depth - inside[2].depth >= SINGULARITY_EPSILON) return null;
+
+  return { zones: inside.slice(0, 3).map(x => x.id) };
+}
+
+export function checkSingularity(pet: Pet, ctx: TraitEvolutionContext = {}): boolean {
+  const state = detectSingularity(pet);
+
+  if (!state) {
+    if ((pet.ticksInSingularity ?? 0) > 0) collapseSingularity(pet, ctx);
+    pet.ticksInSingularity = 0;
+    pet.singularityZones = [];
+    return false;
+  }
+
+  pet.singularityZones = state.zones;
+  pet.ticksInSingularity = (pet.ticksInSingularity ?? 0) + 1;
+  pet.currentTargetZone = null;
+  pet.ticksInTargetZone = 0;
+  pet.evolutionProposal = undefined;
+  pet.voidSyncs = 0;
+
+  if (pet.ticksInSingularity >= SINGULARITY_THRESHOLD_SYNCS && pet.emergentState !== 'singularity') {
+    pet.emergentState = 'singularity';
+    pet.emergentStateEnteredAt = getNow(ctx).toISOString();
+    addCoreMemory(pet, {
+      tier: 'rare',
+      emoji: '✨',
+      text: 'Грани характера слились в единое',
+      category: 'system',
+      traitKey: 'curiosity',
+      direction: 'up',
+    }, ctx);
+  }
+
+  return true;
+}
+
+export function collapseSingularity(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+  if (!pet.singularityZones.length) return;
+
+  const fromPersonalityId = pet.personality as PersonalityId;
+  const random = ctx.random ?? Math.random;
+  const target = pet.singularityZones[Math.floor(random() * pet.singularityZones.length)] ?? pet.singularityZones[0];
+  const now = getNow(ctx).toISOString();
+
+  pet.personality = target;
+  pet.emergentState = null;
+  pet.emergentStateEnteredAt = undefined;
+  pet.currentTargetZone = null;
+  pet.ticksInTargetZone = 0;
+  pet.evolutionProposal = undefined;
+  pet.ticksInSingularity = 0;
+  pet.singularityZones = [];
+  pet.evolutionHistory.push({
+    fromPersonalityId,
+    toPersonalityId: target,
+    evolvedAt: now,
+    trigger: 'singularity',
+  });
+
+  const targetPersonality = PERSONALITIES.find(p => p.id === target);
+  addCoreMemory(pet, {
+    tier: 'rare',
+    emoji: targetPersonality?.emoji ?? '🌀',
+    text: `Схлопнулся в ${targetPersonality?.name ?? target}`,
+    category: 'system',
+    traitKey: 'vitality',
+    direction: 'origin',
+    personalityHint: target,
+  }, ctx);
+}
+
+export function canEnterShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): boolean {
+  const now = getNow(ctx);
+  if (pet.traumaCooldownUntil && now < new Date(pet.traumaCooldownUntil)) return false;
+  return pet.traumaLevel >= SHADOW_FORM_TRAUMA_THRESHOLD;
+}
+
+export function checkShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): boolean {
+  if (pet.emergentState === 'shadow_form') return true;
+  if (!canEnterShadowForm(pet, ctx)) return false;
+
+  pet.emergentState = 'shadow_form';
+  pet.emergentStateEnteredAt = getNow(ctx).toISOString();
+  pet.catharsisProgress = Math.max(0, pet.catharsisProgress ?? 0);
+  pet.evolutionProposal = undefined;
+  pet.currentTargetZone = null;
+  pet.ticksInTargetZone = 0;
+  return true;
+}
+
+export function exitShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+  pet.emergentState = null;
+  pet.emergentStateEnteredAt = undefined;
+  pet.traumaLevel = 0;
+  pet.catharsisProgress = 0;
+
+  const cooldown = new Date(getNow(ctx).getTime());
+  cooldown.setDate(cooldown.getDate() + SHADOW_FORM_COOLDOWN_DAYS);
+  pet.traumaCooldownUntil = cooldown.toISOString();
+}
+
+export function triggerCatharsis(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+  const firstCatharsis = !pet.catharsisAchieved;
+  exitShadowForm(pet, ctx);
+  pet.catharsisAchieved = true;
+
+  addCoreMemory(pet, {
+    tier: 'rare',
+    emoji: '🌅',
+    text: firstCatharsis ? 'Прошли через тьму вместе' : 'Снова нашли путь из тени',
+    category: 'system',
+    traitKey: 'sociality',
+    direction: 'up',
+  }, ctx);
+}
+
+export function addCatharsisProgress(
+  pet: Pet,
+  amount: number,
+  ctx: TraitEvolutionContext = {},
+): boolean {
+  if (pet.emergentState !== 'shadow_form') return false;
+
+  pet.catharsisProgress = clamp((pet.catharsisProgress ?? 0) + amount, 0, CATHARSIS_THRESHOLD);
+  if (pet.catharsisProgress < CATHARSIS_THRESHOLD) return false;
+
+  triggerCatharsis(pet, ctx);
+  return true;
+}
+
+export function recordLegacy(
+  account: Account,
+  pet: Pet,
+  ctx: TraitEvolutionContext = {},
+): Account {
+  const nextVector = account.legacyVector
+    ? TRAIT_KEYS.reduce((acc, key) => {
+        acc[key] = pet.traitVector[key] * LEGACY_BLEND_RATIO
+          + account.legacyVector![key] * (1 - LEGACY_BLEND_RATIO);
+        return acc;
+      }, {} as TraitVector)
+    : { ...pet.traitVector };
+
+  const lastEvolution = pet.evolutionHistory[pet.evolutionHistory.length - 1];
+  const hasLegacyRarity = Boolean(lastEvolution && EVOLUTION_LEGACY[lastEvolution.toPersonalityId]);
+  const lastName = PERSONALITIES.find(p => p.id === pet.personality)?.name ?? pet.personality;
+  const nextGeneration = (account.legacyGeneration ?? 0) + 1;
+
+  account.legacyVector = nextVector;
+  account.legacyCoefficient = hasLegacyRarity ? 0.20 : 0.15;
+  account.legacyGeneration = nextGeneration;
+  account.legacyDescription = nextGeneration === 1
+    ? `Память пути ${lastName}`
+    : `Путь продолжается: жизнь ${nextGeneration}`;
+  account.memoryGuardian = {
+    name: pet.name,
+    personalityId: pet.personality as PersonalityId,
+    archivedMemories: pet.coreMemories
+      .filter(memory => memory.tier === 'rare')
+      .slice(0, 5)
+      .map(memory => ({
+        emoji: memory.emoji,
+        text: memory.text,
+        tier: memory.tier,
+        traitKey: memory.traitKey,
+        personalityHint: memory.personalityHint,
+      })),
+    guidance: createGuardianGuidance(pet),
+    updatedAt: getNow(ctx).toISOString(),
+  };
+
+  return account;
+}
+
+function createGuardianGuidance(pet: Pet): string[] {
+  const guidance: string[] = [];
+
+  if (pet.traumaLevel >= 50 || pet.catharsisAchieved) {
+    guidance.push('Мягкие действия и регулярные объятия лучше всего восстанавливают доверие.');
+  }
+
+  if (pet.confusedState || pet.dailyVectorVariance >= CONFUSED_VARIANCE_THRESHOLD) {
+    guidance.push('После насыщенного дня помогает непрерывный сон не меньше четырёх часов.');
+  }
+
+  if (pet.behavioralFlags.some(flag => flag.type === 'night_disruption')) {
+    guidance.push('Ранние пробуждения усиливали тревожность, поэтому сон лучше не прерывать.');
+  }
+
+  if (pet.behavioralFlags.some(flag => flag.type === 'food_anxiety')) {
+    guidance.push('Кормление до сильного голода помогает держать пищевую тревогу ниже.');
+  }
+
+  if (pet.evolutionHistory.some(record => record.trigger === 'singularity')) {
+    guidance.push('Баланс между несколькими чертами может открыть редкую быструю метаморфозу.');
+  }
+
+  if (guidance.length === 0) {
+    guidance.push('Стабильный ритм заботы помогает новой форме расти спокойнее.');
+  }
+
+  return guidance.slice(0, 3);
 }
 
 export function handleVoidState(pet: Pet, ctx: TraitEvolutionContext = {}): void {

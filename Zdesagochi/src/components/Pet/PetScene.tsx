@@ -3,9 +3,8 @@ import { useState } from 'react';
 import { usePetStore } from '../../store/petStore';
 import { PetDisplay } from './PetDisplay';
 import { PetTalk } from './PetTalk';
-import { SceneEffects } from './SceneEffects';
+import { RoomScene } from './RoomScene';
 import type { PetMood } from '../../api';
-import { getBackground } from '../../data/backgrounds';
 import { getFurniture } from '../../data/roomFurniture';
 
 export const MOOD_LABELS: Record<PetMood, { text: string; emoji: string; color: string }> = {
@@ -27,17 +26,8 @@ const STAGE_INFO: Record<string, { label: string; emoji: string }> = {
   elder: { label: 'Мудрец',    emoji: '🦋' },
 };
 
-function applyColorOverride(hex: string, base: ReturnType<typeof getBackground>) {
-  return {
-    ...base,
-    gradient: `radial-gradient(ellipse at 40% 30%, ${hex}55 0%, ${hex}1A 55%, #030008 100%)`,
-    floorGradient: `linear-gradient(180deg, transparent, ${hex}2E)`,
-    accentColor: hex,
-  };
-}
-
 export function PetScene() {
-  const { pet, updatePetName, actionLoading, equippedBgId, placedFurniture, roomBgColorOverride } = usePetStore();
+  const { pet, updatePetName, actionLoading, placedFurniture } = usePetStore();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
 
@@ -45,8 +35,6 @@ export function PetScene() {
 
   const moodInfo  = MOOD_LABELS[pet.mood];
   const stageInfo = STAGE_INFO[pet.stage];
-  const rawBg     = getBackground(equippedBgId ?? 'void_dark');
-  const bg        = roomBgColorOverride ? applyColorOverride(roomBgColorOverride, rawBg) : rawBg;
 
   const handleNameSubmit = async () => {
     if (nameInput.trim()) await updatePetName(nameInput.trim());
@@ -58,99 +46,7 @@ export function PetScene() {
     <div className="flex flex-col items-center gap-4 w-full">
 
       {/* ── Main scene ─────────────────────────────────────────────── */}
-      <div
-        className="relative w-full rounded-3xl overflow-hidden"
-        style={{
-          height: 'clamp(340px, 42vw, 460px)',
-          maxWidth: '520px',
-          background: bg.gradient,
-          boxShadow: [
-            `0 24px 88px ${bg.accentColor}44`,
-            `0 6px 28px rgba(0,0,0,0.7)`,
-            `inset 0 1px 0 rgba(255,255,255,0.07)`,
-            `inset 0 0 120px ${bg.accentColor}0C`,
-          ].join(', '),
-        }}
-      >
-        {/* Background animated effects */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <SceneEffects effects={bg.effects} />
-        </div>
-
-        {/* Ambient light from pet — soft radial matching accent */}
-        <div
-          className="absolute pointer-events-none"
-          style={{
-            top: '8%', left: '50%',
-            transform: 'translate(-50%, 0)',
-            width: '78%', height: '62%',
-            background: `radial-gradient(ellipse at 50% 48%, ${bg.accentColor}1E 0%, transparent 68%)`,
-            zIndex: 1,
-          }}
-        />
-
-        {/* Wall depth: left/right vignette + ceiling darkening */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: [
-              'linear-gradient(to right,  rgba(0,0,0,0.44) 0%, transparent 22%)',
-              'linear-gradient(to left,   rgba(0,0,0,0.44) 0%, transparent 22%)',
-              'linear-gradient(to bottom, rgba(0,0,0,0.32) 0%, transparent 30%)',
-            ].join(', '),
-            zIndex: 2,
-          }}
-        />
-
-        {/* Decorations (from background data) */}
-        {(bg.decorations ?? []).map((d, i) => (
-          <motion.div
-            key={i}
-            className="absolute select-none pointer-events-none"
-            style={{ left: `${d.x}%`, top: `${d.y}%`, fontSize: d.size, zIndex: 3 }}
-            animate={{ y: [0, -3, 0] }}
-            transition={{ duration: 3 + i * 0.7, repeat: Infinity, delay: i * 0.5 }}
-          >
-            {d.emoji}
-          </motion.div>
-        ))}
-
-        {/* Floor with perspective grid */}
-        <div
-          className="absolute bottom-0 left-0 right-0 pointer-events-none"
-          style={{ height: '28%', zIndex: 4 }}
-        >
-          <div className="absolute inset-0" style={{ background: bg.floorGradient }} />
-          <svg
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.3 }}
-            viewBox="0 0 100 28"
-            preserveAspectRatio="none"
-          >
-            {/* Radiating perspective lines from vanishing point */}
-            {[-85, -60, -38, -18, 0, 18, 38, 60, 85].map((offset, i) => (
-              <line key={`v${i}`} x1={50} y1={0} x2={50 + offset} y2={28}
-                stroke={bg.accentColor} strokeWidth={0.45} />
-            ))}
-            {/* Horizontal parallels */}
-            {[5, 11, 17, 24].map((y, i) => (
-              <line key={`h${i}`} x1={0} y1={y} x2={100} y2={y}
-                stroke={bg.accentColor} strokeWidth={0.35} opacity={0.8 - i * 0.14} />
-            ))}
-          </svg>
-        </div>
-
-        {/* Pet glow shadow on floor */}
-        <div
-          className="absolute pointer-events-none"
-          style={{
-            bottom: '22%', left: '50%',
-            transform: 'translateX(-50%)',
-            width: '46%', height: '5%',
-            background: `radial-gradient(ellipse, ${bg.accentColor}88 0%, transparent 70%)`,
-            filter: 'blur(12px)',
-            zIndex: 5,
-          }}
-        />
+      <RoomScene height="clamp(340px, 42vw, 460px)" maxWidth="520px">
 
         {/* Placed furniture items */}
         {placedFurniture.map(placed => {
@@ -190,7 +86,7 @@ export function PetScene() {
           {moodInfo.emoji} {moodInfo.text}
         </motion.div>
 
-        {/* Pet + speech bubble — shifted slightly up so feet rest on floor */}
+        {/* Pet + speech bubble */}
         <div
           className="absolute inset-0 flex items-center justify-center pointer-events-none"
           style={{ paddingBottom: '8%', zIndex: 25 }}
@@ -200,7 +96,8 @@ export function PetScene() {
             <PetDisplay pet={pet} size={270} />
           </div>
         </div>
-      </div>
+
+      </RoomScene>
 
       {/* ── Pet info ──────────────────────────────────────────────── */}
       <div className="text-center space-y-2 w-full" style={{ maxWidth: '520px' }}>

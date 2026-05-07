@@ -2,17 +2,44 @@ import { create } from 'zustand';
 import {
   createApiService, MockApiService, syncPersonalityFromSkin, setPersonalityDirectly,
   advanceMockTime, getMockTimeScale, setMockTimeScale,
+  getMockAccount,
   type ApiMode, type Pet, type FoodItem, type ShopItem, type InventoryItem,
   type Achievement, type DailyQuest, type Room, type LeaderboardEntry, type PetEvent,
+  type Account,
 } from '../api';
 import { getSkin, SKINS } from '../data/skins';
 import { type BodyShapeId } from '../data/bodyShapes';
+import { type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId } from '../data/petParts';
 import { getBackground, BACKGROUNDS } from '../data/backgrounds';
 import { getAura } from '../data/auras';
 import { getAccessoriesBySlot } from '../data/accessories';
 import { FURNITURE, getFurniture } from '../data/roomFurniture';
 
 export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 'leaderboard' | 'skins' | 'editor' | 'room';
+
+export type FloorStyle = 'flat' | 'grid' | 'wood' | 'tile' | 'marble' | 'metal';
+
+export interface RoomCustomization {
+  wallColor: string;
+  wallColor2: string;
+  wallStyle: 'solid' | 'v_gradient' | 'r_gradient';
+  wallImage: string | null;
+  floorColor: string;
+  floorStyle: FloorStyle;
+  floorImage: string | null;
+  accentColor: string;
+}
+
+export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
+  wallColor: '#0D0020',
+  wallColor2: '#050010',
+  wallStyle: 'v_gradient',
+  wallImage: null,
+  floorColor: '#A855F7',
+  floorStyle: 'grid',
+  floorImage: null,
+  accentColor: '#A855F7',
+};
 
 export interface PlacedFurnitureItem {
   uid: string;
@@ -32,6 +59,7 @@ interface Notification {
 
 interface PetStore {
   pet: Pet | null;
+  account: Account;
   coins: number;
   isLoading: boolean;
   actionLoading: string | null;
@@ -51,6 +79,11 @@ interface PetStore {
   ownedSkins: string[];
   equippedSkinId: string;
   equippedBodyId: BodyShapeId;
+  equippedHeadId: HeadId;
+  equippedEarsId: EarsId;
+  equippedBodyPartId: BodyPartId;
+  equippedLimbsId: LimbsId;
+  equippedTailId: TailId;
   equippedBgId: string;
   ownedBgs: string[];
   petColorOverride: { body1: string; body2: string; glow: string; cheek: string } | null;
@@ -75,7 +108,7 @@ interface PetStore {
   };
   eyeStyleOverride: string | null;
   overlayOverride: string | null;
-  roomBgColorOverride: string | null;
+  roomCustomization: RoomCustomization;
 
   petPresets: Record<string, any>;
   savePreset: (name: string) => void;
@@ -95,6 +128,11 @@ interface PetStore {
   equipSkin(skinId: string): void;
   setPersonality(personalityId: string): void;
   equipBody(shapeId: BodyShapeId): void;
+  equipHead(id: HeadId): void;
+  equipEars(id: EarsId): void;
+  equipBodyPart(id: BodyPartId): void;
+  equipLimbs(id: LimbsId): void;
+  equipTail(id: TailId): void;
   buyBg(bgId: string): void;
   equipBg(bgId: string): void;
   setPetColorOverride(c: { body1: string; body2: string; glow: string; cheek: string } | null): void;
@@ -105,7 +143,8 @@ interface PetStore {
   setAccessoryConfig(slot: 'head' | 'face' | 'back', config: { scale: number; x: number; y: number; rotation: number; behind: boolean }): void;
   setEyeStyleOverride(s: string | null): void;
   setOverlayOverride(s: string | null): void;
-  setRoomBgColorOverride(color: string | null): void;
+  setRoomCustomization(partial: Partial<RoomCustomization>): void;
+  resetRoomCustomization(): void;
 
   loadPet(): Promise<void>;
   feedPet(foodId: string): Promise<void>;
@@ -116,6 +155,7 @@ interface PetStore {
   healPet(): Promise<void>;
   bondWithPet(): Promise<void>;
   syncPet(): Promise<void>;
+  beginNewLife(): Promise<void>;
   updatePetName(name: string): Promise<void>;
   savePetAppearance(): Promise<void>;
   exportAppearanceCode(): string;
@@ -164,7 +204,7 @@ export const usePetStore = create<PetStore>((set, get) => {
   }
 
   return {
-    pet: null, coins: 0, isLoading: false, actionLoading: null, activeTab: 'home',
+    pet: null, account: {}, coins: 0, isLoading: false, actionLoading: null, activeTab: 'home',
     foods: [], shopItems: [], inventory: [], achievements: [], quests: [],
     rooms: [], leaderboard: [], events: [],
     apiMode: 'mock', apiBaseUrl: 'http://localhost:3000',
@@ -172,6 +212,11 @@ export const usePetStore = create<PetStore>((set, get) => {
     ownedSkins: SKINS.filter(s => s.price === 0).map(s => s.id),
     equippedSkinId: 'default',
     equippedBodyId: 'blob',
+    equippedHeadId: 'round' as HeadId,
+    equippedEarsId: 'none' as EarsId,
+    equippedBodyPartId: 'chubby' as BodyPartId,
+    equippedLimbsId: 'none' as LimbsId,
+    equippedTailId: 'none' as TailId,
     equippedBgId: 'void_dark',
     ownedBgs: BACKGROUNDS.filter(b => b.price === 0).map(b => b.id),
     ownedFurnitureIds: FURNITURE.filter(f => f.price === 0).map(f => f.id),
@@ -189,7 +234,7 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
     eyeStyleOverride: null,
     overlayOverride: null,
-    roomBgColorOverride: null,
+    roomCustomization: DEFAULT_ROOM_CUSTOMIZATION,
 
     petPresets: JSON.parse(localStorage.getItem('petPresets') || '{}'),
 
@@ -344,7 +389,10 @@ export const usePetStore = create<PetStore>((set, get) => {
 
     async loadPet() {
       set({ isLoading: true });
-      try { set({ pet: await api().getPet() }); }
+      try {
+        const pet = await api().getPet();
+        set({ pet, account: get().apiMode === 'mock' ? getMockAccount() : get().account });
+      }
       catch (e) { get().notify((e as Error).message, 'error'); }
       finally { set({ isLoading: false }); }
     },
@@ -406,6 +454,14 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
     async syncPet() {
       try { set({ pet: await api().syncPet() }); } catch { /* silent */ }
+    },
+    async beginNewLife() {
+      await action('new_life', async () => {
+        const result = await api().beginNewLife();
+        set({ pet: result.pet, account: result.account });
+        get().notify('🌱 Новое тело, старая память пути', 'success');
+        get().refreshProgress();
+      });
     },
     async updatePetName(name) {
       await action('name', async () => {
@@ -623,6 +679,12 @@ export const usePetStore = create<PetStore>((set, get) => {
       set({ equippedBodyId: shapeId });
     },
 
+    equipHead(id) { get().recordHistory(); set({ equippedHeadId: id }); },
+    equipEars(id) { get().recordHistory(); set({ equippedEarsId: id }); },
+    equipBodyPart(id) { get().recordHistory(); set({ equippedBodyPartId: id }); },
+    equipLimbs(id) { get().recordHistory(); set({ equippedLimbsId: id }); },
+    equipTail(id) { get().recordHistory(); set({ equippedTailId: id }); },
+
     buyBg(bgId) {
       const bg = getBackground(bgId);
       const { coins, ownedBgs } = get();
@@ -694,7 +756,12 @@ export const usePetStore = create<PetStore>((set, get) => {
 
     setEyeStyleOverride(s) { set({ eyeStyleOverride: s }); },
     setOverlayOverride(s) { set({ overlayOverride: s }); },
-    setRoomBgColorOverride(color) { set({ roomBgColorOverride: color }); },
+    setRoomCustomization(partial) {
+      set(s => ({ roomCustomization: { ...s.roomCustomization, ...partial } }));
+    },
+    resetRoomCustomization() {
+      set({ roomCustomization: DEFAULT_ROOM_CUSTOMIZATION });
+    },
 
     // ── Room Furniture ─────────────────────────────────────────────────────
 

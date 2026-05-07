@@ -2,11 +2,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import type { Pet, PetMood } from '../../api';
 import { getSkin, type SkinDefinition, type EyeStyle, type OverlayStyle } from '../../data/skins';
-import { getBodyShape, type BodyShapeId } from '../../data/bodyShapes';
+import { type BodyShapeId } from '../../data/bodyShapes';
+import { getHead, type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId } from '../../data/petParts';
 import { getAccessory } from '../../data/accessories';
 import { getAura } from '../../data/auras';
 import { usePetStore } from '../../store/petStore';
 import { PetAura } from './PetAura';
+import { HeadShape, EarsShape, BodyShape, LimbsShape, TailShape } from './ModularBody';
 
 interface Props {
   pet: Pet;
@@ -15,6 +17,11 @@ interface Props {
   overrideState?: {
     equippedSkinId?: string;
     equippedBodyId?: BodyShapeId;
+    equippedHeadId?: HeadId;
+    equippedEarsId?: EarsId;
+    equippedBodyPartId?: BodyPartId;
+    equippedLimbsId?: LimbsId;
+    equippedTailId?: TailId;
     petColorOverride?: any;
     petMorph?: any;
     equippedAuraId?: string;
@@ -189,11 +196,10 @@ function EyeHologram({ cx, cy, color }: EyeProps) {
   );
 }
 
-function Eyes({ skin, shapeId, mood }: { skin: SkinDefinition; shapeId: BodyShapeId; mood: PetMood }) {
-  const shape = getBodyShape(shapeId);
+function Eyes({ skin, head, mood }: { skin: SkinDefinition; head: ReturnType<typeof getHead>; mood: PetMood }) {
   const positions: EyeProps[] = [
-    { ...(shape?.eyeLeft || { cx: 76, cy: 88 }),  color: skin.eyeColor, mood },
-    { ...(shape?.eyeRight || { cx: 124, cy: 88 }), color: skin.eyeColor, mood },
+    { ...head.eyeLeft,  color: skin.eyeColor, mood },
+    { ...head.eyeRight, color: skin.eyeColor, mood },
   ];
   return (
     <>
@@ -315,161 +321,6 @@ function Overlay({ skin }: { skin: SkinDefinition }) {
   }
 }
 
-// ─── Body shapes ──────────────────────────────────────────────────────────────
-
-interface BodyProps {
-  gradId: string;
-  c: { body1: string; body2: string; glow: string; cheek: string };
-  isAsleep: boolean;
-}
-
-function BlobBody({ gradId, isAsleep }: BodyProps) {
-  return (
-    <motion.path
-      d="M 100 28 C 135 18, 174 48, 172 88 C 170 130, 148 168, 100 172 C 52 168, 30 130, 28 88 C 26 48, 65 18, 100 28 Z"
-      fill={`url(#${gradId})`}
-      animate={isAsleep
-        ? { d: 'M 100 38 C 132 28, 168 52, 166 88 C 164 124, 144 160, 100 164 C 56 160, 36 124, 34 88 C 32 52, 68 28, 100 38 Z' }
-        : { d: 'M 100 28 C 135 18, 174 48, 172 88 C 170 130, 148 168, 100 172 C 52 168, 30 130, 28 88 C 26 48, 65 18, 100 28 Z' }}
-      transition={{ duration: 0.6, ease: 'easeInOut' }}
-    />
-  );
-}
-
-function CatBody({ gradId, c, isAsleep }: BodyProps) {
-  return (
-    <>
-      {/* Ears behind body */}
-      <path d="M 50 80 L 36 36 L 78 60 Z" fill={`url(#${gradId})`} />
-      <path d="M 150 80 L 164 36 L 122 60 Z" fill={`url(#${gradId})`} />
-      {/* Inner ears */}
-      <path d="M 54 74 L 44 48 L 70 63 Z" fill={c.cheek} opacity={0.55} />
-      <path d="M 146 74 L 156 48 L 130 63 Z" fill={c.cheek} opacity={0.55} />
-      {/* Body */}
-      <motion.path
-        d="M 100 54 C 136 44, 168 66, 168 106 C 168 146, 146 170, 100 170 C 54 170, 32 146, 32 106 C 32 66, 64 44, 100 54 Z"
-        fill={`url(#${gradId})`}
-        animate={isAsleep
-          ? { d: 'M 100 62 C 134 52, 162 72, 162 108 C 162 143, 141 164, 100 164 C 59 164, 38 143, 38 108 C 38 74, 66 52, 100 62 Z' }
-          : { d: 'M 100 54 C 136 44, 168 66, 168 106 C 168 146, 146 170, 100 170 C 54 170, 32 146, 32 106 C 32 66, 64 44, 100 54 Z' }}
-        transition={{ duration: 0.6, ease: 'easeInOut' }}
-      />
-    </>
-  );
-}
-
-function ChunkyBody({ gradId, c, isAsleep }: BodyProps) {
-  return (
-    <>
-      {/* Legs behind body */}
-      <path d="M 52 168 L 46 188 C 46 196, 60 200, 70 196 L 76 168 Z" fill={c.body2} />
-      <path d="M 124 168 L 130 196 C 140 200, 154 196, 154 188 L 148 168 Z" fill={c.body2} />
-      {/* Body */}
-      <motion.path
-        d="M 32 76 C 32 58, 56 46, 100 46 C 144 46, 168 58, 168 76 L 168 142 C 168 158, 148 168, 100 168 C 52 168, 32 158, 32 142 Z"
-        fill={`url(#${gradId})`}
-        animate={isAsleep
-          ? { d: 'M 36 82 C 36 65, 58 56, 100 56 C 142 56, 164 65, 164 82 L 164 138 C 164 153, 146 162, 100 162 C 54 162, 36 153, 36 138 Z' }
-          : { d: 'M 32 76 C 32 58, 56 46, 100 46 C 144 46, 168 58, 168 76 L 168 142 C 168 158, 148 168, 100 168 C 52 168, 32 158, 32 142 Z' }}
-        transition={{ duration: 0.6, ease: 'easeInOut' }}
-      />
-    </>
-  );
-}
-
-function TallBody({ gradId, isAsleep }: BodyProps) {
-  return (
-    <>
-      {/* Long arms */}
-      <path d="M 62 82 C 46 90, 24 104, 14 130 C 12 137, 18 142, 24 138 C 32 114, 52 102, 68 92 Z" fill={`url(#${gradId})`} />
-      <path d="M 138 82 C 154 90, 176 104, 186 130 C 188 137, 182 142, 176 138 C 168 114, 148 102, 132 92 Z" fill={`url(#${gradId})`} />
-      {/* Slim body */}
-      <motion.path
-        d="M 100 22 C 120 20, 138 36, 138 74 C 138 126, 126 168, 100 172 C 74 168, 62 126, 62 74 C 62 36, 80 20, 100 22 Z"
-        fill={`url(#${gradId})`}
-        animate={isAsleep
-          ? { d: 'M 100 30 C 118 28, 134 42, 134 78 C 134 128, 124 164, 100 168 C 76 164, 66 128, 66 78 C 66 42, 82 28, 100 30 Z' }
-          : { d: 'M 100 22 C 120 20, 138 36, 138 74 C 138 126, 126 168, 100 172 C 74 168, 62 126, 62 74 C 62 36, 80 20, 100 22 Z' }}
-        transition={{ duration: 0.6, ease: 'easeInOut' }}
-      />
-    </>
-  );
-}
-
-function TailedBody({ gradId, c, isAsleep }: BodyProps) {
-  return (
-    <>
-      {/* Tail drawn before body so base is covered */}
-      <path
-        d="M 156 88 C 190 72, 205 108, 192 136 C 185 154, 170 158, 162 146 C 170 152, 183 148, 188 130 C 194 108, 180 80, 152 100 Z"
-        fill={c.body2}
-      />
-      <path
-        d="M 158 90 C 190 74, 204 108, 192 134 C 185 152, 170 156, 162 144"
-        stroke={c.body1} strokeWidth={5} fill="none" strokeLinecap="round" opacity={0.4}
-      />
-      {/* Body slightly left-shifted */}
-      <motion.path
-        d="M 92 30 C 126 20, 160 50, 158 88 C 156 126, 136 162, 92 165 C 48 162, 30 128, 30 90 C 30 52, 60 20, 92 30 Z"
-        fill={`url(#${gradId})`}
-        animate={isAsleep
-          ? { d: 'M 92 40 C 124 30, 154 56, 152 90 C 150 124, 132 156, 92 159 C 52 156, 34 130, 34 92 C 34 58, 62 30, 92 40 Z' }
-          : { d: 'M 92 30 C 126 20, 160 50, 158 88 C 156 126, 136 162, 92 165 C 48 162, 30 128, 30 90 C 30 52, 60 20, 92 30 Z' }}
-        transition={{ duration: 0.6, ease: 'easeInOut' }}
-      />
-    </>
-  );
-}
-
-function SplitBody({ gradId, isAsleep }: BodyProps) {
-  return (
-    <motion.path
-      d="M 100 20 C 128 20, 148 40, 148 68 C 148 92, 136 106, 118 116 C 138 124, 164 140, 164 162 C 164 182, 142 196, 100 196 C 58 196, 36 182, 36 162 C 36 140, 62 124, 82 116 C 64 106, 52 92, 52 68 C 52 40, 72 20, 100 20 Z"
-      fill={`url(#${gradId})`}
-      animate={isAsleep
-        ? { d: 'M 100 28 C 126 28, 144 46, 144 72 C 144 94, 134 108, 116 118 C 136 126, 160 142, 160 162 C 160 180, 140 192, 100 192 C 60 192, 40 180, 40 162 C 40 142, 64 126, 84 118 C 66 108, 56 94, 56 72 C 56 46, 74 28, 100 28 Z' }
-        : { d: 'M 100 20 C 128 20, 148 40, 148 68 C 148 92, 136 106, 118 116 C 138 124, 164 140, 164 162 C 164 182, 142 196, 100 196 C 58 196, 36 182, 36 162 C 36 140, 62 124, 82 116 C 64 106, 52 92, 52 68 C 52 40, 72 20, 100 20 Z' }}
-      transition={{ duration: 0.6, ease: 'easeInOut' }}
-    />
-  );
-}
-
-function BearBody({ gradId, c, isAsleep }: BodyProps) {
-  return (
-    <>
-      {/* Ears + paws behind body */}
-      <circle cx={52} cy={54} r={24} fill={c.body2} />
-      <circle cx={148} cy={54} r={24} fill={c.body2} />
-      <circle cx={52} cy={54} r={15} fill={c.cheek} opacity={0.45} />
-      <circle cx={148} cy={54} r={15} fill={c.cheek} opacity={0.45} />
-      <ellipse cx={20} cy={132} rx={16} ry={14} fill={c.body2} />
-      <ellipse cx={180} cy={132} rx={16} ry={14} fill={c.body2} />
-      {/* Body */}
-      <motion.path
-        d="M 100 56 C 140 46, 170 70, 170 108 C 170 148, 148 175, 100 175 C 52 175, 30 148, 30 108 C 30 70, 60 46, 100 56 Z"
-        fill={`url(#${gradId})`}
-        animate={isAsleep
-          ? { d: 'M 100 64 C 138 54, 164 76, 162 110 C 160 144, 140 168, 100 168 C 60 168, 38 144, 38 110 C 38 78, 62 54, 100 64 Z' }
-          : { d: 'M 100 56 C 140 46, 170 70, 170 108 C 170 148, 148 175, 100 175 C 52 175, 30 148, 30 108 C 30 70, 60 46, 100 56 Z' }}
-        transition={{ duration: 0.6, ease: 'easeInOut' }}
-      />
-    </>
-  );
-}
-
-function BodyRenderer({ shapeId, gradId, c, isAsleep }: BodyProps & { shapeId: BodyShapeId }) {
-  const props = { gradId, c, isAsleep };
-  switch (shapeId) {
-    case 'cat':    return <CatBody    {...props} />;
-    case 'chunky': return <ChunkyBody {...props} />;
-    case 'tall':   return <TallBody   {...props} />;
-    case 'tailed': return <TailedBody {...props} />;
-    case 'split':  return <SplitBody  {...props} />;
-    case 'bear':   return <BearBody   {...props} />;
-    default:       return <BlobBody   {...props} />;
-  }
-}
-
 // ─── Level accessories ────────────────────────────────────────────────────────
 
 function LevelAccessory({ level }: { level: number }) {
@@ -504,6 +355,11 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   
   const equippedSkinId      = overrideState?.equippedSkinId      ?? store.equippedSkinId;
   const equippedBodyId      = overrideState?.equippedBodyId      ?? store.equippedBodyId;
+  const equippedHeadId      = overrideState?.equippedHeadId      ?? store.equippedHeadId;
+  const equippedEarsId      = overrideState?.equippedEarsId      ?? store.equippedEarsId;
+  const equippedBodyPartId  = overrideState?.equippedBodyPartId  ?? store.equippedBodyPartId;
+  const equippedLimbsId     = overrideState?.equippedLimbsId     ?? store.equippedLimbsId;
+  const equippedTailId      = overrideState?.equippedTailId      ?? store.equippedTailId;
   const petColorOverride    = overrideState?.petColorOverride    ?? store.petColorOverride;
   const petMorph            = overrideState?.petMorph           ?? store.petMorph;
   const equippedAuraId      = overrideState?.equippedAuraId      ?? store.equippedAuraId;
@@ -554,8 +410,10 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
     eyeStyle: (eyeStyleOverride as EyeStyle) ?? baseSkin.eyeStyle,
     overlay:  (overlayOverride  as OverlayStyle) ?? baseSkin.overlay,
   };
-  const shape = getBodyShape(equippedBodyId);
+  const head  = getHead(equippedHeadId);
   const aura  = getAura(equippedAuraId);
+  // Keep for backwards compat with any code still reading equippedBodyId
+  void equippedBodyId;
 
   const glitch = useGlitch(skin.animStyle === 'glitch');
   const [hue, setHue] = useState(0);
@@ -591,16 +449,15 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   const gradId = `bg_${skin.id}`;
   const colors = { body1, body2, glow: glowColor, cheek: petColorOverride?.cheek ?? skin.colors.cheek };
 
-  const mouthPath = getMouthPath(effectiveMood, shape?.mouthCy || 130, shape?.mouthHW || 28) || "";
+  const mouthPath = getMouthPath(effectiveMood, head.mouthCy, head.mouthHW) || "";
 
   const [showSparkles, setShowSparkles] = useState(false);
 
-  // Trigger sparkles on appearance change
   useEffect(() => {
     setShowSparkles(true);
     const t = setTimeout(() => setShowSparkles(false), 800);
     return () => clearTimeout(t);
-  }, [equippedSkinId, equippedBodyId, JSON.stringify(equippedAccessories), petColorOverride]);
+  }, [equippedSkinId, equippedHeadId, equippedEarsId, equippedBodyPartId, equippedLimbsId, equippedTailId, JSON.stringify(equippedAccessories), petColorOverride]);
 
   const morphStyle: React.CSSProperties = (petMorph.scale !== 1 || petMorph.width !== 1 || petMorph.height !== 1)
     ? { transform: `scale(${petMorph.scale}) scaleX(${petMorph.width}) scaleY(${petMorph.height})` }
@@ -634,21 +491,25 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
           {renderAccessory('head', true)}
           {renderAccessory('face', true)}
 
-          {/* Body and base features */}
-          <BodyRenderer shapeId={equippedBodyId} gradId={gradId} c={colors} isAsleep={pet.isAsleep} />
+          {/* Modular pet body — layers from back to front */}
+          <TailShape  id={equippedTailId}     gradId={gradId} c={colors} />
+          <LimbsShape id={equippedLimbsId}    gradId={gradId} c={colors} />
+          <EarsShape  id={equippedEarsId}     gradId={gradId} c={colors} />
+          <BodyShape  id={equippedBodyPartId} gradId={gradId} c={colors} />
+          <HeadShape  id={equippedHeadId}     gradId={gradId} c={colors} />
           <Overlay skin={skin} />
 
           {/* Cheeks */}
           <AnimatePresence>
             {showCheeks && (
               <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <ellipse cx={shape.cheekLeft.cx}  cy={shape.cheekLeft.cy}  rx={shape.cheekLeft.rx}  ry={shape.cheekLeft.ry}  fill={skin.colors.cheek} opacity={0.55} />
-                <ellipse cx={shape.cheekRight.cx} cy={shape.cheekRight.cy} rx={shape.cheekRight.rx} ry={shape.cheekRight.ry} fill={skin.colors.cheek} opacity={0.55} />
+                <ellipse cx={head.cheekLeft.cx}  cy={head.cheekLeft.cy}  rx={head.cheekLeft.rx}  ry={head.cheekLeft.ry}  fill={skin.colors.cheek} opacity={0.55} />
+                <ellipse cx={head.cheekRight.cx} cy={head.cheekRight.cy} rx={head.cheekRight.rx} ry={head.cheekRight.ry} fill={skin.colors.cheek} opacity={0.55} />
               </motion.g>
             )}
           </AnimatePresence>
 
-          <Eyes skin={skin} shapeId={equippedBodyId} mood={effectiveMood} />
+          <Eyes skin={skin} head={head} mood={effectiveMood} />
 
           {/* Mouth */}
           {mouthPath && (

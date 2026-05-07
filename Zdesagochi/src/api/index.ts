@@ -1,13 +1,14 @@
 export type {
   ApiService, Pet, FoodItem, PlayResult, ShopItem, InventoryItem, BuyResult,
   Achievement, ClaimResult, DailyQuest, QuestClaimResult, Room, LeaderboardEntry,
-  PetEvent, PetStats, PetMood, PetStage, ItemType, ItemRarity,
+  PetEvent, PetStats, PetMood, PetStage, ItemType, ItemRarity, Account, MemoryGuardian, NewLifeResult,
 } from './types';
 
 export {
   MockApiService, FOODS, syncPersonalityFromSkin, setPersonalityDirectly,
   advanceMockTime, getMockTimeScale, setMockTimeScale,
   setMockOfflineStorage, clearMockOfflineRuntimeState,
+  completeMockPetLifecycle, getMockAccount,
 } from './mockApi';
 export { RealApiService } from './realApi';
 

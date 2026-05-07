@@ -5,33 +5,34 @@ import type { SceneEffect } from '../../data/backgrounds';
 const sr = (i: number, off = 0) => ((i * 137 + off * 31) % 100) / 100;
 const SCR: React.CSSProperties = { mixBlendMode: 'screen' };
 
-/* ─── Particles ─────────────────────────────────────────────────────────────── */
-function Particles({ color, count = 12 }: { color: string; count?: number }) {
+/* ─── Dust (subtle atmosphere, replaces old Particles) ──────────────────────── */
+function Dust({ color, count = 14 }: { color: string; count?: number }) {
   const items = useMemo(() => Array.from({ length: count }, (_, i) => ({
-    x: sr(i, 0) * 82 + 9, y: sr(i, 1) * 72 + 12,
-    sz: sr(i, 2) * 5 + 1.5,
-    dur: sr(i, 3) * 5 + 4, del: sr(i, 4) * 5,
-    dy: -(sr(i, 5) * 55 + 20),
-    dx: (sr(i, 6) - 0.5) * 30,
-    big: i < Math.ceil(count * 0.3),
+    x:   sr(i, 0) * 88 + 6,
+    y:   sr(i, 1) * 78 + 8,
+    sz:  sr(i, 2) * 1.4 + 0.7,          // 0.7–2.1px
+    dur: sr(i, 3) * 10 + 14,            // 14–24s (very slow)
+    del: sr(i, 4) * 10,
+    dy:  (sr(i, 5) - 0.5) * 10,         // ±5px drift
+    dx:  (sr(i, 6) - 0.5) * 6,          // ±3px drift
+    maxOp: sr(i, 7) * 0.12 + 0.04,      // 0.04–0.16 opacity max
   })), [count]);
+
   return (
     <div className="absolute inset-0 pointer-events-none" style={SCR}>
       {items.map((p, i) => (
         <motion.div key={i} style={{
           position: 'absolute', left: `${p.x}%`, top: `${p.y}%`,
           transform: 'translate(-50%,-50%)',
-          width:  p.big ? p.sz * 6 : p.sz,
-          height: p.big ? p.sz * 6 : p.sz,
-          borderRadius: '50%',
-          background: p.big
-            ? `radial-gradient(circle, ${color}55 0%, ${color}18 55%, transparent 80%)`
-            : `radial-gradient(circle, #fff 0%, ${color} 35%, ${color}99 70%, transparent 100%)`,
-          boxShadow: p.big
-            ? `0 0 ${p.sz * 14}px ${p.sz * 5}px ${color}22`
-            : `0 0 ${p.sz * 5}px ${p.sz * 2}px ${color}cc, 0 0 ${p.sz * 10}px ${p.sz * 3}px ${color}44`,
+          width: p.sz, height: p.sz, borderRadius: '50%',
+          background: color,
+          boxShadow: `0 0 ${p.sz * 4}px ${p.sz * 1.5}px ${color}`,
         }}
-          animate={{ y: [0, p.dy, 0], x: [0, p.dx * 0.4, 0], opacity: p.big ? [0.15, 0.6, 0.15] : [0.35, 1, 0.35], scale: [0.7, 1.3, 0.7] }}
+          animate={{
+            y: [0, p.dy, 0],
+            x: [0, p.dx, 0],
+            opacity: [0, p.maxOp, 0],
+          }}
           transition={{ duration: p.dur, repeat: Infinity, delay: p.del, ease: 'easeInOut' }}
         />
       ))}
@@ -446,7 +447,7 @@ function Glitch({ color }: { color: string }) {
 /* ─── Main ───────────────────────────────────────────────────────────────────── */
 function EffectRenderer({ effect }: { effect: SceneEffect }) {
   switch (effect.type) {
-    case 'particles':    return <Particles    color={effect.color ?? '#A855F7'} count={effect.count} />;
+    case 'particles':    return <Dust         color={effect.color ?? '#A855F7'} count={effect.count} />;
     case 'stars':        return <Stars        count={effect.count} />;
     case 'rain':         return <Rain         color={effect.color ?? '#EC4899'} />;
     case 'ash':          return <Ash          color={effect.color ?? '#FF6600'} count={effect.count} />;

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import type { Pet, PetStage, PetMood } from '../src/api/types';
+import type { Account, Pet, PetStage, PetMood } from '../src/api/types';
 import {
   MockApiService,
   advanceMockTime,
@@ -17,25 +17,32 @@ import {
   MEMORY_COOLDOWN_MS,
   MINIMUM_RESET_SLEEP_HOURS,
   REGRESSION_RATE,
+  SINGULARITY_THRESHOLD_SYNCS,
   STABILITY_SYNCS,
   VARIANCE_HARD_RESET_HOURS,
   VOID_THRESHOLD_SYNCS,
   addCoreMemory,
+  addCatharsisProgress,
   applyInfluence,
   applyRegression,
   canApplyInfluenceAtSync,
+  checkShadowForm,
   checkVarianceHardReset,
   checkThresholdCrossings,
   checkEvolution,
   checkWeeklyDrift,
+  collapseSingularity,
   createInitialTraitVector,
+  detectSingularity,
   depthOfImmersion,
   getDynamicRadius,
   handleVoidState,
   onStartSleep,
   onWakeFromSleep,
   recordDailyTraitSnapshot,
+  recordLegacy,
 } from '../src/personality/TraitEvolutionEngine';
+import { getEmergentStateDef } from '../src/personality/emergentStates';
 import { validateBalancePatch, validateInfluenceRegistry, validateRemoteInfluence } from '../src/personality/influenceRegistry';
 import { PERSONALITY_TRAIT_MAP } from '../src/personality/personalityTraitMap';
 import {
@@ -695,6 +702,92 @@ test('void state enters identity_crisis after threshold', () => {
   assert.equal(pet.emergentState, 'identity_crisis');
 });
 
+test('singularity intercepts checkEvolution and collapses into one active zone', () => {
+  const singularityVector = {
+    vitality: 78.33333333333333,
+    sociality: 51.666666666666664,
+    order: 16.666666666666668,
+    appetite: 45,
+    caution: 16.666666666666668,
+    curiosity: 78.33333333333333,
+  } as TraitVector;
+  const pet = makePet({
+    ageHours: 2400,
+    formationComplete: true,
+    traitVector: singularityVector,
+    currentTargetZone: 'paranoid',
+    ticksInTargetZone: 40,
+  });
+
+  assert.notEqual(detectSingularity(pet), null);
+  for (let i = 0; i < SINGULARITY_THRESHOLD_SYNCS; i++) {
+    checkEvolution(pet, { now: new Date('2026-05-04T00:00:00.000Z') });
+  }
+
+  assert.equal(pet.emergentState, 'singularity');
+  assert.equal(pet.currentTargetZone, null);
+  assert.equal(pet.ticksInTargetZone, 0);
+  assert.equal(pet.singularityZones.length, 3);
+
+  pet.traitVector = { ...PERSONALITY_TRAIT_MAP.paranoid.position };
+  collapseSingularity(pet, {
+    now: new Date('2026-05-04T01:00:00.000Z'),
+    random: () => 0,
+  });
+
+  assert.equal(pet.emergentState, null);
+  assert.equal(pet.personality, 'chaotic');
+  assert.equal(pet.evolutionHistory.at(-1)?.fromPersonalityId, 'playful');
+  assert.equal(pet.evolutionHistory.at(-1)?.trigger, 'singularity');
+});
+
+test('shadow form enters from trauma and exits through catharsis cooldown', () => {
+  const pet = makePet({
+    traumaLevel: 75,
+  });
+
+  assert.equal(checkShadowForm(pet, { now: new Date('2026-05-04T00:00:00.000Z') }), true);
+  assert.equal(pet.emergentState, 'shadow_form');
+  assert.equal(getEmergentStateDef('shadow_form')?.type, 'shadow_form');
+
+  assert.equal(addCatharsisProgress(pet, 99, { now: new Date('2026-05-04T01:00:00.000Z') }), false);
+  assert.equal(pet.emergentState, 'shadow_form');
+  assert.equal(addCatharsisProgress(pet, 1, { now: new Date('2026-05-04T01:10:00.000Z') }), true);
+
+  assert.equal(pet.emergentState, null);
+  assert.equal(pet.traumaLevel, 0);
+  assert.equal(pet.catharsisAchieved, true);
+  assert.equal(pet.traumaCooldownUntil, '2026-05-18T01:10:00.000Z');
+  assert.equal(pet.coreMemories[0]?.emoji, '🌅');
+});
+
+test('recordLegacy blends account lineage from completed pet lifecycle', () => {
+  const account: Account = {
+    legacyVector: { ...PERSONALITY_TRAIT_MAP.playful.position },
+    legacyGeneration: 1,
+  };
+  const pet = makePet({
+    personality: 'paranoid',
+    traitVector: { ...PERSONALITY_TRAIT_MAP.paranoid.position },
+    evolutionHistory: [{
+      fromPersonalityId: 'playful',
+      toPersonalityId: 'paranoid',
+      evolvedAt: '2026-05-04T00:00:00.000Z',
+      trigger: 'singularity',
+    }],
+  });
+
+  recordLegacy(account, pet, { now: new Date('2026-05-04T00:00:00.000Z') });
+
+  closeTo(account.legacyVector!.vitality, 55);
+  closeTo(account.legacyVector!.caution, 72.5);
+  assert.equal(account.legacyCoefficient, 0.20);
+  assert.equal(account.legacyGeneration, 2);
+  assert.equal(account.legacyDescription, 'Путь продолжается: жизнь 2');
+  assert.equal(account.memoryGuardian?.name, 'Test');
+  assert.equal(account.memoryGuardian?.guidance.length > 0, true);
+});
+
 test('recordDailyTraitSnapshot updates same day and resets budget on date rollover', () => {
   const pet = makePet({
     traitVector: { ...PERSONALITY_TRAIT_MAP.playful.position },
@@ -959,6 +1052,26 @@ await testAsync('MockApi persists offline snapshot command log and cooldowns', a
   } finally {
     setMockOfflineStorage(null);
     clearMockOfflineRuntimeState();
+  }
+});
+
+await testAsync('MockApi new life keeps memory guardian and starts next body from echo vector', async () => {
+  const api = new MockApiService();
+  const result = await api.beginNewLife();
+
+  assert.equal(result.account.legacyGeneration !== undefined && result.account.legacyGeneration > 0, true);
+  assert.notEqual(result.account.legacyVector, undefined);
+  assert.notEqual(result.account.memoryGuardian, undefined);
+  assert.equal(result.pet.ageHours, 3);
+  assert.equal(result.pet.formationComplete, false);
+  assert.equal(result.pet.coreMemories.length, 0);
+
+  const expected = createInitialTraitVector(
+    result.account.legacyVector,
+    result.account.legacyCoefficient,
+  );
+  for (const key of Object.keys(expected) as Array<keyof TraitVector>) {
+    closeTo(result.pet.traitVector[key], expected[key]);
   }
 });
 

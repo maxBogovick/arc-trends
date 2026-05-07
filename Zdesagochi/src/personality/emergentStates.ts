@@ -7,6 +7,29 @@ import type { EmergentStateDefinition } from './types';
 // ════════════════════════════════════════════════════════════════════════════
 
 export const EMERGENT_STATE_DEFS: EmergentStateDefinition[] = [
+  // priority 0 — Trait Evolution перехватывает обычную эволюцию
+  {
+    type: 'singularity',
+    name: 'Точка сингулярности',
+    description: 'Питомец завис между тремя личностями. Любое движение решит всё.',
+    emoji: '✨',
+    priority: 0,
+    exclusive: true,
+    blockedActions: [],
+    modifiedActions: [
+      { actionType: 'play', statAdditives: {}, xpMultiplier: 3.0, coinMultiplier: 2.0 },
+      { actionType: 'feed', statAdditives: {}, xpMultiplier: 3.0, coinMultiplier: 2.0 },
+      { actionType: 'bond', statAdditives: {}, xpMultiplier: 3.0, coinMultiplier: 2.0 },
+    ],
+    exitHint: 'Любое действие может схлопнуть в один из характеров. Или удерживай баланс.',
+    visual: {
+      bodyAnimation: 'glitch',
+      eyeExpression: 'sparkle',
+      particleEffect: 'tripleStar',
+      overlayTint: 'rgba(255,255,255,0.05)',
+    },
+  },
+
   // priority 1 — критическое: здоровье питомца под угрозой
   {
     type: 'breakdown',
@@ -318,6 +341,71 @@ export const EMERGENT_STATE_DEFS: EmergentStateDefinition[] = [
       bodyAnimation: 'bouncy',
       eyeExpression: 'hearts',
       particleEffect: 'foodHearts',
+    },
+  },
+
+  {
+    type: 'identity_crisis',
+    name: 'Кризис идентичности',
+    description: 'Черты разошлись слишком далеко. Нужен устойчивый паттерн ухода.',
+    emoji: '🌫',
+    priority: 2,
+    exclusive: true,
+    blockedActions: [],
+    modifiedActions: [
+      { actionType: 'play', statAdditives: {}, xpMultiplier: 0.5, coinMultiplier: 0.7 },
+      { actionType: 'feed', statAdditives: {}, xpMultiplier: 0.5, coinMultiplier: 1.0 },
+      { actionType: 'bond', statAdditives: {}, xpMultiplier: 1.5, coinMultiplier: 1.0 },
+    ],
+    exitHint: 'Выработай регулярный паттерн ухода на несколько дней',
+    visual: {
+      bodyAnimation: 'dissolve',
+      eyeExpression: 'hollow',
+      overlayTint: 'rgba(100,100,100,0.28)',
+    },
+  },
+
+  {
+    type: 'shadow_form',
+    name: 'Теневая форма',
+    description: 'Накопленная травма вышла наружу. Нужны спокойные действия и доверие.',
+    emoji: '🌑',
+    priority: 1,
+    exclusive: true,
+    blockedActions: [
+      { actionType: 'play', reason: 'Сейчас игры ранят сильнее', alternativeHint: 'Сначала восстанови доверие' },
+    ],
+    modifiedActions: [
+      { actionType: 'bond', statAdditives: { bond: 15, happiness: 10 }, xpMultiplier: 2.0, coinMultiplier: 0.5 },
+      { actionType: 'heal', statAdditives: { health: 10 }, xpMultiplier: 1.5, coinMultiplier: 0.5 },
+      { actionType: 'feed', statAdditives: { happiness: -5 }, xpMultiplier: 0.5, coinMultiplier: 0.5 },
+    ],
+    exitHint: 'Мягкая забота заполняет катарсис',
+    visual: {
+      bodyAnimation: 'shadow_pulse',
+      eyeExpression: 'hollow',
+      particleEffect: 'shadowWisps',
+      overlayTint: 'rgba(20,20,35,0.35)',
+    },
+  },
+
+  {
+    type: 'confused',
+    name: 'Когнитивный диссонанс',
+    description: 'Слишком много противоречивых впечатлений за день.',
+    emoji: '❓',
+    priority: 15,
+    exclusive: false,
+    blockedActions: [],
+    modifiedActions: [
+      { actionType: 'play', statAdditives: {}, xpMultiplier: 0.8, coinMultiplier: 1.0 },
+      { actionType: 'use_item', statAdditives: {}, xpMultiplier: 0.7, coinMultiplier: 1.0 },
+    ],
+    exitHint: 'Нужен непрерывный сон не меньше 4 часов',
+    visual: {
+      bodyAnimation: 'dizzy',
+      eyeExpression: 'wide_fear',
+      particleEffect: 'questionMarks',
     },
   },
 ];
