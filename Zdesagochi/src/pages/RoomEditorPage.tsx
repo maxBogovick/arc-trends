@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePetStore, type RoomCustomization, type FloorStyle } from '../store/petStore';
+import { usePetStore, type RoomCustomization, type FloorStyle, type WallPanel as WallPanelType } from '../store/petStore';
 import { getFurniture, getFurnitureByCategory } from '../data/roomFurniture';
 import { BACKGROUNDS } from '../data/backgrounds';
 import { getBackground } from '../data/backgrounds';
@@ -120,6 +120,29 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className="relative shrink-0"
+      style={{
+        width: 32, height: 18, borderRadius: 9,
+        background: checked ? 'rgba(124,58,237,0.75)' : 'rgba(255,255,255,0.15)',
+        border: checked ? '1px solid rgba(124,58,237,0.9)' : '1px solid rgba(255,255,255,0.2)',
+        transition: 'background 0.2s, border-color 0.2s',
+      }}
+    >
+      <div style={{
+        position: 'absolute', top: 2,
+        left: checked ? 13 : 2,
+        width: 12, height: 12, borderRadius: '50%',
+        background: 'white',
+        transition: 'left 0.18s',
+      }} />
+    </button>
+  );
+}
+
 // ── Image upload ──────────────────────────────────────────────────────────────
 
 function ImageUpload({
@@ -186,45 +209,149 @@ function ImageUpload({
 
 // ── Wall panel ────────────────────────────────────────────────────────────────
 
-function WallPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCustomization>) => void }) {
+function WallSubSection({
+  title,
+  image,
+  onImageChange,
+  color,
+  color2,
+  wallStyle,
+  onColor,
+  onColor2,
+  onStyle,
+  styleOptions,
+}: {
+  title: string;
+  image: string | null;
+  onImageChange: (v: string | null) => void;
+  color: string;
+  color2: string;
+  wallStyle: string;
+  onColor: (v: string) => void;
+  onColor2: (v: string) => void;
+  onStyle: (v: string) => void;
+  styleOptions: Array<{ id: string; label: string }>;
+}) {
   return (
-    <div className="space-y-4">
-      <ImageUpload
-        label="фон стены"
-        value={c.wallImage}
-        onChange={v => set({ wallImage: v })}
-      />
-
-      {!c.wallImage && (
+    <div className="space-y-3 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <p className="text-xs font-bold" style={{ color: 'rgba(255,255,255,0.65)' }}>{title}</p>
+      <ImageUpload label="фон" value={image} onChange={onImageChange} />
+      {!image && (
         <>
           <div>
             <SectionLabel>Основной цвет</SectionLabel>
             <div className="flex flex-wrap gap-1.5">
-              {WALL_PALETTES.map(color => (
-                <ColorSwatch key={color} color={color} active={c.wallColor === color} onClick={() => set({ wallColor: color })} />
+              {WALL_PALETTES.map(c => (
+                <ColorSwatch key={c} color={c} active={color === c} onClick={() => onColor(c)} />
               ))}
-              <CustomColorPicker value={c.wallColor} onChange={v => set({ wallColor: v })} />
+              <CustomColorPicker value={color} onChange={onColor} />
             </div>
           </div>
           <div>
             <SectionLabel>Дополнительный цвет</SectionLabel>
             <div className="flex flex-wrap gap-1.5">
-              {WALL_PALETTES.map(color => (
-                <ColorSwatch key={color} color={color} active={c.wallColor2 === color} onClick={() => set({ wallColor2: color })} />
+              {WALL_PALETTES.map(c => (
+                <ColorSwatch key={c} color={c} active={color2 === c} onClick={() => onColor2(c)} />
               ))}
-              <CustomColorPicker value={c.wallColor2} onChange={v => set({ wallColor2: v })} />
+              <CustomColorPicker value={color2} onChange={onColor2} />
             </div>
           </div>
           <div>
             <SectionLabel>Стиль</SectionLabel>
             <div className="flex gap-1.5">
-              <StyleButton active={c.wallStyle === 'solid'} onClick={() => set({ wallStyle: 'solid' })}>Однотонная</StyleButton>
-              <StyleButton active={c.wallStyle === 'v_gradient'} onClick={() => set({ wallStyle: 'v_gradient' })}>Градиент ↓</StyleButton>
-              <StyleButton active={c.wallStyle === 'r_gradient'} onClick={() => set({ wallStyle: 'r_gradient' })}>Радиальный</StyleButton>
+              {styleOptions.map(opt => (
+                <StyleButton key={opt.id} active={wallStyle === opt.id} onClick={() => onStyle(opt.id)}>
+                  {opt.label}
+                </StyleButton>
+              ))}
             </div>
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function WallPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCustomization>) => void }) {
+  return (
+    <div className="space-y-4">
+
+      {/* Back wall */}
+      <WallSubSection
+        title="🖼 Задняя стена"
+        image={c.wallImage}
+        onImageChange={v => set({ wallImage: v })}
+        color={c.wallColor}
+        color2={c.wallColor2}
+        wallStyle={c.wallStyle}
+        onColor={v => set({ wallColor: v })}
+        onColor2={v => set({ wallColor2: v })}
+        onStyle={v => set({ wallStyle: v as RoomCustomization['wallStyle'] })}
+        styleOptions={[
+          { id: 'solid',      label: 'Однотонная' },
+          { id: 'v_gradient', label: 'Градиент ↓' },
+          { id: 'r_gradient', label: 'Радиальный' },
+        ]}
+      />
+
+      {/* Side walls */}
+      <WallSubSection
+        title="🧱 Боковые стены"
+        image={c.sideWallImage}
+        onImageChange={v => set({ sideWallImage: v })}
+        color={c.sideWallColor}
+        color2={c.sideWallColor2}
+        wallStyle={c.sideWallStyle}
+        onColor={v => set({ sideWallColor: v })}
+        onColor2={v => set({ sideWallColor2: v })}
+        onStyle={v => set({ sideWallStyle: v as RoomCustomization['sideWallStyle'] })}
+        styleOptions={[
+          { id: 'solid',      label: 'Однотонная' },
+          { id: 'v_gradient', label: 'Градиент ↓' },
+        ]}
+      />
+
+      {/* Architecture section — always visible */}
+      <div className="pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <SectionLabel>Архитектура</SectionLabel>
+        <div className="space-y-2.5">
+
+          <label className="flex items-center justify-between cursor-pointer">
+            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              Плинтус и карниз
+            </span>
+            <Toggle checked={c.showBaseboard} onChange={v => set({ showBaseboard: v })} />
+          </label>
+
+          <label className="flex items-center justify-between cursor-pointer">
+            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              Углы комнаты
+            </span>
+            <Toggle checked={c.showCorners} onChange={v => set({ showCorners: v })} />
+          </label>
+
+          <div>
+            <p className="text-xs mb-1.5" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              Панели стены
+            </p>
+            <div className="flex gap-1.5">
+              {([
+                { id: 'none',     label: 'Нет' },
+                { id: 'wainscot', label: 'Вейнскотинг' },
+              ] as Array<{ id: WallPanelType; label: string }>).map(opt => (
+                <StyleButton
+                  key={opt.id}
+                  active={c.wallPanel === opt.id}
+                  onClick={() => set({ wallPanel: opt.id })}
+                >
+                  {opt.label}
+                </StyleButton>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }

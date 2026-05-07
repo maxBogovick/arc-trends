@@ -274,7 +274,56 @@ export function checkEvolution(pet: Pet, ctx: TraitEvolutionContext = {}): void 
     depth: best.depth,
     proposedAt: getNow(ctx).toISOString(),
     coreMemoryIds: selectRelevantMemories(pet, best.id),
+    narrativeText: createEvolutionProposalText(pet, best.id),
   };
+}
+
+export function acceptEvolution(pet: Pet, ctx: TraitEvolutionContext = {}): boolean {
+  const proposal = pet.evolutionProposal;
+  if (!proposal) return false;
+
+  const fromPersonalityId = pet.personality as PersonalityId;
+  const targetPersonalityId = proposal.targetPersonalityId;
+  const targetPersonality = PERSONALITIES.find(p => p.id === targetPersonalityId);
+  const now = getNow(ctx).toISOString();
+
+  pet.personality = targetPersonalityId;
+  pet.evolutionHistory.push({
+    fromPersonalityId,
+    toPersonalityId: targetPersonalityId,
+    evolvedAt: now,
+    trigger: 'stability',
+    coreMemoryIds: proposal.coreMemoryIds,
+  });
+  pet.currentTargetZone = null;
+  pet.ticksInTargetZone = 0;
+  pet.evolutionProposal = undefined;
+  pet.voidSyncs = 0;
+  if (pet.emergentState === 'identity_crisis' || pet.emergentState === 'confused') {
+    pet.emergentState = null;
+    pet.emergentStateEnteredAt = undefined;
+  }
+
+  addCoreMemory(pet, {
+    tier: 'rare',
+    emoji: targetPersonality?.emoji ?? '🌟',
+    text: `Выбран новый путь: ${targetPersonality?.name ?? targetPersonalityId}`,
+    category: 'system',
+    traitKey: getDominantDriftAxis(pet.traitVector, targetPersonalityId),
+    direction: 'origin',
+    personalityHint: targetPersonalityId,
+  }, ctx);
+
+  return true;
+}
+
+export function rejectEvolution(pet: Pet): boolean {
+  if (!pet.evolutionProposal) return false;
+
+  pet.evolutionProposal = undefined;
+  pet.currentTargetZone = null;
+  pet.ticksInTargetZone = 0;
+  return true;
 }
 
 export interface SingularityState {
@@ -659,6 +708,18 @@ function selectRelevantMemories(pet: Pet, targetPersonalityId: PersonalityId): s
     .filter(memory => memory.tier === 'rare' || memory.personalityHint === targetPersonalityId)
     .slice(0, 3)
     .map(memory => memory.id);
+}
+
+function createEvolutionProposalText(pet: Pet, targetPersonalityId: PersonalityId): string {
+  const target = PERSONALITIES.find(p => p.id === targetPersonalityId);
+  const rareCount = pet.coreMemories.filter(memory => memory.tier === 'rare').length;
+  const name = target?.name ?? targetPersonalityId;
+
+  if (rareCount > 0) {
+    return `Воспоминания складываются в новый устойчивый путь: ${name}.`;
+  }
+
+  return `Повседневная забота ведёт характер к новому пути: ${name}.`;
 }
 
 function getDominantDriftAxis(vector: TraitVector, personalityId: PersonalityId): TraitKey {

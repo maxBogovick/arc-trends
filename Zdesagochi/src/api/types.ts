@@ -20,6 +20,8 @@
  *  POST   /api/pet/heal             → Pet
  *  POST   /api/pet/bond             → Pet
  *  POST   /api/pet/sync             → Pet
+ *  POST   /api/pet/evolution/accept → Pet
+ *  POST   /api/pet/evolution/reject → Pet
  *  POST   /api/pet/new-life        → NewLifeResult
  *  PATCH  /api/pet/name             → Pet         body: { name }
  *  GET    /api/pet/events           → PetEvent[]
@@ -299,6 +301,8 @@ export interface ApiService {
   healPet(): Promise<Pet>;
   bondWithPet(): Promise<Pet>;
   syncPet(): Promise<Pet>;
+  acceptEvolution(): Promise<Pet>;
+  rejectEvolution(): Promise<Pet>;
   beginNewLife(): Promise<NewLifeResult>;
   updatePetName(name: string): Promise<Pet>;
   getPetEvents(): Promise<PetEvent[]>;

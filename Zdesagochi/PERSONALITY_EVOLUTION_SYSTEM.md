@@ -1028,10 +1028,11 @@ ticksInSingularity:    number;
 singularityZones:      PersonalityId[];
 
 // Account
-legacyVector?:         TraitVector;
-legacyCoefficient?:    number;
-legacyGeneration?:     number;
-legacyDescription?:    string;
+  legacyVector?:         TraitVector;
+  legacyCoefficient?:    number;
+  legacyGeneration?:     number;
+  legacyDescription?:    string;
+  memoryGuardian?:       MemoryGuardian;  // New Life: хранитель памяти и подсказки ухода
 ```
 
 ---
@@ -1039,10 +1040,10 @@ legacyDescription?:    string;
 ## 14. План реализации
 
 ### Phase A.0 — Milestone Formation
-- [ ] `FORMATION_THRESHOLD`, `FORMATION_WEIGHTS`
-- [ ] `formationProgress`, `formationComplete`, `visitedZones: []`
-- [ ] `createInitialTraitVector()` с Dynasty Legacy
-- [ ] UX-индикатор прогресса
+- [x] `FORMATION_THRESHOLD`, `FORMATION_WEIGHTS`
+- [x] `formationProgress`, `formationComplete`, `visitedZones: []`
+- [x] `createInitialTraitVector()` с legacy echo-вектором
+- [x] UX-индикатор прогресса в `EvolutionInspector`
 
 ### Phase A.1 — Offline-first Core Contract
 - [x] `PetCommand` — структурные команды с идемпотентным `commandId`
@@ -1056,56 +1057,58 @@ legacyDescription?:    string;
 - [x] Persist adapter contract для offline-сохранения
 - [x] Mock runtime сохраняет/восстанавливает offline snapshot + command log
 - [ ] Full command handler для gameplay stats/economy/inventory/rewards
-- [ ] Полное подключение persist adapter к браузерному store/runtime
+- [x] Browser/mock persist adapter подключён для pet snapshot + command log
 - [ ] Backend replay/validation adapter
 
 ### Phase A — Фундамент
-- [ ] `evolutionTypes.ts`
-- [ ] `personalityTraitMap.ts`
-- [ ] `influenceRegistry.ts` — Static + Remote + GlobalBalance
-- [ ] `memoryTextGenerator.ts` — TemplateGenerator + TinyAIGenerator интерфейс
-- [ ] `TraitEvolutionEngine.ts`
-- [ ] Валидация реестра при старте
-- [ ] Добавить поля в Pet и Account
-- [ ] Unit-тесты
+- [x] Типы эволюции добавлены в `types.ts` / `api/types.ts` (отдельный `evolutionTypes.ts` не выделен)
+- [x] `personalityTraitMap.ts`
+- [x] `influenceRegistry.ts` — Static + Remote validation + GlobalBalance multiplier
+- [x] `memoryTextGenerator.ts` — TemplateGenerator + TinyAIGenerator интерфейс
+- [x] `TraitEvolutionEngine.ts`
+- [x] Валидация реестра покрыта тестами (`validateInfluenceRegistry`, remote/balance guards)
+- [x] Добавить поля в Pet и Account
+- [x] Unit-тесты
 
 ### Phase B — Интеграция в MockApi
-- [ ] `applyInfluence()` во всех actions (с `getIntensityMultiplier()`)
-- [ ] `applyRegression()` + `checkEvolution()` в `syncPet()`
-- [ ] `checkSingularity()` + `collapseSingularity()`
-- [ ] `onStartSleep()` / `onWakeFromSleep()` с min-sleep-duration
-- [ ] `checkVarianceHardReset()` (48h fallback)
-- [ ] `identity_crisis` через voidSyncs
-- [ ] `shadow_form`: double-barrier, `triggerCatharsis()`
-- [ ] `acceptEvolution()` / `rejectEvolution()`
+- [x] `applyInfluence()` во всех базовых actions/items/env (с `getIntensityMultiplier()`)
+- [x] `applyRegression()` + `checkEvolution()` в `syncPet()`
+- [x] `checkSingularity()` + `collapseSingularity()`
+- [x] `onStartSleep()` / `onWakeFromSleep()` с min-sleep-duration
+- [x] `checkVarianceHardReset()` (48h fallback)
+- [x] `identity_crisis` через voidSyncs
+- [x] `shadow_form`: double-barrier, `triggerCatharsis()`
+- [x] `acceptEvolution()` / `rejectEvolution()`
 - [ ] `applyNpcVisit()`
-- [ ] `recordLegacy()` Dynasty blend
+- [x] `recordLegacy()` legacy blend + New Life / Memory Guardian
 
 ### Phase C — Core Memories
-- [ ] `checkThresholdCrossings()` с `visitedZones` guard
-- [ ] `checkWeeklyDrift()` per-axis + per-direction cooldown
-- [ ] `MemoryTextGenerator.generate()` — шаблоны + AI path
-- [ ] `CoreMemoryCard.tsx` (rare / common визуально различимы)
-- [ ] Нарративный EvolutionProposal text
+- [x] `checkThresholdCrossings()` с `visitedZones` guard
+- [x] `checkWeeklyDrift()` per-axis + per-direction cooldown
+- [x] `MemoryTextGenerator.generate()` — шаблоны + Tiny AI path/fallback
+- [x] Core Memories визуально различимы inline в `EvolutionInspector`
+- [x] Нарративный EvolutionProposal text
 
 ### Phase D — UI
 - [ ] `TraitRadar.tsx`
-- [ ] `EvolutionBanner.tsx`
-- [ ] `SingularityBanner.tsx` — три зоны, glitch-анимация
-- [ ] `CatharsisProgress.tsx`
-- [ ] `DynastyLegacyBadge.tsx`
+- [x] `EvolutionBanner.tsx` functionality inline в `EvolutionInspector` (accept/reject + narrative)
+- [x] `SingularityBanner.tsx` functionality inline в `EvolutionInspector` — три зоны + progress
+- [x] `CatharsisProgress.tsx` functionality inline в `EvolutionInspector`
+- [x] Legacy badge заменён на `Память пути` + `MemoryGuardian` inline в `EvolutionInspector`
 - [ ] `NpcVisitPanel.tsx`
-- [ ] Confused state indicator
+- [x] Confused state indicator + Guardian hints
 
 ### Phase E — LiveOps
 - [ ] `/api/influence-registry` endpoint
 - [ ] Server-side: rolling average для GlobalBalancePatch (7-day window, ±2%/week cap)
+- [x] Remote влияния — client/shared validation helpers
 - [ ] Remote влияния — server validation на входе
 - [ ] CMS для геймдизайнеров: сезонные JSON без кода
 
 ### Phase F — Tiny AI
-- [ ] `DeviceCapabilities.hasOnDeviceAI()`
-- [ ] `TinyAIGenerator.generate()` с sanitization и fallback
+- [x] `DeviceCapabilities.hasOnDeviceAI()`
+- [x] `TinyAIGenerator.generate()` с fallback
+- [ ] Tiny AI sanitization policy / hardening
 - [ ] A/B тест: template vs AI — метрики engagement с Core Memory cards
 
 ### Phase G — Новые функции
@@ -1113,6 +1116,29 @@ legacyDescription?:    string;
 - [ ] Наказание → `discipline:*`
 - [ ] Одежда → `cosmetic:*`
 - [ ] Мультиплеер → реальные питомцы вместо NPC
+
+### Текущее резюме прогресса
+
+Закрыто в текущей реализации:
+
+- чистое ядро trait evolution: budget, smoothing, regression, formation, zones, hysteresis;
+- Singularity как первый gate `checkEvolution()` и единственный быстрый путь метаморфозы;
+- `shadow_form`, catharsis, cooldown, `confused` sleep lifecycle;
+- Core Memories: threshold crossing, weekly drift, rare/common cap;
+- MockApi integration для базового ухода, items/env, sleep lifecycle, sync;
+- New Life в новом теле: `/api/pet/new-life`, `legacyVector`, `memoryGuardian`, Guardian hints;
+- EvolutionProposal accept/reject flow: API, mock, store, UI, command handler, tests;
+- inline UI для formation, proposal, singularity, catharsis, confused, memory guardian.
+
+Остаётся крупными блоками:
+
+- NPC/social: `applyNpcVisit()`, `npcPets.ts`, `NpcVisitPanel.tsx`;
+- `TraitRadar.tsx` и выделение inline UI-блоков в отдельные компоненты при необходимости;
+- full offline command handler для economy/inventory/rewards;
+- backend replay/validation adapter;
+- LiveOps backend: `/api/influence-registry`, server validation, GlobalBalancePatch расчёт, CMS;
+- Tiny AI hardening и A/B metrics;
+- Phase G gameplay features: training, discipline, cosmetic influence, multiplayer.
 
 ---
 

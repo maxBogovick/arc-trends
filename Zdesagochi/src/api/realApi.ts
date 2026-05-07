@@ -41,6 +41,8 @@ export class RealApiService implements ApiService {
   healPet()                 { return this.post<Pet>('/api/pet/heal'); }
   bondWithPet()             { return this.post<Pet>('/api/pet/bond'); }
   syncPet()                 { return this.post<Pet>('/api/pet/sync'); }
+  acceptEvolution()         { return this.post<Pet>('/api/pet/evolution/accept'); }
+  rejectEvolution()         { return this.post<Pet>('/api/pet/evolution/reject'); }
   beginNewLife()            { return this.post<NewLifeResult>('/api/pet/new-life'); }
   updatePetName(name: string) { return this.patch<Pet>('/api/pet/name', { name }); }
   getPetEvents()            { return this.req<PetEvent[]>('/api/pet/events'); }

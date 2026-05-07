@@ -4,9 +4,9 @@ import { usePetStore, type RoomCustomization, type FloorStyle } from '../../stor
 import { getBackground } from '../../data/backgrounds';
 import { SceneEffects } from './SceneEffects';
 
-// ── Wall ──────────────────────────────────────────────────────────────────────
+// ── Wall sections ─────────────────────────────────────────────────────────────
 
-function buildWallStyle(c: RoomCustomization): CSSProperties {
+function buildBackWallStyle(c: RoomCustomization): CSSProperties {
   if (c.wallImage) {
     return {
       backgroundImage: `url(${c.wallImage})`,
@@ -24,6 +24,94 @@ function buildWallStyle(c: RoomCustomization): CSSProperties {
   }
 }
 
+function buildSideWallStyle(c: RoomCustomization): CSSProperties {
+  if (c.sideWallImage) {
+    return {
+      backgroundImage: `url(${c.sideWallImage})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    };
+  }
+  switch (c.sideWallStyle) {
+    case 'solid':
+      return { background: c.sideWallColor };
+    case 'v_gradient':
+      return { background: `linear-gradient(180deg, ${c.sideWallColor2} 0%, ${c.sideWallColor} 100%)` };
+  }
+}
+
+function WallSections({ c }: { c: RoomCustomization }) {
+  const backStyle = buildBackWallStyle(c);
+  const sideStyle = buildSideWallStyle(c);
+
+  // Clip-path trapezoids with correct perspective direction:
+  //   Inner top corner (junction with back wall) = 0%  — further from viewer → higher
+  //   Outer top corner (scene edge)              = 15% — closer to viewer  → lower
+  //
+  // Floor triangles extend the side walls downward, diagonal aligned with
+  // the floor perspective grid (inner-back → outer-front).
+
+  return (
+    <>
+      {/* Back wall — full-width base (fills corner triangles above side wall slants) */}
+      <div
+        className="absolute pointer-events-none"
+        style={{ top: 0, bottom: '28%', left: 0, right: 0, zIndex: 0, ...backStyle }}
+      />
+
+      {/* Left side wall — trapezoid: inner top at 0%, outer top at 15% of div height */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          top: 0, bottom: '28%', left: 0, width: '15%',
+          zIndex: 1,
+          clipPath: 'polygon(0% 15%, 100% 0%, 100% 100%, 0% 100%)',
+          ...sideStyle,
+        }}
+      >
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.1) 100%)' }} />
+      </div>
+
+      {/* Right side wall — mirror */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          top: 0, bottom: '28%', right: 0, width: '15%',
+          zIndex: 1,
+          clipPath: 'polygon(0% 0%, 100% 15%, 100% 100%, 0% 100%)',
+          ...sideStyle,
+        }}
+      >
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to left, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.1) 100%)' }} />
+      </div>
+
+      {/* Left floor triangle — diagonal from inner-back (15%,72%) to outer-front (0%,100%) */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          bottom: 0, left: 0, width: '15%', height: '28%', zIndex: 5,
+          clipPath: 'polygon(0% 0%, 100% 0%, 0% 100%)',
+          ...sideStyle,
+        }}
+      >
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.1) 100%)' }} />
+      </div>
+
+      {/* Right floor triangle */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          bottom: 0, right: 0, width: '15%', height: '28%', zIndex: 5,
+          clipPath: 'polygon(0% 0%, 100% 0%, 100% 100%)',
+          ...sideStyle,
+        }}
+      >
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to left, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.1) 100%)' }} />
+      </div>
+    </>
+  );
+}
+
 // ── Floor textures ────────────────────────────────────────────────────────────
 
 function buildFloorTextureStyle(style: FloorStyle, color: string, accent: string): CSSProperties {
@@ -35,11 +123,9 @@ function buildFloorTextureStyle(style: FloorStyle, color: string, accent: string
     case 'wood':
       return {
         backgroundImage: [
-          // plank separators
           `repeating-linear-gradient(180deg,
             rgba(0,0,0,0.32) 0px, rgba(0,0,0,0.32) 1px,
             transparent 1px, transparent 18px)`,
-          // grain shimmer
           `repeating-linear-gradient(88deg,
             transparent 0px, transparent 10px,
             rgba(255,255,255,0.025) 10px, rgba(255,255,255,0.025) 11px)`,
@@ -59,7 +145,7 @@ function buildFloorTextureStyle(style: FloorStyle, color: string, accent: string
       };
 
     case 'marble': {
-      const v = `${color}10`;
+      const v  = `${color}10`;
       const v2 = `${color}07`;
       return {
         backgroundImage: [
@@ -78,11 +164,9 @@ function buildFloorTextureStyle(style: FloorStyle, color: string, accent: string
     case 'metal':
       return {
         backgroundImage: [
-          // brushed horizontal micro-lines
           `repeating-linear-gradient(0deg,
             rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 1px,
             transparent 1px, transparent 3px)`,
-          // plate grid with accent tint
           `repeating-linear-gradient(90deg,
             ${accent}20 0px, ${accent}20 1px,
             transparent 1px, transparent 30px)`,
@@ -92,6 +176,184 @@ function buildFloorTextureStyle(style: FloorStyle, color: string, accent: string
         ].join(', '),
       };
   }
+}
+
+// ── Architectural overlays ────────────────────────────────────────────────────
+
+function ArchitecturalLayers({ c }: { c: RoomCustomization }) {
+  const accent = c.accentColor;
+
+  return (
+    <>
+      {/* ── Corner simulation (side walls) ── */}
+      {c.showCorners && (
+        <>
+          {/* Left corner shadow band */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: 0, bottom: '28%', left: 0, width: '16%', zIndex: 3,
+              background: 'linear-gradient(to right, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0.12) 60%, transparent 100%)',
+            }}
+          />
+          {/* Left corner line */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: 0, bottom: '28%', left: '15%', width: 1, zIndex: 4,
+              background: `linear-gradient(180deg,
+                transparent 0%,
+                rgba(0,0,0,0.45) 12%,
+                rgba(0,0,0,0.38) 88%,
+                transparent 100%)`,
+            }}
+          />
+          {/* Left corner highlight (gives 3D effect) */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: 0, bottom: '28%', left: '15.5%', width: 1, zIndex: 4,
+              background: `linear-gradient(180deg,
+                transparent 0%,
+                rgba(255,255,255,0.06) 12%,
+                rgba(255,255,255,0.04) 88%,
+                transparent 100%)`,
+            }}
+          />
+
+          {/* Right corner shadow band */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: 0, bottom: '28%', right: 0, width: '16%', zIndex: 3,
+              background: 'linear-gradient(to left, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0.12) 60%, transparent 100%)',
+            }}
+          />
+          {/* Right corner line */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: 0, bottom: '28%', right: '15%', width: 1, zIndex: 4,
+              background: `linear-gradient(180deg,
+                transparent 0%,
+                rgba(0,0,0,0.45) 12%,
+                rgba(0,0,0,0.38) 88%,
+                transparent 100%)`,
+            }}
+          />
+          {/* Right corner highlight */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: 0, bottom: '28%', right: '15.5%', width: 1, zIndex: 4,
+              background: `linear-gradient(180deg,
+                transparent 0%,
+                rgba(255,255,255,0.06) 12%,
+                rgba(255,255,255,0.04) 88%,
+                transparent 100%)`,
+            }}
+          />
+        </>
+      )}
+
+      {/* ── Wainscoting panels ── */}
+      {c.wallPanel === 'wainscot' && (
+        <div
+          className="absolute pointer-events-none"
+          style={{ top: '34%', bottom: '28%', left: 0, right: 0, zIndex: 3 }}
+        >
+          {/* Chair rail */}
+          <div style={{
+            position: 'absolute', top: 0, left: '15%', right: '15%', height: 2,
+            background: `linear-gradient(90deg,
+              transparent 0%,
+              ${accent}50 15%,
+              ${accent}60 50%,
+              ${accent}50 85%,
+              transparent 100%)`,
+            boxShadow: `0 1px 4px rgba(0,0,0,0.35)`,
+          }} />
+
+          {/* Three panels */}
+          {[
+            { left: '16%', right: '65%' },
+            { left: '37%', right: '37%' },
+            { left: '58%', right: '16%' },
+          ].map((p, i) => (
+            <div key={i} style={{
+              position: 'absolute',
+              top: '12%', bottom: '10%',
+              left: p.left, right: p.right,
+              border: `1px solid ${accent}30`,
+              borderRadius: 3,
+            }}>
+              <div style={{
+                position: 'absolute', inset: 4,
+                border: `1px solid ${accent}18`,
+                borderRadius: 1,
+              }} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Baseboard (floor-wall junction) ── */}
+      {c.showBaseboard && (
+        <>
+          {/* Baseboard body */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              bottom: '28%', left: 0, right: 0, height: 5, zIndex: 6,
+              background: `linear-gradient(180deg,
+                rgba(255,255,255,0.07) 0%,
+                rgba(255,255,255,0.04) 40%,
+                rgba(0,0,0,0.3) 100%)`,
+              boxShadow: '0 3px 10px rgba(0,0,0,0.5)',
+            }}
+          />
+          {/* Baseboard top highlight line */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              bottom: 'calc(28% + 5px)', left: 0, right: 0, height: 1, zIndex: 6,
+              background: `linear-gradient(90deg,
+                transparent 0%,
+                rgba(255,255,255,0.12) 15%,
+                rgba(255,255,255,0.16) 50%,
+                rgba(255,255,255,0.12) 85%,
+                transparent 100%)`,
+            }}
+          />
+        </>
+      )}
+
+      {/* ── Crown molding (ceiling line) ── */}
+      {c.showBaseboard && (
+        <>
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: 0, left: 0, right: 0, height: 4, zIndex: 6,
+              background: 'rgba(0,0,0,0.25)',
+            }}
+          />
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: 4, left: 0, right: 0, height: 1, zIndex: 6,
+              background: `linear-gradient(90deg,
+                transparent 0%,
+                rgba(255,255,255,0.08) 15%,
+                rgba(255,255,255,0.1) 50%,
+                rgba(255,255,255,0.08) 85%,
+                transparent 100%)`,
+            }}
+          />
+        </>
+      )}
+    </>
+  );
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -117,10 +379,9 @@ export function RoomScene({
   const bg     = getBackground(equippedBgId ?? 'void_dark');
   const accent = c.accentColor;
 
-  const wallStyle      = buildWallStyle(c);
-  const floorTexture   = buildFloorTextureStyle(c.floorStyle, c.floorColor, accent);
-  const floorGradient  = `linear-gradient(180deg, transparent, ${c.floorColor}55)`;
-  const showPerspGrid  = !c.floorImage && c.floorStyle === 'grid';
+  const floorTexture  = buildFloorTextureStyle(c.floorStyle, c.floorColor, accent);
+  const floorGradient = `linear-gradient(180deg, transparent, ${c.floorColor}55)`;
+  const showPerspGrid = !c.floorImage && c.floorStyle === 'grid';
 
   return (
     <div
@@ -130,7 +391,7 @@ export function RoomScene({
       style={{
         height,
         maxWidth,
-        ...wallStyle,
+        background: c.wallColor,
         boxShadow: [
           `0 24px 88px ${accent}44`,
           `0 6px 28px rgba(0,0,0,0.7)`,
@@ -139,6 +400,9 @@ export function RoomScene({
         ].join(', '),
       }}
     >
+      {/* Three-section wall (left side / back / right side) */}
+      <WallSections c={c} />
+
       {/* Theme animated effects */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <SceneEffects effects={bg.effects} />
@@ -155,15 +419,11 @@ export function RoomScene({
         }}
       />
 
-      {/* Wall vignette */}
+      {/* Ceiling/top darkening */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
-          background: [
-            'linear-gradient(to right,  rgba(0,0,0,0.44) 0%, transparent 22%)',
-            'linear-gradient(to left,   rgba(0,0,0,0.44) 0%, transparent 22%)',
-            'linear-gradient(to bottom, rgba(0,0,0,0.32) 0%, transparent 30%)',
-          ].join(', '),
+          background: 'linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, transparent 28%)',
           zIndex: 2,
         }}
       />
@@ -180,6 +440,9 @@ export function RoomScene({
           {d.emoji}
         </motion.div>
       ))}
+
+      {/* Architectural overlays (corners, wainscoting, baseboard, crown) */}
+      <ArchitecturalLayers c={c} />
 
       {/* ── Floor ── */}
       <div
@@ -212,7 +475,7 @@ export function RoomScene({
           </svg>
         )}
 
-        {/* User floor image — perspective receding into distance */}
+        {/* User floor image with perspective receding into distance */}
         {c.floorImage && (
           <div className="absolute inset-0" style={{ overflow: 'hidden' }}>
             <div

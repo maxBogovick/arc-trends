@@ -21,6 +21,7 @@ import {
   STABILITY_SYNCS,
   VARIANCE_HARD_RESET_HOURS,
   VOID_THRESHOLD_SYNCS,
+  acceptEvolution,
   addCoreMemory,
   addCatharsisProgress,
   applyInfluence,
@@ -41,6 +42,7 @@ import {
   onWakeFromSleep,
   recordDailyTraitSnapshot,
   recordLegacy,
+  rejectEvolution,
 } from '../src/personality/TraitEvolutionEngine';
 import { getEmergentStateDef } from '../src/personality/emergentStates';
 import { validateBalancePatch, validateInfluenceRegistry, validateRemoteInfluence } from '../src/personality/influenceRegistry';
@@ -700,6 +702,68 @@ test('void state enters identity_crisis after threshold', () => {
 
   assert.equal(pet.voidSyncs, VOID_THRESHOLD_SYNCS);
   assert.equal(pet.emergentState, 'identity_crisis');
+});
+
+test('acceptEvolution records stable evolution and rare memory', () => {
+  const pet = makePet({
+    personality: 'playful',
+    evolutionProposal: {
+      targetPersonalityId: 'paranoid',
+      readiness: 100,
+      depth: 1,
+      proposedAt: '2026-05-04T00:00:00.000Z',
+      coreMemoryIds: ['mem-a'],
+      narrativeText: 'Тестовое предложение',
+    },
+    currentTargetZone: 'paranoid',
+    ticksInTargetZone: STABILITY_SYNCS,
+  });
+
+  assert.equal(acceptEvolution(pet, { now: new Date('2026-05-04T01:00:00.000Z') }), true);
+  assert.equal(pet.personality, 'paranoid');
+  assert.equal(pet.evolutionProposal, undefined);
+  assert.equal(pet.currentTargetZone, null);
+  assert.equal(pet.evolutionHistory.at(-1)?.fromPersonalityId, 'playful');
+  assert.equal(pet.evolutionHistory.at(-1)?.toPersonalityId, 'paranoid');
+  assert.equal(pet.evolutionHistory.at(-1)?.trigger, 'stability');
+  assert.deepEqual(pet.evolutionHistory.at(-1)?.coreMemoryIds, ['mem-a']);
+  assert.equal(pet.coreMemories[0]?.personalityHint, 'paranoid');
+});
+
+test('rejectEvolution clears proposal without changing personality', () => {
+  const pet = makePet({
+    personality: 'playful',
+    currentTargetZone: 'paranoid',
+    ticksInTargetZone: STABILITY_SYNCS,
+    evolutionProposal: {
+      targetPersonalityId: 'paranoid',
+      readiness: 100,
+      depth: 1,
+      proposedAt: '2026-05-04T00:00:00.000Z',
+      coreMemoryIds: [],
+    },
+  });
+
+  assert.equal(rejectEvolution(pet), true);
+  assert.equal(pet.personality, 'playful');
+  assert.equal(pet.evolutionProposal, undefined);
+  assert.equal(pet.currentTargetZone, null);
+  assert.equal(pet.ticksInTargetZone, 0);
+  assert.equal(pet.evolutionHistory.length, 0);
+});
+
+test('checkEvolution proposal includes narrative text', () => {
+  const pet = makePet({
+    traitVector: { ...PERSONALITY_TRAIT_MAP.paranoid.position },
+    formationComplete: true,
+  });
+
+  for (let i = 0; i < STABILITY_SYNCS; i++) {
+    checkEvolution(pet, { now: new Date('2026-05-04T00:00:00.000Z') });
+  }
+
+  assert.equal(typeof pet.evolutionProposal?.narrativeText, 'string');
+  assert.equal(pet.evolutionProposal!.narrativeText!.includes('Параноик'), true);
 });
 
 test('singularity intercepts checkEvolution and collapses into one active zone', () => {

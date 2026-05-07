@@ -22,6 +22,7 @@ import {
 } from '../personality/PersonalityEngine';
 import {
   applyRegression,
+  acceptEvolution,
   canApplyInfluenceAtSync,
   applyInfluence,
   addCatharsisProgress,
@@ -30,6 +31,7 @@ import {
   checkThresholdCrossings,
   checkWeeklyDrift,
   recordLegacy,
+  rejectEvolution,
   onStartSleep,
   onWakeFromSleep,
   recordDailyTraitSnapshot,
@@ -955,6 +957,29 @@ export class MockApiService implements ApiService {
       if (newStage === 'teen') checkAchievement('growing_up', 1);
     }
     recordOfflineCommand({ type: 'sync', at: now.toISOString() });
+    return finalizePet();
+  }
+
+  async acceptEvolution(): Promise<Pet> {
+    await delay(rand(180, 300));
+    const proposal = S.pet.evolutionProposal;
+    if (!proposal) throw new Error('Нет активного предложения эволюции');
+    const accepted = acceptEvolution(S.pet, { now: mockNow(), memoryTextGenerator });
+    if (!accepted) throw new Error('Нет активного предложения эволюции');
+    const target = getPersonality(proposal.targetPersonalityId);
+    addEvent('evolve', `Выбран путь: ${target.name}`, target.emoji);
+    recordOfflineCommand({ type: 'accept_evolution', proposalId: proposal.proposedAt, at: currentMockIso() });
+    return finalizePet();
+  }
+
+  async rejectEvolution(): Promise<Pet> {
+    await delay(rand(160, 260));
+    const proposal = S.pet.evolutionProposal;
+    if (!proposal) throw new Error('Нет активного предложения эволюции');
+    rejectEvolution(S.pet);
+    const target = getPersonality(proposal.targetPersonalityId);
+    addEvent('evolve', `Путь ${target.name} отложен`, '🌙');
+    recordOfflineCommand({ type: 'reject_evolution', proposalId: proposal.proposedAt, at: currentMockIso() });
     return finalizePet();
   }
 

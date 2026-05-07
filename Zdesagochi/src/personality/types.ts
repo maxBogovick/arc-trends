@@ -91,6 +91,7 @@ export interface EvolutionProposal {
   depth: number;
   proposedAt: string;
   coreMemoryIds: string[];
+  narrativeText?: string;
 }
 
 export interface EvolutionRecord {

@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { DAILY_BUDGET, FORMATION_THRESHOLD, STABILITY_SYNCS } from '../../personality/TraitEvolutionEngine';
+import { DAILY_BUDGET, FORMATION_THRESHOLD, SINGULARITY_THRESHOLD_SYNCS, STABILITY_SYNCS } from '../../personality/TraitEvolutionEngine';
 import { getPersonality } from '../../personality/personalities';
 import { TRAIT_KEYS, type TraitKey } from '../../personality/types';
 import { usePetStore } from '../../store/petStore';
@@ -25,6 +26,7 @@ function fmt(value: number | undefined): string {
 }
 
 export function EvolutionInspector() {
+  const [newLifeOpen, setNewLifeOpen] = useState(false);
   const pet = usePetStore(s => s.pet);
   const account = usePetStore(s => s.account);
   const apiMode = usePetStore(s => s.apiMode);
@@ -33,6 +35,8 @@ export function EvolutionInspector() {
   const setDebugTimeScale = usePetStore(s => s.setDebugTimeScale);
   const advanceDebugTime = usePetStore(s => s.advanceDebugTime);
   const syncPet = usePetStore(s => s.syncPet);
+  const acceptEvolution = usePetStore(s => s.acceptEvolution);
+  const rejectEvolution = usePetStore(s => s.rejectEvolution);
   const beginNewLife = usePetStore(s => s.beginNewLife);
   if (!pet) return null;
 
@@ -51,6 +55,24 @@ export function EvolutionInspector() {
     : null;
   const canBeginNewLife = apiMode === 'mock' && (pet.stage === 'adult' || pet.stage === 'elder' || IS_DEV);
   const guardian = account.memoryGuardian;
+  const singularityZones = pet.singularityZones ?? [];
+  const singularityProgress = pct(pet.ticksInSingularity ?? 0, SINGULARITY_THRESHOLD_SYNCS);
+  const showCatharsis = pet.emergentState === 'shadow_form' || pet.traumaLevel >= 50 || pet.catharsisProgress > 0;
+  const catharsisPct = pct(pet.catharsisProgress ?? 0);
+  const rareMemories = memories.filter(memory => memory.tier === 'rare').slice(0, 3);
+  const guardianPreviewHints = [
+    pet.confusedState || variance >= 25
+      ? 'Хранитель запомнит: после насыщенного дня помогает непрерывный сон.'
+      : 'Хранитель запомнит устойчивый ритм заботы.',
+    pet.traumaLevel >= 40 || pet.catharsisAchieved
+      ? 'Мягкие действия останутся главным способом восстанавливать доверие.'
+      : 'Новая форма начнёт путь спокойнее благодаря накопленному опыту.',
+  ];
+
+  const confirmNewLife = async () => {
+    await beginNewLife();
+    setNewLifeOpen(false);
+  };
 
   return (
     <div className="rounded-3xl p-4 glass space-y-4">
@@ -136,6 +158,123 @@ export function EvolutionInspector() {
         )}
       </div>
 
+      {singularityZones.length > 0 && (
+        <div
+          className="rounded-2xl px-3 py-3 space-y-3 border"
+          style={{
+            background: pet.emergentState === 'singularity'
+              ? 'rgba(99,102,241,0.12)'
+              : 'rgba(16,185,129,0.10)',
+            borderColor: pet.emergentState === 'singularity'
+              ? 'rgba(99,102,241,0.25)'
+              : 'rgba(16,185,129,0.22)',
+          }}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide">Точка сингулярности</p>
+              <p className="text-[11px] text-gray-600 mt-0.5 leading-snug">
+                {pet.emergentState === 'singularity'
+                  ? 'Три пути раскрылись. Следующее движение может закрепить редкую метаморфозу.'
+                  : 'Характер балансирует между несколькими путями.'}
+              </p>
+            </div>
+            <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-white/70 text-indigo-600">
+              {pet.ticksInSingularity ?? 0}/{SINGULARITY_THRESHOLD_SYNCS}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-1.5">
+            {singularityZones.slice(0, 3).map(zone => {
+              const zoneDef = getPersonality(zone);
+              return (
+                <div key={zone} className="rounded-xl px-2 py-2 bg-white/70 border border-white/80 text-center min-w-0">
+                  <p className="text-xl">{zoneDef?.emoji ?? '✨'}</p>
+                  <p className="text-[10px] font-semibold text-gray-600 truncate mt-0.5">
+                    {zoneDef?.name ?? zone}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="h-2 rounded-full overflow-hidden bg-white/70">
+            <motion.div
+              className="h-full rounded-full"
+              style={{
+                background: pet.emergentState === 'singularity'
+                  ? 'linear-gradient(90deg,#6366F1,#10B981,#F59E0B)'
+                  : '#10B981',
+              }}
+              animate={{ width: `${singularityProgress}%` }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
+      )}
+
+      {showCatharsis && (
+        <div
+          className="rounded-2xl px-3 py-3 space-y-3 border"
+          style={{
+            background: pet.emergentState === 'shadow_form'
+              ? 'rgba(30,41,59,0.08)'
+              : 'rgba(245,158,11,0.10)',
+            borderColor: pet.emergentState === 'shadow_form'
+              ? 'rgba(30,41,59,0.18)'
+              : 'rgba(245,158,11,0.22)',
+          }}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Катарсис</p>
+              <p className="text-[11px] text-gray-600 mt-0.5 leading-snug">
+                {pet.emergentState === 'shadow_form'
+                  ? 'Теневая форма просит мягкой заботы. Доверие возвращается через спокойные действия.'
+                  : 'Напряжение накапливается. Сейчас лучше выбирать бережный уход.'}
+              </p>
+            </div>
+            <span
+              className="text-[10px] font-semibold px-2 py-1 rounded-full"
+              style={{
+                background: pet.emergentState === 'shadow_form' ? 'rgba(15,23,42,0.08)' : 'rgba(245,158,11,0.14)',
+                color: pet.emergentState === 'shadow_form' ? '#334155' : '#B45309',
+              }}
+            >
+              trauma {Math.round(pet.traumaLevel ?? 0)}
+            </span>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-gray-500">Прогресс восстановления</span>
+              <span className="text-[10px] text-gray-400">{Math.round(pet.catharsisProgress ?? 0)}/100</span>
+            </div>
+            <div className="h-2 rounded-full overflow-hidden bg-white/70">
+              <motion.div
+                className="h-full rounded-full"
+                style={{ background: pet.emergentState === 'shadow_form' ? '#475569' : '#F59E0B' }}
+                animate={{ width: `${catharsisPct}%` }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+              />
+            </div>
+          </div>
+
+          {pet.emergentState === 'shadow_form' && (
+            <div className="grid grid-cols-2 gap-1.5">
+              <div className="rounded-xl px-2 py-2 bg-white/70 border border-white/80">
+                <p className="text-[11px] font-semibold text-gray-600">Обнять</p>
+                <p className="text-[10px] text-gray-400">+25 катарсис</p>
+              </div>
+              <div className="rounded-xl px-2 py-2 bg-white/70 border border-white/80">
+                <p className="text-[11px] font-semibold text-gray-600">Лечить</p>
+                <p className="text-[10px] text-gray-400">+20 катарсис</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="rounded-2xl px-3 py-3 space-y-2 bg-white/60 border border-white/70">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -167,12 +306,96 @@ export function EvolutionInspector() {
         <button
           type="button"
           disabled={!canBeginNewLife || actionLoading === 'new_life'}
-          onClick={() => beginNewLife()}
+          onClick={() => setNewLifeOpen(true)}
           className="w-full rounded-xl py-2 text-[11px] font-semibold bg-emerald-600 text-white disabled:opacity-40"
         >
           {actionLoading === 'new_life' ? 'Сохраняем память...' : 'Новое тело'}
         </button>
       </div>
+
+      {newLifeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/35">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="w-full max-w-md rounded-3xl bg-white p-5 shadow-2xl border border-white/80 space-y-4"
+          >
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide">Память сохранится</p>
+              <h3 className="text-lg font-bold text-gray-800">Новое тело для {pet.name}</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Питомец сохранит память пути и станет Хранителем для новой формы. Опыт прошлого мягко повлияет на стартовые черты.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+              <div className="rounded-2xl px-3 py-3 bg-gray-50 border border-gray-100 text-center">
+                <p className="text-2xl">{getPersonality(pet.personality as any)?.emoji ?? '✨'}</p>
+                <p className="text-[11px] font-semibold text-gray-600 mt-1 truncate">{pet.name}</p>
+                <p className="text-[10px] text-gray-400">{getPersonality(pet.personality as any)?.name ?? pet.personality}</p>
+              </div>
+              <span className="text-emerald-500 font-bold">→</span>
+              <div className="rounded-2xl px-3 py-3 bg-emerald-50 border border-emerald-100 text-center">
+                <p className="text-2xl">🌱</p>
+                <p className="text-[11px] font-semibold text-emerald-700 mt-1">Новая форма</p>
+                <p className="text-[10px] text-emerald-600">с памятью пути</p>
+              </div>
+            </div>
+
+            {strongestLegacy && (
+              <div className="rounded-2xl px-3 py-3 bg-white border border-gray-100">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Сильнейший след</p>
+                <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: TRAIT_LABELS[strongestLegacy].bg }}>
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${pct(legacyVector?.[strongestLegacy] ?? 50)}%`,
+                      background: TRAIT_LABELS[strongestLegacy].color,
+                    }}
+                  />
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  {TRAIT_LABELS[strongestLegacy].label} · будущий echo {Math.round((account.legacyCoefficient ?? 0.15) * 100)}%
+                </p>
+              </div>
+            )}
+
+            <div className="rounded-2xl px-3 py-3 bg-emerald-50/80 border border-emerald-100 space-y-2">
+              <p className="text-[11px] font-semibold text-emerald-700">Хранитель памяти</p>
+              {guardianPreviewHints.map((hint, index) => (
+                <p key={index} className="text-[11px] text-emerald-700/85 leading-snug">{hint}</p>
+              ))}
+              {rareMemories.length > 0 && (
+                <div className="pt-1 space-y-1">
+                  {rareMemories.map(memory => (
+                    <p key={memory.id} className="text-[11px] text-emerald-700/80 truncate">
+                      {memory.emoji} {memory.text}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setNewLifeOpen(false)}
+                className="rounded-xl py-2 text-[12px] font-semibold bg-gray-100 text-gray-600"
+              >
+                Остаться
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading === 'new_life'}
+                onClick={() => void confirmNewLife()}
+                className="rounded-xl py-2 text-[12px] font-semibold bg-emerald-600 text-white disabled:opacity-40"
+              >
+                Обрести новое тело
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       <div className="space-y-2">
         {TRAIT_KEYS.map(key => {
@@ -211,11 +434,24 @@ export function EvolutionInspector() {
             </div>
             <span className="text-[10px] text-indigo-400">depth {proposal.depth.toFixed(2)}</span>
           </div>
+          {proposal.narrativeText && (
+            <p className="text-[11px] text-indigo-600 leading-snug">{proposal.narrativeText}</p>
+          )}
           <div className="grid grid-cols-2 gap-2">
-            <button disabled className="rounded-xl py-1.5 text-[11px] font-semibold bg-indigo-600/30 text-white">
+            <button
+              type="button"
+              disabled={actionLoading === 'accept_evolution' || actionLoading === 'reject_evolution'}
+              onClick={() => acceptEvolution()}
+              className="rounded-xl py-1.5 text-[11px] font-semibold bg-indigo-600 text-white disabled:opacity-40"
+            >
               Принять
             </button>
-            <button disabled className="rounded-xl py-1.5 text-[11px] font-semibold bg-white text-indigo-400 border border-indigo-100">
+            <button
+              type="button"
+              disabled={actionLoading === 'accept_evolution' || actionLoading === 'reject_evolution'}
+              onClick={() => rejectEvolution()}
+              className="rounded-xl py-1.5 text-[11px] font-semibold bg-white text-indigo-500 border border-indigo-100 disabled:opacity-40"
+            >
               Отложить
             </button>
           </div>

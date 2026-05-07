@@ -19,14 +19,28 @@ export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 
 
 export type FloorStyle = 'flat' | 'grid' | 'wood' | 'tile' | 'marble' | 'metal';
 
+export type WallPanel = 'none' | 'wainscot';
+
 export interface RoomCustomization {
+  // Back wall
   wallColor: string;
   wallColor2: string;
   wallStyle: 'solid' | 'v_gradient' | 'r_gradient';
   wallImage: string | null;
+  // Side walls (left + right, always in sync)
+  sideWallColor: string;
+  sideWallColor2: string;
+  sideWallStyle: 'solid' | 'v_gradient';
+  sideWallImage: string | null;
+  // Architecture
+  showBaseboard: boolean;
+  showCorners: boolean;
+  wallPanel: WallPanel;
+  // Floor
   floorColor: string;
   floorStyle: FloorStyle;
   floorImage: string | null;
+  // Effects
   accentColor: string;
 }
 
@@ -35,6 +49,13 @@ export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
   wallColor2: '#050010',
   wallStyle: 'v_gradient',
   wallImage: null,
+  sideWallColor: '#070014',
+  sideWallColor2: '#030008',
+  sideWallStyle: 'v_gradient',
+  sideWallImage: null,
+  showBaseboard: true,
+  showCorners: true,
+  wallPanel: 'none',
   floorColor: '#A855F7',
   floorStyle: 'grid',
   floorImage: null,
@@ -155,6 +176,8 @@ interface PetStore {
   healPet(): Promise<void>;
   bondWithPet(): Promise<void>;
   syncPet(): Promise<void>;
+  acceptEvolution(): Promise<void>;
+  rejectEvolution(): Promise<void>;
   beginNewLife(): Promise<void>;
   updatePetName(name: string): Promise<void>;
   savePetAppearance(): Promise<void>;
@@ -454,6 +477,22 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
     async syncPet() {
       try { set({ pet: await api().syncPet() }); } catch { /* silent */ }
+    },
+    async acceptEvolution() {
+      await action('accept_evolution', async () => {
+        const pet = await api().acceptEvolution();
+        set({ pet });
+        get().notify('🌟 Новый путь принят', 'success');
+        get().refreshProgress();
+      });
+    },
+    async rejectEvolution() {
+      await action('reject_evolution', async () => {
+        const pet = await api().rejectEvolution();
+        set({ pet });
+        get().notify('🌙 Путь отложен', 'info');
+        get().refreshProgress();
+      });
     },
     async beginNewLife() {
       await action('new_life', async () => {

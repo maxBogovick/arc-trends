@@ -6,6 +6,7 @@ import { createMemoryTextGenerator, type MemoryTextGenerator } from './memoryTex
 import {
   applyInfluence,
   applyRegression,
+  acceptEvolution,
   checkEvolution,
   checkThresholdCrossings,
   checkVarianceHardReset,
@@ -13,6 +14,7 @@ import {
   canApplyInfluenceAtSync,
   onStartSleep,
   onWakeFromSleep,
+  rejectEvolution,
   recordDailyTraitSnapshot,
 } from './TraitEvolutionEngine';
 import type { RegisteredInfluence, TraitVector } from './types';
@@ -138,6 +140,19 @@ export async function applyPersonalityCommand(
         currentSync,
       );
     }
+  } else if (command.type === 'accept_evolution') {
+    const accepted = acceptEvolution(nextPet, ctx);
+    const record = nextPet.evolutionHistory[nextPet.evolutionHistory.length - 1];
+    if (accepted && record) {
+      events.push({
+        type: 'evolution_recorded',
+        at: command.at,
+        commandId: command.commandId,
+        record,
+      });
+    }
+  } else if (command.type === 'reject_evolution') {
+    rejectEvolution(nextPet);
   } else {
     await applyCommandInfluence(nextPet, command, options, ctx, events, influenceCooldowns, currentSync);
   }

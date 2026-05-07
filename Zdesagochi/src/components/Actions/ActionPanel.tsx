@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { usePetStore } from '../../store/petStore';
 import { FoodMenuWrapper } from './FoodMenu';
-import type { Pet } from '../../api';
+import type { Account, Pet } from '../../api';
 
 interface ActionConfig {
   id: string;
@@ -29,12 +29,63 @@ const ACTION_META: Record<string, { emoji: (p: Pet) => string; label: (p: Pet) =
   bond:  { emoji: () => '🤗', label: () => 'Обнять' },
 };
 
+function getGuardianActionHint(pet: Pet, account: Account, actionId: string): string | null {
+  const guardian = account.memoryGuardian;
+  if (!guardian) return null;
+
+  if (actionId === 'sleep' && pet.isAsleep) {
+    return 'Хранитель помнит: сон лучше не прерывать раньше времени.';
+  }
+
+  if (actionId === 'sleep' && pet.confusedState) {
+    return 'После насыщенного дня новая форма лучше восстановится во сне.';
+  }
+
+  if (actionId === 'bond' && (pet.traumaLevel >= 40 || pet.emergentState === 'shadow_form')) {
+    return 'Мягкий контакт сейчас сильнее всего поддержит доверие.';
+  }
+
+  if (actionId === 'heal' && pet.emergentState === 'shadow_form') {
+    return 'Лечение поможет, но Хранитель подсказывает не заменять им заботу.';
+  }
+
+  if (actionId === 'feed' && pet.stats.hunger < 25) {
+    return 'Лучше кормить до сильного голода, чтобы тревога не закреплялась.';
+  }
+
+  if (actionId === 'play' && pet.stats.energy < 25) {
+    return 'Игру лучше отложить, когда сил почти не осталось.';
+  }
+
+  return null;
+}
+
+function getGuardianPanelHint(pet: Pet, account: Account): string | null {
+  const guardian = account.memoryGuardian;
+  if (!guardian) return null;
+
+  if (pet.emergentState === 'shadow_form') {
+    return 'Хранитель памяти рядом: мягкие действия и доверие помогут пройти тень.';
+  }
+
+  if (pet.confusedState) {
+    return 'Хранитель памяти подсказывает дать впечатлениям улечься через спокойный сон.';
+  }
+
+  if (pet.traumaLevel >= 40) {
+    return 'Хранитель памяти замечает напряжение: сейчас лучше выбирать заботливые действия.';
+  }
+
+  return guardian.guidance[0] ?? null;
+}
+
 export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
-  const { pet, sleepPet, wakePet, bathePet, healPet, bondWithPet, actionLoading } = usePetStore();
+  const { pet, account, sleepPet, wakePet, bathePet, healPet, bondWithPet, actionLoading } = usePetStore();
   const [showFood, setShowFood] = useState(false);
   const [gameMenu, setGameMenu] = useState(false);
 
   if (!pet) return null;
+  const guardianHint = getGuardianPanelHint(pet, account);
 
   const handleAction = async (id: string) => {
     switch (id) {
@@ -75,6 +126,12 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
 
       <div className="rounded-3xl p-4 glass">
         <h3 className="font-display font-bold text-lumio-text text-sm mb-3">Действия</h3>
+        {guardianHint && (
+          <div className="mb-3 rounded-2xl px-3 py-2 bg-emerald-50/80 border border-emerald-100">
+            <p className="text-[11px] font-semibold text-emerald-700">Хранитель памяти</p>
+            <p className="text-[11px] text-emerald-700/85 leading-snug mt-0.5">{guardianHint}</p>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-2">
           {ACTIONS.map(cfg => {
             const meta = ACTION_META[cfg.id];
@@ -82,7 +139,8 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
             const label = meta.label(pet);
             const isDisabled = (cfg.disabled?.(pet) ?? false) || !!actionLoading;
             const isActive = actionLoading === cfg.id || (cfg.id === 'sleep' && actionLoading === 'sleep');
-            const tooltip = cfg.tooltip?.(pet) ?? '';
+            const actionHint = getGuardianActionHint(pet, account, cfg.id);
+            const tooltip = actionHint ?? cfg.tooltip?.(pet) ?? '';
 
             return (
               <motion.button
@@ -108,6 +166,9 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
                   {isActive ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }}>⏳</motion.span> : emoji}
                 </span>
                 <span className="text-[11px] font-bold text-lumio-text relative z-10 leading-tight text-center">{label}</span>
+                {actionHint && (
+                  <span className="absolute right-1.5 top-1.5 z-10 h-2 w-2 rounded-full bg-emerald-400" />
+                )}
               </motion.button>
             );
           })}
