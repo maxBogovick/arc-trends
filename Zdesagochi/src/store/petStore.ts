@@ -32,6 +32,11 @@ export interface RoomCustomization {
   sideWallColor2: string;
   sideWallStyle: 'solid' | 'v_gradient';
   sideWallImage: string | null;
+  // Ceiling
+  ceilingColor: string;
+  ceilingColor2: string;
+  ceilingStyle: 'solid' | 'v_gradient';
+  ceilingImage: string | null;
   // Architecture
   showBaseboard: boolean;
   showCorners: boolean;
@@ -53,6 +58,10 @@ export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
   sideWallColor2: '#030008',
   sideWallStyle: 'v_gradient',
   sideWallImage: null,
+  ceilingColor: '#050010',
+  ceilingColor2: '#020008',
+  ceilingStyle: 'solid',
+  ceilingImage: null,
   showBaseboard: true,
   showCorners: true,
   wallPanel: 'none',

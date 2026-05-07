@@ -4,7 +4,9 @@ import { usePetStore, type RoomCustomization, type FloorStyle } from '../../stor
 import { getBackground } from '../../data/backgrounds';
 import { SceneEffects } from './SceneEffects';
 
-// ── Wall sections ─────────────────────────────────────────────────────────────
+const DEPTH = 400;
+
+// ── Wall style builders ───────────────────────────────────────────────────────
 
 function buildBackWallStyle(c: RoomCustomization): CSSProperties {
   if (c.wallImage) {
@@ -40,76 +42,20 @@ function buildSideWallStyle(c: RoomCustomization): CSSProperties {
   }
 }
 
-function WallSections({ c }: { c: RoomCustomization }) {
-  const backStyle = buildBackWallStyle(c);
-  const sideStyle = buildSideWallStyle(c);
-
-  // Clip-path trapezoids with correct perspective direction:
-  //   Inner top corner (junction with back wall) = 0%  — further from viewer → higher
-  //   Outer top corner (scene edge)              = 15% — closer to viewer  → lower
-  //
-  // Floor triangles extend the side walls downward, diagonal aligned with
-  // the floor perspective grid (inner-back → outer-front).
-
-  return (
-    <>
-      {/* Back wall — full-width base (fills corner triangles above side wall slants) */}
-      <div
-        className="absolute pointer-events-none"
-        style={{ top: 0, bottom: '28%', left: 0, right: 0, zIndex: 0, ...backStyle }}
-      />
-
-      {/* Left side wall — trapezoid: inner top at 0%, outer top at 15% of div height */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          top: 0, bottom: '28%', left: 0, width: '15%',
-          zIndex: 1,
-          clipPath: 'polygon(0% 15%, 100% 0%, 100% 100%, 0% 100%)',
-          ...sideStyle,
-        }}
-      >
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.1) 100%)' }} />
-      </div>
-
-      {/* Right side wall — mirror */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          top: 0, bottom: '28%', right: 0, width: '15%',
-          zIndex: 1,
-          clipPath: 'polygon(0% 0%, 100% 15%, 100% 100%, 0% 100%)',
-          ...sideStyle,
-        }}
-      >
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to left, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.1) 100%)' }} />
-      </div>
-
-      {/* Left floor triangle — diagonal from inner-back (15%,72%) to outer-front (0%,100%) */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          bottom: 0, left: 0, width: '15%', height: '28%', zIndex: 5,
-          clipPath: 'polygon(0% 0%, 100% 0%, 0% 100%)',
-          ...sideStyle,
-        }}
-      >
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.1) 100%)' }} />
-      </div>
-
-      {/* Right floor triangle */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          bottom: 0, right: 0, width: '15%', height: '28%', zIndex: 5,
-          clipPath: 'polygon(0% 0%, 100% 0%, 100% 100%)',
-          ...sideStyle,
-        }}
-      >
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to left, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.1) 100%)' }} />
-      </div>
-    </>
-  );
+function buildCeilingStyle(c: RoomCustomization): CSSProperties {
+  if (c.ceilingImage) {
+    return {
+      backgroundImage: `url(${c.ceilingImage})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    };
+  }
+  switch (c.ceilingStyle) {
+    case 'solid':
+      return { background: c.ceilingColor };
+    case 'v_gradient':
+      return { background: `linear-gradient(180deg, ${c.ceilingColor} 0%, ${c.ceilingColor2} 100%)` };
+  }
 }
 
 // ── Floor textures ────────────────────────────────────────────────────────────
@@ -117,8 +63,19 @@ function WallSections({ c }: { c: RoomCustomization }) {
 function buildFloorTextureStyle(style: FloorStyle, color: string, accent: string): CSSProperties {
   switch (style) {
     case 'flat':
-    case 'grid':
       return {};
+
+    case 'grid':
+      return {
+        backgroundImage: [
+          `repeating-linear-gradient(90deg,
+            ${accent}40 0px, ${accent}40 1px,
+            transparent 1px, transparent 40px)`,
+          `repeating-linear-gradient(0deg,
+            ${accent}40 0px, ${accent}40 1px,
+            transparent 1px, transparent 40px)`,
+        ].join(', '),
+      };
 
     case 'wood':
       return {
@@ -145,7 +102,7 @@ function buildFloorTextureStyle(style: FloorStyle, color: string, accent: string
       };
 
     case 'marble': {
-      const v  = `${color}10`;
+      const v = `${color}10`;
       const v2 = `${color}07`;
       return {
         backgroundImage: [
@@ -192,7 +149,7 @@ function ArchitecturalLayers({ c }: { c: RoomCustomization }) {
           <div
             className="absolute pointer-events-none"
             style={{
-              top: 0, bottom: '28%', left: 0, width: '16%', zIndex: 3,
+              top: 0, bottom: 0, left: 0, width: '16%', zIndex: 3,
               background: 'linear-gradient(to right, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0.12) 60%, transparent 100%)',
             }}
           />
@@ -200,7 +157,7 @@ function ArchitecturalLayers({ c }: { c: RoomCustomization }) {
           <div
             className="absolute pointer-events-none"
             style={{
-              top: 0, bottom: '28%', left: '15%', width: 1, zIndex: 4,
+              top: 0, bottom: 0, left: '15%', width: 1, zIndex: 4,
               background: `linear-gradient(180deg,
                 transparent 0%,
                 rgba(0,0,0,0.45) 12%,
@@ -208,11 +165,11 @@ function ArchitecturalLayers({ c }: { c: RoomCustomization }) {
                 transparent 100%)`,
             }}
           />
-          {/* Left corner highlight (gives 3D effect) */}
+          {/* Left corner highlight */}
           <div
             className="absolute pointer-events-none"
             style={{
-              top: 0, bottom: '28%', left: '15.5%', width: 1, zIndex: 4,
+              top: 0, bottom: 0, left: '15.5%', width: 1, zIndex: 4,
               background: `linear-gradient(180deg,
                 transparent 0%,
                 rgba(255,255,255,0.06) 12%,
@@ -225,7 +182,7 @@ function ArchitecturalLayers({ c }: { c: RoomCustomization }) {
           <div
             className="absolute pointer-events-none"
             style={{
-              top: 0, bottom: '28%', right: 0, width: '16%', zIndex: 3,
+              top: 0, bottom: 0, right: 0, width: '16%', zIndex: 3,
               background: 'linear-gradient(to left, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0.12) 60%, transparent 100%)',
             }}
           />
@@ -233,7 +190,7 @@ function ArchitecturalLayers({ c }: { c: RoomCustomization }) {
           <div
             className="absolute pointer-events-none"
             style={{
-              top: 0, bottom: '28%', right: '15%', width: 1, zIndex: 4,
+              top: 0, bottom: 0, right: '15%', width: 1, zIndex: 4,
               background: `linear-gradient(180deg,
                 transparent 0%,
                 rgba(0,0,0,0.45) 12%,
@@ -245,7 +202,7 @@ function ArchitecturalLayers({ c }: { c: RoomCustomization }) {
           <div
             className="absolute pointer-events-none"
             style={{
-              top: 0, bottom: '28%', right: '15.5%', width: 1, zIndex: 4,
+              top: 0, bottom: 0, right: '15.5%', width: 1, zIndex: 4,
               background: `linear-gradient(180deg,
                 transparent 0%,
                 rgba(255,255,255,0.06) 12%,
@@ -260,7 +217,7 @@ function ArchitecturalLayers({ c }: { c: RoomCustomization }) {
       {c.wallPanel === 'wainscot' && (
         <div
           className="absolute pointer-events-none"
-          style={{ top: '34%', bottom: '28%', left: 0, right: 0, zIndex: 3 }}
+          style={{ top: '34%', bottom: 0, left: 0, right: 0, zIndex: 3 }}
         >
           {/* Chair rail */}
           <div style={{
@@ -304,7 +261,7 @@ function ArchitecturalLayers({ c }: { c: RoomCustomization }) {
           <div
             className="absolute pointer-events-none"
             style={{
-              bottom: '28%', left: 0, right: 0, height: 5, zIndex: 6,
+              bottom: 0, left: 0, right: 0, height: 5, zIndex: 6,
               background: `linear-gradient(180deg,
                 rgba(255,255,255,0.07) 0%,
                 rgba(255,255,255,0.04) 40%,
@@ -316,7 +273,7 @@ function ArchitecturalLayers({ c }: { c: RoomCustomization }) {
           <div
             className="absolute pointer-events-none"
             style={{
-              bottom: 'calc(28% + 5px)', left: 0, right: 0, height: 1, zIndex: 6,
+              bottom: 5, left: 0, right: 0, height: 1, zIndex: 6,
               background: `linear-gradient(90deg,
                 transparent 0%,
                 rgba(255,255,255,0.12) 15%,
@@ -376,14 +333,17 @@ export function RoomScene({
   children,
 }: Props) {
   const { equippedBgId, roomCustomization: c } = usePetStore();
-  const bg     = getBackground(equippedBgId ?? 'void_dark');
+  const bg = getBackground(equippedBgId ?? 'void_dark');
   const accent = c.accentColor;
 
-  const floorTexture  = buildFloorTextureStyle(c.floorStyle, c.floorColor, accent);
-  const floorGradient = `linear-gradient(180deg, transparent, ${c.floorColor}55)`;
-  const showPerspGrid = !c.floorImage && c.floorStyle === 'grid';
+  const floorTexture = buildFloorTextureStyle(c.floorStyle, c.floorColor, accent);
+  const backWallStyle = buildBackWallStyle(c);
+  const sideWallStyle = buildSideWallStyle(c);
+  const ceilingStyle = buildCeilingStyle(c);
 
   return (
+    // overflow:hidden must be on a SEPARATE element from perspective — Safari flattens
+    // preserve-3d when overflow:hidden and perspective are on the same element.
     <div
       ref={sceneRef}
       onClick={onSceneClick}
@@ -400,11 +360,91 @@ export function RoomScene({
         ].join(', '),
       }}
     >
-      {/* Three-section wall (left side / back / right side) */}
-      <WallSections c={c} />
+      {/* Perspective container — intentionally separate from overflow:hidden above */}
+      <div
+        className="absolute inset-0"
+        style={{ perspective: '700px', perspectiveOrigin: '50% 44%', zIndex: 0 }}
+      >
+      {/* ── 3D room box ── */}
+      <div style={{ position: 'absolute', inset: 0, transformStyle: 'preserve-3d', WebkitTransformStyle: 'preserve-3d' }}>
+
+        {/* Back wall */}
+        <div
+          className="pointer-events-none"
+          style={{
+            position: 'absolute', inset: 0,
+            transform: `translateZ(-${DEPTH}px)`,
+            ...backWallStyle,
+          }}
+        />
+
+        {/* Left wall */}
+        <div
+          className="pointer-events-none"
+          style={{
+            position: 'absolute', top: 0, left: 0, width: DEPTH, height: '100%',
+            transformOrigin: '0% 50%',
+            transform: 'rotateY(90deg)',
+            ...sideWallStyle,
+          }}
+        >
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to left, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.08) 100%)' }} />
+        </div>
+
+        {/* Right wall */}
+        <div
+          className="pointer-events-none"
+          style={{
+            position: 'absolute', top: 0, right: 0, width: DEPTH, height: '100%',
+            transformOrigin: '100% 50%',
+            transform: 'rotateY(-90deg)',
+            ...sideWallStyle,
+          }}
+        >
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.08) 100%)' }} />
+        </div>
+
+        {/* Ceiling */}
+        <div
+          className="pointer-events-none"
+          style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: DEPTH,
+            transformOrigin: '50% 0%',
+            transform: 'rotateX(-90deg)',
+            ...ceilingStyle,
+          }}
+        >
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.1) 100%)' }} />
+        </div>
+
+        {/* Floor */}
+        <div
+          className="pointer-events-none"
+          style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0, height: DEPTH,
+            transformOrigin: '50% 100%',
+            transform: 'rotateX(90deg)',
+            background: c.floorColor,
+          }}
+        >
+          {!c.floorImage && (
+            <div style={{ position: 'absolute', inset: 0, ...floorTexture }} />
+          )}
+          {c.floorImage && (
+            <div style={{
+              position: 'absolute', inset: 0,
+              backgroundImage: `url(${c.floorImage})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }} />
+          )}
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(0deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.5) 100%)' }} />
+        </div>
+      </div>
+      </div>{/* end perspective container */}
 
       {/* Theme animated effects */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 1 }}>
         <SceneEffects effects={bg.effects} />
       </div>
 
@@ -415,7 +455,7 @@ export function RoomScene({
           top: '8%', left: '50%', transform: 'translate(-50%, 0)',
           width: '78%', height: '62%',
           background: `radial-gradient(ellipse at 50% 48%, ${accent}1E 0%, transparent 68%)`,
-          zIndex: 1,
+          zIndex: 2,
         }}
       />
 
@@ -444,69 +484,11 @@ export function RoomScene({
       {/* Architectural overlays (corners, wainscoting, baseboard, crown) */}
       <ArchitecturalLayers c={c} />
 
-      {/* ── Floor ── */}
-      <div
-        className="absolute bottom-0 left-0 right-0 pointer-events-none"
-        style={{ height: '28%', zIndex: 4 }}
-      >
-        {/* Base depth gradient */}
-        <div className="absolute inset-0" style={{ background: floorGradient }} />
-
-        {/* CSS texture pattern */}
-        {!c.floorImage && (
-          <div className="absolute inset-0" style={floorTexture} />
-        )}
-
-        {/* Perspective grid (grid style only) */}
-        {showPerspGrid && (
-          <svg
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.35 }}
-            viewBox="0 0 100 28"
-            preserveAspectRatio="none"
-          >
-            {[-85, -60, -38, -18, 0, 18, 38, 60, 85].map((offset, i) => (
-              <line key={`v${i}`} x1={50} y1={0} x2={50 + offset} y2={28}
-                stroke={accent} strokeWidth={0.45} />
-            ))}
-            {[5, 11, 17, 24].map((y, i) => (
-              <line key={`h${i}`} x1={0} y1={y} x2={100} y2={y}
-                stroke={accent} strokeWidth={0.35} opacity={0.8 - i * 0.14} />
-            ))}
-          </svg>
-        )}
-
-        {/* User floor image with perspective receding into distance */}
-        {c.floorImage && (
-          <div className="absolute inset-0" style={{ overflow: 'hidden' }}>
-            <div
-              style={{
-                position: 'absolute',
-                bottom: 0,
-                left: '-15%',
-                right: '-15%',
-                height: '210%',
-                backgroundImage: `url(${c.floorImage})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center 30%',
-                transform: 'perspective(220px) rotateX(44deg)',
-                transformOrigin: 'bottom center',
-              }}
-            />
-          </div>
-        )}
-
-        {/* Floor edge darkening for depth */}
-        <div
-          className="absolute inset-0"
-          style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.22) 0%, transparent 35%)' }}
-        />
-      </div>
-
       {/* Pet shadow on floor */}
       <div
         className="absolute pointer-events-none"
         style={{
-          bottom: '22%', left: '50%', transform: 'translateX(-50%)',
+          bottom: '14%', left: '50%', transform: 'translateX(-50%)',
           width: '46%', height: '5%',
           background: `radial-gradient(ellipse, ${accent}88 0%, transparent 70%)`,
           filter: 'blur(12px)',

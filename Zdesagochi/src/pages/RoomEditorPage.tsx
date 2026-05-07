@@ -311,6 +311,23 @@ function WallPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCust
         ]}
       />
 
+      {/* Ceiling */}
+      <WallSubSection
+        title="☁️ Потолок"
+        image={c.ceilingImage}
+        onImageChange={v => set({ ceilingImage: v })}
+        color={c.ceilingColor}
+        color2={c.ceilingColor2}
+        wallStyle={c.ceilingStyle}
+        onColor={v => set({ ceilingColor: v })}
+        onColor2={v => set({ ceilingColor2: v })}
+        onStyle={v => set({ ceilingStyle: v as RoomCustomization['ceilingStyle'] })}
+        styleOptions={[
+          { id: 'solid',      label: 'Однотонная' },
+          { id: 'v_gradient', label: 'Градиент' },
+        ]}
+      />
+
       {/* Architecture section — always visible */}
       <div className="pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         <SectionLabel>Архитектура</SectionLabel>
