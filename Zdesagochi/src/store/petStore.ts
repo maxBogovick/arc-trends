@@ -19,7 +19,6 @@ export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 
 
 export type FloorStyle = 'flat' | 'grid' | 'wood' | 'tile' | 'marble' | 'metal';
 
-export type WallPanel = 'none' | 'wainscot';
 
 export interface RoomCustomization {
   // Back wall
@@ -37,10 +36,6 @@ export interface RoomCustomization {
   ceilingColor2: string;
   ceilingStyle: 'solid' | 'v_gradient';
   ceilingImage: string | null;
-  // Architecture
-  showBaseboard: boolean;
-  showCorners: boolean;
-  wallPanel: WallPanel;
   // Floor
   floorColor: string;
   floorStyle: FloorStyle;
@@ -62,9 +57,6 @@ export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
   ceilingColor2: '#020008',
   ceilingStyle: 'solid',
   ceilingImage: null,
-  showBaseboard: true,
-  showCorners: true,
-  wallPanel: 'none',
   floorColor: '#A855F7',
   floorStyle: 'grid',
   floorImage: null,
@@ -297,11 +289,14 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
 
     applyRoomPreset(id: string) {
-      const preset = get().roomPresets.find(p => p.id === id);
+      const { roomPresets, ownedFurnitureIds } = get();
+      const preset = roomPresets.find(p => p.id === id);
       if (!preset) return;
       set({
         roomCustomization: { ...preset.customization },
-        placedFurniture: preset.furniture.map(f => ({ ...f })),
+        placedFurniture: preset.furniture
+          .filter(f => ownedFurnitureIds.includes(f.itemId))
+          .map(f => ({ ...f })),
       });
       get().notify(`Комната «${preset.name}» применена`, 'info');
     },

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePetStore, type RoomCustomization, type FloorStyle, type WallPanel as WallPanelType, type RoomPreset } from '../store/petStore';
+import { usePetStore, type RoomCustomization, type FloorStyle, type RoomPreset } from '../store/petStore';
 import { getFurniture, getFurnitureByCategory } from '../data/roomFurniture';
 import { BACKGROUNDS } from '../data/backgrounds';
 import { getBackground } from '../data/backgrounds';
@@ -120,28 +120,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      onClick={() => onChange(!checked)}
-      className="relative shrink-0"
-      style={{
-        width: 32, height: 18, borderRadius: 9,
-        background: checked ? 'rgba(124,58,237,0.75)' : 'rgba(255,255,255,0.15)',
-        border: checked ? '1px solid rgba(124,58,237,0.9)' : '1px solid rgba(255,255,255,0.2)',
-        transition: 'background 0.2s, border-color 0.2s',
-      }}
-    >
-      <div style={{
-        position: 'absolute', top: 2,
-        left: checked ? 13 : 2,
-        width: 12, height: 12, borderRadius: '50%',
-        background: 'white',
-        transition: 'left 0.18s',
-      }} />
-    </button>
-  );
-}
 
 // ── Image upload ──────────────────────────────────────────────────────────────
 
@@ -328,47 +306,6 @@ function WallPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCust
         ]}
       />
 
-      {/* Architecture section — always visible */}
-      <div className="pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-        <SectionLabel>Архитектура</SectionLabel>
-        <div className="space-y-2.5">
-
-          <label className="flex items-center justify-between cursor-pointer">
-            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>
-              Плинтус и карниз
-            </span>
-            <Toggle checked={c.showBaseboard} onChange={v => set({ showBaseboard: v })} />
-          </label>
-
-          <label className="flex items-center justify-between cursor-pointer">
-            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>
-              Углы комнаты
-            </span>
-            <Toggle checked={c.showCorners} onChange={v => set({ showCorners: v })} />
-          </label>
-
-          <div>
-            <p className="text-xs mb-1.5" style={{ color: 'rgba(255,255,255,0.55)' }}>
-              Панели стены
-            </p>
-            <div className="flex gap-1.5">
-              {([
-                { id: 'none',     label: 'Нет' },
-                { id: 'wainscot', label: 'Вейнскотинг' },
-              ] as Array<{ id: WallPanelType; label: string }>).map(opt => (
-                <StyleButton
-                  key={opt.id}
-                  active={c.wallPanel === opt.id}
-                  onClick={() => set({ wallPanel: opt.id })}
-                >
-                  {opt.label}
-                </StyleButton>
-              ))}
-            </div>
-          </div>
-
-        </div>
-      </div>
     </div>
   );
 }
@@ -679,6 +616,78 @@ function PresetsPanel() {
   );
 }
 
+// ── Draggable furniture item ───────────────────────────────────────────────────
+// Uses raw pointer events instead of framer-motion drag to avoid the internal
+// translate accumulation bug: framer-motion doesn't reset its x/y when the
+// CSS left/top position updates, causing items to drift further on each drag.
+
+interface DraggableFurnitureItemProps {
+  placed: { uid: string; itemId: string; x: number; y: number; scale: number; flipped: boolean; zIndex: number };
+  isSelected: boolean;
+  onMove: (uid: string, dx: number, dy: number) => void;
+  onSelect: (uid: string) => void;
+}
+
+function DraggableFurnitureItem({ placed, isSelected, onMove, onSelect }: DraggableFurnitureItemProps) {
+  const def = getFurniture(placed.itemId);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragging = React.useRef(false);
+  const startPointer = React.useRef({ x: 0, y: 0 });
+
+  if (!def) return null;
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragging.current = true;
+    startPointer.current = { x: e.clientX, y: e.clientY };
+    setOffset({ x: 0, y: 0 });
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    setOffset({ x: e.clientX - startPointer.current.x, y: e.clientY - startPointer.current.y });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    const dx = e.clientX - startPointer.current.x;
+    const dy = e.clientY - startPointer.current.y;
+    setOffset({ x: 0, y: 0 });
+    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
+      onSelect(placed.uid);
+    } else {
+      onMove(placed.uid, dx, dy);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: `${placed.x}%`,
+        top: `${placed.y}%`,
+        transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scaleX(${placed.flipped ? -1 : 1})`,
+        fontSize: `${placed.scale * 2.5}rem`,
+        cursor: offset.x || offset.y ? 'grabbing' : 'grab',
+        zIndex: placed.zIndex + (offset.x || offset.y ? 50 : 0),
+        filter: isSelected
+          ? 'drop-shadow(0 0 10px rgba(124,58,237,0.9))'
+          : 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))',
+        userSelect: 'none',
+        touchAction: 'none',
+        transition: offset.x || offset.y ? 'none' : 'filter 0.15s',
+      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+    >
+      {def.emoji}
+    </div>
+  );
+}
+
 export function RoomEditorPage() {
   const {
     setActiveTab,
@@ -710,14 +719,14 @@ export function RoomEditorPage() {
     if (e.target === sceneRef.current) setSelectedUid(null);
   };
 
-  const handleDragEnd = (uid: string, offsetX: number, offsetY: number) => {
+  const handleFurnitureMove = (uid: string, dx: number, dy: number) => {
     if (!sceneRef.current) return;
     const rect = sceneRef.current.getBoundingClientRect();
     const placed = placedFurniture.find(p => p.uid === uid);
     if (!placed) return;
     updateRoomFurniture(uid, {
-      x: Math.max(2, Math.min(98, placed.x + (offsetX / rect.width) * 100)),
-      y: Math.max(2, Math.min(92, placed.y + (offsetY / rect.height) * 100)),
+      x: Math.max(2, Math.min(98, placed.x + (dx / rect.width) * 100)),
+      y: Math.max(2, Math.min(92, placed.y + (dy / rect.height) * 100)),
     });
   };
 
@@ -941,38 +950,15 @@ export function RoomEditorPage() {
             className="cursor-crosshair"
           >
             {/* Draggable furniture */}
-            {placedFurniture.map(placed => {
-              const def = getFurniture(placed.itemId);
-              if (!def) return null;
-              const isSelected = selectedUid === placed.uid;
-
-              return (
-                <motion.div
-                  key={placed.uid}
-                  drag
-                  dragMomentum={false}
-                  dragConstraints={sceneRef}
-                  onDragEnd={(_e, info) => handleDragEnd(placed.uid, info.offset.x, info.offset.y)}
-                  onClick={e => { e.stopPropagation(); setSelectedUid(placed.uid); }}
-                  style={{
-                    position: 'absolute',
-                    left: `${placed.x}%`,
-                    top: `${placed.y}%`,
-                    transform: `translate(-50%, -50%) scaleX(${placed.flipped ? -1 : 1})`,
-                    fontSize: `${placed.scale * 2.5}rem`,
-                    cursor: isSelected ? 'grabbing' : 'grab',
-                    zIndex: placed.zIndex,
-                    filter: isSelected
-                      ? 'drop-shadow(0 0 8px rgba(124,58,237,0.8))'
-                      : 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))',
-                    userSelect: 'none',
-                  }}
-                  whileHover={{ scale: 1.05 }}
-                >
-                  {def.emoji}
-                </motion.div>
-              );
-            })}
+            {placedFurniture.map(placed => (
+              <DraggableFurnitureItem
+                key={placed.uid}
+                placed={placed}
+                isSelected={selectedUid === placed.uid}
+                onMove={handleFurnitureMove}
+                onSelect={setSelectedUid}
+              />
+            ))}
           </RoomScene>
 
           {/* Selected item controls */}

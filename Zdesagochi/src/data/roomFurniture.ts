@@ -19,7 +19,7 @@ export const FURNITURE: FurnitureDefinition[] = [
 
   // ── Lamps ──────────────────────────────────────────────────────────────────
   { id: 'candle',    name: 'Свеча',     emoji: '🕯️', category: 'lamp',      price: 0,   rarity: 'common',    defaultScale: 0.9 },
-  { id: 'torch',     name: 'Фонарь',    emoji: '🔦', category: 'lamp',      price: 50,  rarity: 'common',    defaultScale: 1.0 },
+  { id: 'torch',     name: 'Фонарик',   emoji: '🔦', category: 'lamp',      price: 50,  rarity: 'common',    defaultScale: 1.0 },
   { id: 'floorlamp', name: 'Торшер',    emoji: '💡', category: 'lamp',      price: 100, rarity: 'common',    defaultScale: 1.2 },
   { id: 'oillamp',   name: 'Лампадка',  emoji: '🪔', category: 'lamp',      price: 200, rarity: 'rare',      defaultScale: 1.0 },
   { id: 'chandelier',name: 'Люстра',    emoji: '✨', category: 'lamp',      price: 300, rarity: 'epic',      defaultScale: 1.5 },
@@ -53,7 +53,7 @@ export const FURNITURE: FurnitureDefinition[] = [
 ];
 
 export const getFurniture = (id: string): FurnitureDefinition | undefined =>
-  FURNITURE.find(f => f.id === id) ?? FURNITURE[0];
+  FURNITURE.find(f => f.id === id);
 
 export const getFurnitureByCategory = (cat: string): FurnitureDefinition[] =>
   FURNITURE.filter(f => f.category === cat);
