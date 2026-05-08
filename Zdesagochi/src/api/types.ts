@@ -83,6 +83,7 @@ export interface Pet {
   behavioralFlags: import('../personality/types').BehavioralFlag[];
   emergentState: import('../personality/types').EmergentStateType | null;
   emergentStateEnteredAt?: string;
+  stateLayers?: import('../personality/types').PetStateLayers;
   behavioralCounters: import('../personality/types').BehavioralCounters;
   moodHistory: import('../personality/types').MoodSnapshot[];
 

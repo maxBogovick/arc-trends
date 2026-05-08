@@ -1,4 +1,4 @@
-import type { PatternRule } from './types';
+import type { PatternCondition, PatternRule } from './types';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  PATTERN_RULES — массив правил Pattern Engine.
@@ -9,9 +9,9 @@ import type { PatternRule } from './types';
 //    action_frequency        → maxConsecHighPlayDays, playCountToday
 //    stat_below_threshold    → consecutiveLowHealthSyncs, filthCrisisCount30d
 //    session_gap_hours       → sessionGapsOver48h_30d, sessionGapHours
-//    time_of_day_action      → nightWakeCount7d
+//    time_of_day_action      → nightWakeCount7d, nightSingleInteractionDays7d
 //    consecutive_syncs_cond  → consecutiveGoodSyncs
-//    same_food_ratio         → dailyFoodLog ratio
+//    same_food_ratio         → rolling 7d foodCounts ratio
 //    unique_items_used       → uniqueFoodsTried.length
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -206,3 +206,78 @@ export const PATTERN_RULES: PatternRule[] = [
     effect: { flagType: 'forced_sleep', action: 'add_heal_progress', healProgressDelta: 25 },
   },
 ];
+
+export function validatePatternRules(rules: PatternRule[] = PATTERN_RULES): void {
+  const ids = new Set<string>();
+
+  for (const rule of rules) {
+    if (ids.has(rule.id)) throw new Error(`${rule.id}: duplicate PatternRule id`);
+    ids.add(rule.id);
+
+    if (rule.conditions.length === 0) throw new Error(`${rule.id}: conditions must not be empty`);
+    for (const condition of rule.conditions) validatePatternCondition(rule.id, condition);
+
+    if (rule.severityThresholds) {
+      const [low, medium, high] = rule.severityThresholds;
+      if (!(low <= medium && medium <= high)) {
+        throw new Error(`${rule.id}: severityThresholds must be ascending`);
+      }
+    }
+  }
+}
+
+function validatePatternCondition(ruleId: string, condition: PatternCondition): void {
+  const params = condition.params;
+
+  switch (condition.type) {
+    case 'action_in_stat_zone':
+      if (!isOneOf(params.action, ['feed', 'sleep', 'heal'])) {
+        throw new Error(`${ruleId}: action_in_stat_zone.action is unsupported`);
+      }
+      if (!isOneOf(params.zone, ['red', 'green', 'high'])) {
+        throw new Error(`${ruleId}: action_in_stat_zone.zone is unsupported`);
+      }
+      requireNumber(ruleId, params.threshold, 'threshold');
+      return;
+    case 'action_frequency':
+      if (params.action !== 'play') throw new Error(`${ruleId}: action_frequency.action is unsupported`);
+      requireNumber(ruleId, params.threshold, 'threshold');
+      requireNumber(ruleId, params.countPerDay, 'countPerDay');
+      return;
+    case 'stat_below_threshold':
+      if (!isOneOf(params.statKey, ['health', 'cleanliness'])) {
+        throw new Error(`${ruleId}: stat_below_threshold.statKey is unsupported`);
+      }
+      requireNumber(ruleId, params.threshold, 'threshold');
+      return;
+    case 'session_gap_hours':
+      requireNumber(ruleId, params.threshold, 'threshold');
+      return;
+    case 'time_of_day_action':
+      if (!isOneOf(params.action, ['wake', 'night_single'])) {
+        throw new Error(`${ruleId}: time_of_day_action.action is unsupported`);
+      }
+      requireNumber(ruleId, params.threshold, 'threshold');
+      return;
+    case 'consecutive_syncs_cond':
+      requireNumber(ruleId, params.threshold, 'threshold');
+      return;
+    case 'same_food_ratio':
+      requireNumber(ruleId, params.ratio, 'ratio');
+      requireNumber(ruleId, params.minFeeds, 'minFeeds');
+      return;
+    case 'unique_items_used':
+      requireNumber(ruleId, params.minUnique, 'minUnique');
+      return;
+  }
+}
+
+function isOneOf(value: unknown, allowed: string[]): boolean {
+  return typeof value === 'string' && allowed.includes(value);
+}
+
+function requireNumber(ruleId: string, value: unknown, field: string): void {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${ruleId}: ${field} must be a finite number`);
+  }
+}

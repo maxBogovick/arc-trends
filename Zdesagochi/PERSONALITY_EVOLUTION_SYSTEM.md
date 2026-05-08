@@ -1039,6 +1039,9 @@ singularityZones:      PersonalityId[];
 
 ## 14. План реализации
 
+Технический аудит текущей реализации и список архитектурных рисков зафиксирован отдельно:
+`PERSONALITY_ENGINE_AUDIT.md`.
+
 ### Phase A.0 — Milestone Formation
 - [x] `FORMATION_THRESHOLD`, `FORMATION_WEIGHTS`
 - [x] `formationProgress`, `formationComplete`, `visitedZones: []`
@@ -1072,6 +1075,8 @@ singularityZones:      PersonalityId[];
 
 ### Phase B — Интеграция в MockApi
 - [x] `applyInfluence()` во всех базовых actions/items/env (с `getIntensityMultiplier()`)
+- [x] `RegisteredInfluence.conditions` реально блокируют применение influence
+- [x] Deterministic runtime context для command replay (`now` + `rng`)
 - [x] `applyRegression()` + `checkEvolution()` в `syncPet()`
 - [x] `checkSingularity()` + `collapseSingularity()`
 - [x] `onStartSleep()` / `onWakeFromSleep()` с min-sleep-duration
@@ -1079,6 +1084,12 @@ singularityZones:      PersonalityId[];
 - [x] `identity_crisis` через voidSyncs
 - [x] `shadow_form`: double-barrier, `triggerCatharsis()`
 - [x] `acceptEvolution()` / `rejectEvolution()`
+- [x] Pattern Engine rolling buckets для 7d/30d counters
+- [x] Pattern Engine rolling `same_food_ratio` и `night_single`
+- [x] `validatePatternRules()` для params/evaluator compatibility
+- [x] State layers: `gameplay` / `evolution` / `cognitive` + legacy primary `emergentState`
+- [x] Active state effects stack across layers; blockers resolve by priority
+- [x] Explicit `exclusive` semantics inside each state layer
 - [ ] `applyNpcVisit()`
 - [x] `recordLegacy()` legacy blend + New Life / Memory Guardian
 

@@ -9,7 +9,13 @@ import {
   setMockTimeScale,
 } from '../src/api/mockApi';
 import type { BehavioralCounters, MoodSnapshot, TraitVector } from '../src/personality/types';
-import { createDefaultCounters } from '../src/personality/PersonalityEngine';
+import {
+  applyActionModifiers,
+  createDefaultCounters,
+  isActionBlocked,
+  runPatternEngine,
+  updateCounters,
+} from '../src/personality/PersonalityEngine';
 import {
   DAILY_BUDGET,
   FORMATION_THRESHOLD,
@@ -27,6 +33,7 @@ import {
   applyInfluence,
   applyRegression,
   canApplyInfluenceAtSync,
+  canApplyInfluence,
   checkShadowForm,
   checkVarianceHardReset,
   checkThresholdCrossings,
@@ -46,6 +53,9 @@ import {
 } from '../src/personality/TraitEvolutionEngine';
 import { getEmergentStateDef } from '../src/personality/emergentStates';
 import { validateBalancePatch, validateInfluenceRegistry, validateRemoteInfluence } from '../src/personality/influenceRegistry';
+import { PATTERN_RULES, validatePatternRules } from '../src/personality/patternRules';
+import { getPersonality } from '../src/personality/personalities';
+import { setLayeredEmergentState } from '../src/personality/stateLayers';
 import { PERSONALITY_TRAIT_MAP } from '../src/personality/personalityTraitMap';
 import {
   PERSONALITY_ENGINE_VERSION,
@@ -85,6 +95,7 @@ function makePet(overrides: Partial<Pet> = {}): Pet {
     behavioralFlags: [],
     emergentState: null,
     emergentStateEnteredAt: undefined,
+    stateLayers: {},
     behavioralCounters: createDefaultCounters() as BehavioralCounters,
     moodHistory: [] as MoodSnapshot[],
     traitVector: createInitialTraitVector(),
@@ -272,6 +283,211 @@ test('offline storage reports invalid json and invalid shape without throwing', 
   assert.deepEqual(loadOfflinePetSave(badShapeStorage), { ok: false, reason: 'invalid_shape' });
 });
 
+test('pattern rule params validate against supported evaluator semantics', () => {
+  validatePatternRules(PATTERN_RULES);
+  assert.throws(() => validatePatternRules([{
+    id: 'bad_rule',
+    description: 'bad',
+    conditions: [
+      { type: 'action_in_stat_zone', params: { action: 'bond', zone: 'high', threshold: 1 } },
+    ],
+    effect: { flagType: 'trust_bond', action: 'activate' },
+  }]), /unsupported/);
+});
+
+test('pattern counters materialize seven day rolling action windows', () => {
+  let counters = createDefaultCounters({
+    now: new Date('2026-05-01T10:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+
+  for (let day = 1; day <= 5; day++) {
+    counters = updateCounters(
+      counters,
+      'feed',
+      { hunger: 10, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+      {
+        foodId: 'apple',
+        clientLocalHour: 10,
+        coinBalance: 0,
+        now: new Date(`2026-05-0${day}T10:00:00.000Z`),
+        rng: () => 0.1,
+      },
+    ) as BehavioralCounters;
+  }
+
+  let flags = runPatternEngine(
+    counters,
+    [],
+    getPersonality('playful'),
+    { now: new Date('2026-05-05T10:00:00.000Z'), rng: () => 0.1 },
+  );
+  assert.equal(counters.feedInRedZone7d, 5);
+  assert.equal(flags.some(flag => flag.type === 'food_anxiety'), true);
+
+  counters = updateCounters(
+    counters,
+    'sync',
+    { hunger: 80, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    {
+      clientLocalHour: 10,
+      coinBalance: 0,
+      now: new Date('2026-05-08T10:00:00.000Z'),
+      rng: () => 0.1,
+    },
+  ) as BehavioralCounters;
+  flags = runPatternEngine(
+    counters,
+    [],
+    getPersonality('playful'),
+    { now: new Date('2026-05-08T10:00:00.000Z'), rng: () => 0.1 },
+  );
+
+  assert.equal(counters.feedInRedZone7d, 4);
+  assert.equal(flags.some(flag => flag.type === 'food_anxiety'), false);
+});
+
+test('pattern counters compute high play streak from rolling day buckets', () => {
+  let counters = createDefaultCounters({
+    now: new Date('2026-05-01T10:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+
+  for (let day = 1; day <= 3; day++) {
+    for (let play = 0; play < 9; play++) {
+      counters = updateCounters(
+        counters,
+        'play',
+        { hunger: 80, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+        {
+          clientLocalHour: 10,
+          coinBalance: 0,
+          now: new Date(`2026-05-0${day}T10:${String(play).padStart(2, '0')}:00.000Z`),
+          rng: () => 0.1,
+        },
+      ) as BehavioralCounters;
+    }
+  }
+
+  const flags = runPatternEngine(
+    counters,
+    [],
+    getPersonality('playful'),
+    { now: new Date('2026-05-03T23:00:00.000Z'), rng: () => 0.1 },
+  );
+
+  assert.equal(counters.currentHighPlayDays, 3);
+  assert.equal(counters.maxConsecHighPlayDays, 3);
+  assert.equal(flags.some(flag => flag.type === 'play_burnout'), true);
+});
+
+test('pattern same_food_ratio uses rolling seven day food buckets', () => {
+  let counters = createDefaultCounters({
+    now: new Date('2026-05-01T10:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+
+  for (let day = 1; day <= 5; day++) {
+    counters = updateCounters(
+      counters,
+      'feed',
+      { hunger: 50, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+      {
+        foodId: 'apple',
+        clientLocalHour: 10,
+        coinBalance: 0,
+        now: new Date(`2026-05-0${day}T10:00:00.000Z`),
+        rng: () => 0.1,
+      },
+    ) as BehavioralCounters;
+  }
+
+  let flags = runPatternEngine(
+    counters,
+    [],
+    getPersonality('adventurer'),
+    { now: new Date('2026-05-05T10:00:00.000Z'), rng: () => 0.1 },
+  );
+  assert.equal(flags.some(flag => flag.type === 'food_monotony'), true);
+
+  counters = updateCounters(
+    counters,
+    'feed',
+    { hunger: 50, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    {
+      foodId: 'salad',
+      clientLocalHour: 10,
+      coinBalance: 0,
+      now: new Date('2026-05-08T10:00:00.000Z'),
+      rng: () => 0.1,
+    },
+  ) as BehavioralCounters;
+  flags = runPatternEngine(
+    counters,
+    [],
+    getPersonality('adventurer'),
+    { now: new Date('2026-05-08T10:00:00.000Z'), rng: () => 0.1 },
+  );
+
+  assert.equal(flags.some(flag => flag.type === 'food_monotony'), false);
+});
+
+test('pattern night_single uses consecutive rolling night interaction days', () => {
+  let counters = createDefaultCounters({
+    now: new Date('2026-05-01T01:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+
+  for (let day = 1; day <= 7; day++) {
+    counters = updateCounters(
+      counters,
+      'bond',
+      { hunger: 80, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+      {
+        clientLocalHour: 1,
+        coinBalance: 0,
+        now: new Date(`2026-05-0${day}T01:00:00.000Z`),
+        rng: () => 0.1,
+      },
+    ) as BehavioralCounters;
+  }
+
+  const nightGuardianPersonality = {
+    ...getPersonality('drowsy'),
+    possibleFlags: [...getPersonality('drowsy').possibleFlags, 'night_guardian' as const],
+  };
+  let flags = runPatternEngine(
+    counters,
+    [],
+    nightGuardianPersonality,
+    { now: new Date('2026-05-07T23:00:00.000Z'), rng: () => 0.1 },
+  );
+
+  assert.equal(counters.nightSingleInteractionDays7d, 7);
+  assert.equal(flags.some(flag => flag.type === 'night_guardian'), true);
+
+  counters = updateCounters(
+    counters,
+    'play',
+    { hunger: 80, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    {
+      clientLocalHour: 1,
+      coinBalance: 0,
+      now: new Date('2026-05-07T01:30:00.000Z'),
+      rng: () => 0.1,
+    },
+  ) as BehavioralCounters;
+  flags = runPatternEngine(
+    counters,
+    [],
+    nightGuardianPersonality,
+    { now: new Date('2026-05-07T23:00:00.000Z'), rng: () => 0.1 },
+  );
+
+  assert.equal(counters.nightSingleInteractionDays7d, 0);
+  assert.equal(flags.some(flag => flag.type === 'night_guardian'), false);
+});
+
 await testAsync('personality command feed applies exact trait deltas without mutating input pet', async () => {
   const pet = makePet({ formationComplete: true });
   const result = await applyPersonalityCommand(pet, {
@@ -372,6 +588,35 @@ await testAsync('personality replay advances sync buckets and preserves cooldown
   assert.equal(result.events.filter(event => event.type === 'influence_cooldown_skipped').length, 1);
   assert.equal(result.commandResults[1]?.events.some(event => event.type === 'trait_vector_changed'), false);
   assert.equal(result.commandResults[3]?.events.some(event => event.type === 'trait_vector_changed'), true);
+});
+
+await testAsync('personality command replay uses deterministic rng for singularity collapse', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    personality: 'playful',
+    traitVector: {
+      vitality: 0,
+      sociality: 0,
+      order: 0,
+      appetite: 0,
+      caution: 0,
+      curiosity: 0,
+    },
+    ticksInSingularity: 3,
+    singularityZones: ['playful', 'bold', 'sage'],
+  });
+  const command: PetCommand = {
+    type: 'sync',
+    at: '2026-05-04T02:00:00.000Z',
+    commandId: 'cmd-singularity-collapse',
+  };
+
+  const first = await applyPersonalityCommand(pet, command, { currentSync: 1 });
+  const second = await applyPersonalityCommand(pet, command, { currentSync: 1 });
+
+  assert.equal(first.pet.personality, second.pet.personality);
+  assert.equal(first.pet.evolutionHistory.at(-1)?.trigger, 'singularity');
+  assert.equal(second.pet.evolutionHistory.at(-1)?.trigger, 'singularity');
 });
 
 await testAsync('personality command forced sleep records sleep start and exact forced sleep influence', async () => {
@@ -557,6 +802,33 @@ test('applyInfluence applies intensity rules only when conditions match', () => 
   // 1 * 2 * 0.5 * 1.5 * 0.5 * 2 = 1.5; non-matching order rule is ignored.
   assert.equal(result.budgetedDelta.vitality, 1.5);
   closeTo(pet.traitVector.vitality, 50 + 1.5 * 0.08);
+});
+
+test('applyInfluence blocks registered influence when conditions do not match', () => {
+  const pet = makePet({
+    formationComplete: false,
+    traumaLevel: 10,
+  });
+
+  const influence = {
+    id: 'test:conditioned',
+    category: 'social' as const,
+    label: 'Conditioned',
+    traitDeltas: { sociality: 2 },
+    traumaDelta: 5,
+    conditions: [{ type: 'formation_period' as const, params: { active: false } }],
+  };
+
+  assert.equal(canApplyInfluence(pet, influence), false);
+  const result = applyInfluence(pet, influence, { getIntensityMultiplier: () => 1 });
+
+  assert.equal(result.applied, false);
+  assert.equal(result.blockedConditions?.length, 1);
+  assert.deepEqual(result.budgetedDelta, {});
+  closeTo(pet.traitVector.sociality, 50);
+  assert.equal(pet.dailyVectorVariance, 0);
+  assert.equal(pet.traumaLevel, 10);
+  assert.equal(pet.formationProgress, 0);
 });
 
 test('global intensity multiplier scales raw influence before smoothing', () => {
@@ -823,6 +1095,100 @@ test('shadow form enters from trauma and exits through catharsis cooldown', () =
   assert.equal(pet.catharsisAchieved, true);
   assert.equal(pet.traumaCooldownUntil, '2026-05-18T01:10:00.000Z');
   assert.equal(pet.coreMemories[0]?.emoji, '🌅');
+});
+
+test('state layers keep cognitive and evolution states from overwriting each other', () => {
+  const pet = makePet({
+    dailyVectorVariance: 30,
+    traumaLevel: 75,
+  });
+
+  applyInfluence(
+    pet,
+    {
+      id: 'test:layered-trauma',
+      category: 'action',
+      label: 'Layered Trauma',
+      traitDeltas: { curiosity: 1 },
+      traumaDelta: 1,
+    },
+    { now: new Date('2026-05-04T00:00:00.000Z'), getIntensityMultiplier: () => 1 },
+  );
+
+  assert.equal(pet.confusedState, true);
+  assert.equal(pet.stateLayers?.cognitive?.[0]?.type, 'confused');
+  assert.equal(pet.stateLayers?.evolution?.[0]?.type, 'shadow_form');
+  assert.equal(pet.emergentState, 'shadow_form');
+
+  onStartSleep(pet, { now: new Date('2026-05-04T01:00:00.000Z') });
+  onWakeFromSleep(pet, true, { now: new Date('2026-05-04T06:00:00.000Z') });
+
+  assert.equal(pet.confusedState, false);
+  assert.equal(pet.stateLayers?.cognitive, undefined);
+  assert.equal(pet.stateLayers?.evolution?.[0]?.type, 'shadow_form');
+  assert.equal(pet.emergentState, 'shadow_form');
+});
+
+test('legacy emergentState is derived from layered state priority', () => {
+  const pet = makePet();
+
+  setLayeredEmergentState(pet, 'tantrum', '2026-05-04T00:00:00.000Z');
+  setLayeredEmergentState(pet, 'confused', '2026-05-04T00:10:00.000Z');
+  assert.equal(pet.emergentState, 'tantrum');
+
+  setLayeredEmergentState(pet, 'shadow_form', '2026-05-04T00:20:00.000Z');
+  assert.equal(pet.stateLayers?.gameplay?.[0]?.type, 'tantrum');
+  assert.equal(pet.stateLayers?.cognitive?.[0]?.type, 'confused');
+  assert.equal(pet.stateLayers?.evolution?.[0]?.type, 'shadow_form');
+  assert.equal(pet.emergentState, 'shadow_form');
+});
+
+test('exclusive state semantics are explicit within a layer', () => {
+  const pet = makePet();
+
+  setLayeredEmergentState(pet, 'confused', '2026-05-04T00:00:00.000Z');
+  setLayeredEmergentState(pet, 'feast_frenzy', '2026-05-04T00:05:00.000Z');
+  setLayeredEmergentState(pet, 'enlightenment', '2026-05-04T00:10:00.000Z');
+
+  assert.deepEqual(
+    pet.stateLayers?.gameplay?.map(state => state.type),
+    ['feast_frenzy', 'enlightenment'],
+  );
+  assert.equal(pet.stateLayers?.cognitive?.[0]?.type, 'confused');
+
+  setLayeredEmergentState(pet, 'tantrum', '2026-05-04T00:20:00.000Z');
+
+  assert.deepEqual(pet.stateLayers?.gameplay?.map(state => state.type), ['tantrum']);
+  assert.equal(pet.stateLayers?.cognitive?.[0]?.type, 'confused');
+  assert.equal(pet.emergentState, 'tantrum');
+});
+
+test('action modifiers stack effects from all active state layers', () => {
+  const counters = createDefaultCounters({
+    now: new Date('2026-05-04T00:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+
+  const result = applyActionModifiers(
+    { statDeltas: { happiness: 0, bond: 0 }, xp: 10, coins: 10 },
+    'bond',
+    getPersonality('playful'),
+    [],
+    ['shadow_form', 'confused'],
+    counters,
+    { clientLocalHour: 12, coinBalance: 0, now: new Date('2026-05-04T00:00:00.000Z'), rng: () => 0.1 },
+  );
+
+  assert.equal(result.statDeltas.happiness, 15);
+  assert.equal(result.statDeltas.bond, 15);
+  assert.equal(result.xp, 20);
+  assert.equal(result.coins, 5);
+});
+
+test('action blockers scan all active state layers by priority', () => {
+  const blocked = isActionBlocked('play', ['confused', 'shadow_form', 'tantrum']);
+
+  assert.equal(blocked?.reason, 'Сейчас игры ранят сильнее');
 });
 
 test('recordLegacy blends account lineage from completed pet lifecycle', () => {

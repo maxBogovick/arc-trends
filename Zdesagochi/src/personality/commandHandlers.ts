@@ -25,6 +25,7 @@ export interface PersonalityCommandHandlerOptions {
   currentSync?: number;
   getIntensityMultiplier?: (influenceId: string) => number;
   memoryTextGenerator?: MemoryTextGenerator;
+  rng?: () => number;
   engineVersion?: string;
   registryVersion?: string;
 }
@@ -95,12 +96,14 @@ export async function applyPersonalityCommand(
   const beforeEmergentState = nextPet.emergentState;
   const beforeProposal = nextPet.evolutionProposal;
   const memoryTextGenerator = options.memoryTextGenerator ?? createMemoryTextGenerator();
+  const rng = options.rng ?? createDeterministicRng(`${command.commandId}:${command.at}:${command.type}`);
   const ctx = {
     now,
     clientLocalHour: now.getHours(),
     getIntensityMultiplier: options.getIntensityMultiplier ?? getGlobalIntensityMultiplier,
     memoryTextGenerator,
     dominantInfluences: [command.type],
+    rng,
   };
 
   if (command.type === 'sync') {
@@ -221,15 +224,30 @@ async function applyRegisteredInfluence(
     return;
   }
 
-  const { prevVector } = applyInfluence(pet, influence, {
+  const { prevVector, applied } = applyInfluence(pet, influence, {
     ...ctx,
     dominantInfluences: [influence.label],
   });
+  if (!applied) return;
+
   influenceCooldowns[influence.id] = currentSync;
   await checkThresholdCrossings(pet, prevVector, {
     ...ctx,
     dominantInfluences: [influence.label],
   });
+}
+
+function createDeterministicRng(seedText: string): () => number {
+  let seed = 2166136261;
+  for (let i = 0; i < seedText.length; i++) {
+    seed ^= seedText.charCodeAt(i);
+    seed = Math.imul(seed, 16777619);
+  }
+  let state = seed >>> 0 || 1;
+  return () => {
+    state = Math.imul(state, 1664525) + 1013904223;
+    return ((state >>> 0) / 4294967296);
+  };
 }
 
 function getInfluenceIdForCommand(pet: Pet, command: PetCommand): string | null {

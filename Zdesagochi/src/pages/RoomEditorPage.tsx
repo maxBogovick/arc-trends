@@ -1,13 +1,13 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePetStore, type RoomCustomization, type FloorStyle, type WallPanel as WallPanelType } from '../store/petStore';
+import { usePetStore, type RoomCustomization, type FloorStyle, type WallPanel as WallPanelType, type RoomPreset } from '../store/petStore';
 import { getFurniture, getFurnitureByCategory } from '../data/roomFurniture';
 import { BACKGROUNDS } from '../data/backgrounds';
 import { getBackground } from '../data/backgrounds';
 import { RoomScene } from '../components/Pet/RoomScene';
 
 type PanelTab = 'furniture' | 'room';
-type RoomTab = 'wall' | 'floor' | 'accent' | 'theme';
+type RoomTab = 'wall' | 'floor' | 'accent' | 'theme' | 'presets';
 type FurnitureCategory = 'plant' | 'lamp' | 'decor' | 'furniture' | 'gadget' | 'special';
 
 const FURNITURE_CATEGORIES: Array<{ id: FurnitureCategory; emoji: string; label: string }> = [
@@ -525,6 +525,160 @@ function ThemePanel() {
   );
 }
 
+// ── Room preset mini-preview ──────────────────────────────────────────────────
+
+function PresetPreview({ p }: { p: RoomPreset }) {
+  const c = p.customization;
+  return (
+    <div
+      style={{
+        width: 56, height: 40, borderRadius: 8, overflow: 'hidden',
+        position: 'relative', flexShrink: 0,
+        background: c.wallColor,
+        border: '1px solid rgba(255,255,255,0.12)',
+      }}
+    >
+      {/* side wall hints */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, bottom: '28%', width: '18%',
+        background: c.sideWallColor, opacity: 0.85,
+      }} />
+      <div style={{
+        position: 'absolute', top: 0, right: 0, bottom: '28%', width: '18%',
+        background: c.sideWallColor, opacity: 0.85,
+      }} />
+      {/* floor */}
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0, height: '28%',
+        background: c.floorColor, opacity: 0.9,
+      }} />
+    </div>
+  );
+}
+
+// ── Presets panel ─────────────────────────────────────────────────────────────
+
+function PresetsPanel() {
+  const { roomPresets, saveRoomPreset, applyRoomPreset, deleteRoomPreset } = usePetStore();
+  const [nameInput, setNameInput] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const handleSave = () => {
+    const name = nameInput.trim();
+    if (!name) return;
+    saveRoomPreset(name);
+    setNameInput('');
+  };
+
+  return (
+    <div className="space-y-4">
+
+      {/* Save current */}
+      <div className="p-3 rounded-xl space-y-2" style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.25)' }}>
+        <SectionLabel>Сохранить текущую комнату</SectionLabel>
+        <div className="flex gap-2">
+          <input
+            value={nameInput}
+            onChange={e => setNameInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSave()}
+            placeholder="Название пресета…"
+            maxLength={30}
+            className="flex-1 px-3 py-1.5 rounded-lg text-xs text-white placeholder:text-white/30 outline-none"
+            style={{
+              background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.15)',
+            }}
+          />
+          <button
+            onClick={handleSave}
+            disabled={!nameInput.trim()}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all shrink-0"
+            style={{
+              background: nameInput.trim()
+                ? 'linear-gradient(135deg,#7C3AED,#EC4899)'
+                : 'rgba(255,255,255,0.08)',
+              color: nameInput.trim() ? 'white' : 'rgba(255,255,255,0.3)',
+            }}
+          >
+            💾 Сохранить
+          </button>
+        </div>
+      </div>
+
+      {/* List */}
+      {roomPresets.length === 0 ? (
+        <p className="text-center text-xs py-6" style={{ color: 'rgba(255,255,255,0.3)' }}>
+          Нет сохранённых комнат
+        </p>
+      ) : (
+        <div className="space-y-2">
+          <SectionLabel>Сохранённые комнаты ({roomPresets.length})</SectionLabel>
+          {roomPresets.map(preset => (
+            <motion.div
+              key={preset.id}
+              layout
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="flex items-center gap-3 p-2.5 rounded-xl"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}
+            >
+              <PresetPreview p={preset} />
+
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-white truncate">{preset.name}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  {new Date(preset.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </p>
+                <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                  {preset.furniture.length} предм.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1 shrink-0">
+                <button
+                  onClick={() => applyRoomPreset(preset.id)}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-white transition-all"
+                  style={{ background: 'linear-gradient(135deg,rgba(124,58,237,0.5),rgba(236,72,153,0.3))', border: '1px solid rgba(124,58,237,0.4)' }}
+                >
+                  ✓ Применить
+                </button>
+
+                {confirmDeleteId === preset.id ? (
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => { deleteRoomPreset(preset.id); setConfirmDeleteId(null); }}
+                      className="flex-1 py-1 rounded-lg text-[10px] font-bold transition-all"
+                      style={{ background: 'rgba(239,68,68,0.35)', color: '#FCA5A5' }}
+                    >
+                      Да
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="flex-1 py-1 rounded-lg text-[10px] font-bold transition-all"
+                      style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}
+                    >
+                      Нет
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDeleteId(preset.id)}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all"
+                    style={{ background: 'rgba(239,68,68,0.12)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.2)' }}
+                  >
+                    🗑 Удалить
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RoomEditorPage() {
   const {
     setActiveTab,
@@ -568,10 +722,11 @@ export function RoomEditorPage() {
   };
 
   const ROOM_TABS: Array<{ id: RoomTab; label: string }> = [
-    { id: 'wall',   label: '🧱 Стена' },
-    { id: 'floor',  label: '🏠 Пол' },
-    { id: 'accent', label: '✨ Акцент' },
-    { id: 'theme',  label: '🌌 Тема' },
+    { id: 'wall',    label: '🧱 Стена' },
+    { id: 'floor',   label: '🏠 Пол' },
+    { id: 'accent',  label: '✨ Акцент' },
+    { id: 'theme',   label: '🌌 Тема' },
+    { id: 'presets', label: '💾 Пресеты' },
   ];
 
   const itemsInCategory = getFurnitureByCategory(furnitureCategory);
@@ -692,7 +847,7 @@ export function RoomEditorPage() {
         {panelTab === 'room' && (
           <>
             {/* Room sub-tabs */}
-            <div className="grid grid-cols-4 gap-1 px-3 pb-2 shrink-0">
+            <div className="grid grid-cols-5 gap-1 px-3 pb-2 shrink-0">
               {ROOM_TABS.map(t => (
                 <button
                   key={t.id}
@@ -710,13 +865,14 @@ export function RoomEditorPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 pb-3">
-              {roomTab === 'wall'   && <WallPanel   c={roomCustomization} set={setRoomCustomization} />}
-              {roomTab === 'floor'  && <FloorPanel  c={roomCustomization} set={setRoomCustomization} />}
-              {roomTab === 'accent' && <AccentPanel c={roomCustomization} set={setRoomCustomization} />}
-              {roomTab === 'theme'  && <ThemePanel />}
+              {roomTab === 'wall'    && <WallPanel   c={roomCustomization} set={setRoomCustomization} />}
+              {roomTab === 'floor'   && <FloorPanel  c={roomCustomization} set={setRoomCustomization} />}
+              {roomTab === 'accent'  && <AccentPanel c={roomCustomization} set={setRoomCustomization} />}
+              {roomTab === 'theme'   && <ThemePanel />}
+              {roomTab === 'presets' && <PresetsPanel />}
 
               {/* Reset button */}
-              {roomTab !== 'theme' && (
+              {roomTab !== 'theme' && roomTab !== 'presets' && (
                 <div className="mt-4 pt-3 border-t border-white/10">
                   <button
                     onClick={resetRoomCustomization}

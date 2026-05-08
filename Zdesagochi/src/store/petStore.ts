@@ -81,6 +81,14 @@ export interface PlacedFurnitureItem {
   zIndex: number;
 }
 
+export interface RoomPreset {
+  id: string;
+  name: string;
+  createdAt: number;
+  customization: RoomCustomization;
+  furniture: PlacedFurnitureItem[];
+}
+
 interface Notification {
   id: number;
   message: string;
@@ -139,6 +147,10 @@ interface PetStore {
   eyeStyleOverride: string | null;
   overlayOverride: string | null;
   roomCustomization: RoomCustomization;
+  roomPresets: RoomPreset[];
+  saveRoomPreset(name: string): void;
+  applyRoomPreset(id: string): void;
+  deleteRoomPreset(id: string): void;
 
   petPresets: Record<string, any>;
   savePreset: (name: string) => void;
@@ -267,6 +279,40 @@ export const usePetStore = create<PetStore>((set, get) => {
     eyeStyleOverride: null,
     overlayOverride: null,
     roomCustomization: DEFAULT_ROOM_CUSTOMIZATION,
+    roomPresets: JSON.parse(localStorage.getItem('roomPresets') || '[]'),
+
+    saveRoomPreset(name: string) {
+      const { roomCustomization, placedFurniture } = get();
+      const preset: RoomPreset = {
+        id: Date.now().toString(),
+        name: name.trim(),
+        createdAt: Date.now(),
+        customization: { ...roomCustomization },
+        furniture: placedFurniture.map(f => ({ ...f })),
+      };
+      const next = [preset, ...get().roomPresets];
+      set({ roomPresets: next });
+      localStorage.setItem('roomPresets', JSON.stringify(next));
+      get().notify(`Комната «${preset.name}» сохранена`, 'success');
+    },
+
+    applyRoomPreset(id: string) {
+      const preset = get().roomPresets.find(p => p.id === id);
+      if (!preset) return;
+      set({
+        roomCustomization: { ...preset.customization },
+        placedFurniture: preset.furniture.map(f => ({ ...f })),
+      });
+      get().notify(`Комната «${preset.name}» применена`, 'info');
+    },
+
+    deleteRoomPreset(id: string) {
+      const preset = get().roomPresets.find(p => p.id === id);
+      const next = get().roomPresets.filter(p => p.id !== id);
+      set({ roomPresets: next });
+      localStorage.setItem('roomPresets', JSON.stringify(next));
+      if (preset) get().notify(`«${preset.name}» удалена`, 'info');
+    },
 
     petPresets: JSON.parse(localStorage.getItem('petPresets') || '{}'),
 

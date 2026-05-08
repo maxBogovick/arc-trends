@@ -46,14 +46,19 @@ import { getPersonality, getPersonalityBySkin } from '../personality/personaliti
 import {
   createBrowserOfflineStorage,
   createOfflinePetSave,
+  clearEmergentStateLayer,
+  getActiveEmergentStateTypes,
   loadOfflinePetSave,
   saveOfflinePetSave,
+  setLayeredEmergentState,
+  syncLayeredStatesFromLegacy,
 } from '../personality';
 
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
-const rand = (min: number, max: number) => Math.random() * (max - min) + min;
+const mockRng = () => Math.random();
+const rand = (min: number, max: number) => mockRng() * (max - min) + min;
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 // Счётчик действий Меланхолика (чётные/нечётные)
 let melancholicActionCount = 0;
@@ -76,6 +81,10 @@ const NEUTRAL_TRAIT_VECTOR: TraitVector = {
   caution: 50,
   curiosity: 50,
 };
+
+function activeEmergentStates(): ReturnType<typeof getActiveEmergentStateTypes> {
+  return getActiveEmergentStateTypes(S.pet);
+}
 
 type OfflineCommandDraft = PetCommand extends infer Command
   ? Command extends PetCommand
@@ -336,7 +345,8 @@ function createInitialMockPet(account: Account = {}): Pet {
     behavioralFlags: [] as BehavioralFlag[],
     emergentState: null,
     emergentStateEnteredAt: undefined,
-    behavioralCounters: createDefaultCounters() as BehavioralCounters,
+    stateLayers: {},
+    behavioralCounters: createDefaultCounters({ now, rng: mockRng }) as BehavioralCounters,
     moodHistory: [] as MoodSnapshot[],
     traitVector: createInitialTraitVector(account.legacyVector, account.legacyCoefficient),
     dailyTraitBudget: {},
@@ -518,6 +528,8 @@ function normalizePetEvolutionFields(pet: Pet): Pet {
   p.lastSleepTimestamp ??= null;
   p.ticksInSingularity ??= 0;
   p.singularityZones ??= [];
+  p.stateLayers ??= {};
+  syncLayeredStatesFromLegacy(p);
 
   if (p.evolutionProposal && !p.evolutionProposal.coreMemoryIds) {
     p.evolutionProposal.coreMemoryIds = [];
@@ -534,27 +546,30 @@ async function applyPetInfluence(influenceId: string): Promise<void> {
   const lastAppliedAt = influenceCooldowns.get(influence.id);
   if (!canApplyInfluenceAtSync(lastAppliedAt, traitSyncCounter, influence.cooldownSyncs ?? 0)) return;
 
-  const { prevVector } = applyInfluence(S.pet, influence, {
-    clientLocalHour: mockNow().getHours(),
+  const now = mockNow();
+  const { prevVector, applied } = applyInfluence(S.pet, influence, {
+    now,
+    clientLocalHour: now.getHours(),
     getIntensityMultiplier,
     memoryTextGenerator,
     dominantInfluences: [influence.label],
+    rng: mockRng,
   });
+  if (!applied) return;
+
   influenceCooldowns.set(influence.id, traitSyncCounter);
 
   await checkThresholdCrossings(S.pet, prevVector, {
+    now,
     memoryTextGenerator,
     dominantInfluences: [influence.label],
+    rng: mockRng,
   });
 }
 
 function updateDailyTraitSnapshot(now: Date): void {
   normalizePetEvolutionFields(S.pet);
   recordDailyTraitSnapshot(S.pet, now);
-}
-
-function isTraitEvolutionManagedState(state: string | null): boolean {
-  return state === 'identity_crisis' || state === 'singularity' || state === 'shadow_form';
 }
 
 function finalizePet(): Pet {
@@ -567,26 +582,28 @@ function finalizePet(): Pet {
   S.pet.stage = calcStage(S.pet.ageHours);
   S.pet.lastUpdated = now.toISOString();
 
-  // Обновить emergentState
-  if (!isTraitEvolutionManagedState(S.pet.emergentState)) {
-    const computedState = computeEmergentState(
-      S.pet.stats as any,
-      personality,
-      S.pet.behavioralFlags,
-      S.pet.behavioralCounters,
-      { clientLocalHour: now.getHours(), sessionGapHours: S.pet.behavioralCounters.sessionGapHours, coinBalance: S.coins },
-      S.pet.emergentState === 'confused' && !S.pet.confusedState ? null : S.pet.emergentState as any,
-      S.pet.emergentStateEnteredAt,
-    );
-    const newState = computedState ?? (S.pet.confusedState ? 'confused' : null);
-    if (newState !== S.pet.emergentState) {
-      S.pet.emergentState = newState;
-      S.pet.emergentStateEnteredAt = newState ? now.toISOString() : undefined;
-    }
+  const currentGameplayState = S.pet.stateLayers?.gameplay?.[0]?.type ?? null;
+  const computedState = computeEmergentState(
+    S.pet.stats as any,
+    personality,
+    S.pet.behavioralFlags,
+    S.pet.behavioralCounters,
+    { clientLocalHour: now.getHours(), sessionGapHours: S.pet.behavioralCounters.sessionGapHours, coinBalance: S.coins, now, rng: mockRng },
+    currentGameplayState,
+    S.pet.stateLayers?.gameplay?.[0]?.enteredAt,
+  );
+  if (computedState) {
+    setLayeredEmergentState(S.pet, computedState, now.toISOString());
+  } else {
+    clearEmergentStateLayer(S.pet, 'gameplay');
   }
+  syncLayeredStatesFromLegacy(S.pet);
 
   // Обновить флаги (lazy Pattern Engine)
-  S.pet.behavioralFlags = runPatternEngine(S.pet.behavioralCounters, S.pet.behavioralFlags, personality);
+  S.pet.behavioralFlags = runPatternEngine(S.pet.behavioralCounters, S.pet.behavioralFlags, personality, {
+    now,
+    rng: mockRng,
+  });
 
   persistOfflineState();
   return { ...S.pet };
@@ -605,9 +622,10 @@ export function setPersonalityDirectly(personalityId: string) {
   S.pet.personality = p.id;
   // Сбросить счётчики и флаги — новый характер начинается чисто
   S.pet.behavioralFlags = [];
-  S.pet.behavioralCounters = createDefaultCounters();
+  S.pet.behavioralCounters = createDefaultCounters({ now: mockNow(), rng: mockRng });
   S.pet.emergentState = null;
   S.pet.emergentStateEnteredAt = undefined;
+  S.pet.stateLayers = {};
 }
 
 export function getMockAccount(): Account {
@@ -636,17 +654,19 @@ export class MockApiService implements ApiService {
     if (S.pet.stats.hunger > 90) throw new Error('Питомец и так сыт!');
 
     const personality = getPersonality(S.pet.personality);
-    const ctx = { foodId, clientLocalHour: mockNow().getHours(), coinBalance: S.coins };
+    const now = mockNow();
+    const ctx = { foodId, clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng };
 
     // Проверить блокировку эмерджентного состояния
-    const blocked = isActionBlocked('feed', S.pet.emergentState as any);
+    const activeStates = activeEmergentStates();
+    const blocked = isActionBlocked('feed', activeStates);
     if (blocked) throw new Error(blocked.reason);
 
     // Базовый результат
     const baseResult = { statDeltas: { hunger: food.hungerRestore, happiness: food.happinessBonus, health: food.healthBonus }, xp: 8, coins: 0 };
 
     // Применить модификаторы характера
-    const modified = applyActionModifiers(baseResult, 'feed', personality, S.pet.behavioralFlags, S.pet.emergentState as any, S.pet.behavioralCounters, ctx);
+    const modified = applyActionModifiers(baseResult, 'feed', personality, S.pet.behavioralFlags, activeStates, S.pet.behavioralCounters, ctx);
 
     // Параноик: множитель restore
     const paranoidMult = personality.id === 'paranoid' ? getParanoidRestoreMult(S.pet.behavioralCounters) : 1.0;
@@ -678,9 +698,11 @@ export class MockApiService implements ApiService {
     if (S.pet.stats.energy < 10) throw new Error('Питомец слишком устал для игр');
 
     const personality = getPersonality(S.pet.personality);
-    const ctx = { clientLocalHour: mockNow().getHours(), coinBalance: S.coins };
+    const now = mockNow();
+    const ctx = { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng };
 
-    const blocked = isActionBlocked('play', S.pet.emergentState as any);
+    const activeStates = activeEmergentStates();
+    const blocked = isActionBlocked('play', activeStates);
     if (blocked) throw new Error(blocked.reason);
 
     const score = Math.floor(rand(40, 220));
@@ -688,7 +710,7 @@ export class MockApiService implements ApiService {
     const baseCoins = Math.floor(score * 0.1) + 2;
 
     const baseResult = { statDeltas: { happiness: 20, energy: -15, bond: 8 }, xp: baseXp, coins: baseCoins };
-    const modified = applyActionModifiers(baseResult, 'play', personality, S.pet.behavioralFlags, S.pet.emergentState as any, S.pet.behavioralCounters, ctx);
+    const modified = applyActionModifiers(baseResult, 'play', personality, S.pet.behavioralFlags, activeStates, S.pet.behavioralCounters, ctx);
 
     // Нервный пик-перфоманс
     const peak = getPeakPerformanceMult(S.pet.stats as any, personality);
@@ -729,7 +751,7 @@ export class MockApiService implements ApiService {
   async sleepPet() {
     await delay(rand(200, 350));
     if (S.pet.isAsleep) throw new Error('Уже спит!');
-    const blocked = isActionBlocked('sleep', S.pet.emergentState as any);
+    const blocked = isActionBlocked('sleep', activeEmergentStates());
     if (blocked) throw new Error(blocked.reason);
     // Дерзкий: не ляжет при energy > 30
     const personality = getPersonality(S.pet.personality);
@@ -738,8 +760,9 @@ export class MockApiService implements ApiService {
     }
     const sleepInfluenceId = S.pet.stats.energy > 70 ? 'action:sleep_forced' : 'action:sleep_natural';
     S.pet.stats.energy = clamp(S.pet.stats.energy > 70 ? S.pet.stats.energy : S.pet.stats.energy);
-    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'sleep', S.pet.stats as any, { clientLocalHour: mockNow().getHours(), coinBalance: S.coins });
-    onStartSleep(S.pet);
+    const now = mockNow();
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'sleep', S.pet.stats as any, { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng });
+    onStartSleep(S.pet, { now, rng: mockRng });
     await applyPetInfluence(sleepInfluenceId);
     S.pet.isAsleep = true;
     S.sleepCount++;
@@ -762,7 +785,7 @@ export class MockApiService implements ApiService {
       await applyPetInfluence('action:wake_early');
     }
     S.pet.isAsleep = false;
-    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'wake', S.pet.stats as any, { clientLocalHour: now.getHours(), coinBalance: S.coins });
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'wake', S.pet.stats as any, { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng });
     addEvent('wake', 'Проснулся', '☀️');
     recordOfflineCommand({ type: 'wake', at: now.toISOString() });
     return finalizePet();
@@ -774,14 +797,16 @@ export class MockApiService implements ApiService {
     if (S.pet.stats.cleanliness > 90) throw new Error('Питомец уже чистый!');
 
     const personality = getPersonality(S.pet.personality);
-    const ctx = { clientLocalHour: mockNow().getHours(), coinBalance: S.coins };
-    const blocked = isActionBlocked('bathe', S.pet.emergentState as any);
+    const now = mockNow();
+    const ctx = { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng };
+    const activeStates = activeEmergentStates();
+    const blocked = isActionBlocked('bathe', activeStates);
     if (blocked) throw new Error(blocked.reason);
 
     // Дикий: ненавидит купание
     const isFeral = personality.id === 'feral';
     const baseResult = { statDeltas: { cleanliness: 40, happiness: isFeral ? -20 : 5, health: 5 }, xp: 12, coins: 0 };
-    const modified = applyActionModifiers(baseResult, 'bathe', personality, S.pet.behavioralFlags, S.pet.emergentState as any, S.pet.behavioralCounters, ctx);
+    const modified = applyActionModifiers(baseResult, 'bathe', personality, S.pet.behavioralFlags, activeStates, S.pet.behavioralCounters, ctx);
 
     for (const [s, v] of Object.entries(modified.statDeltas)) {
       (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
@@ -806,12 +831,14 @@ export class MockApiService implements ApiService {
     }
     if (S.pet.stats.health >= 90) throw new Error('Питомец уже здоров!');
 
-    const ctx = { clientLocalHour: mockNow().getHours(), coinBalance: S.coins };
-    const blocked = isActionBlocked('heal', S.pet.emergentState as any);
+    const now = mockNow();
+    const ctx = { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng };
+    const activeStates = activeEmergentStates();
+    const blocked = isActionBlocked('heal', activeStates);
     if (blocked) throw new Error(blocked.reason);
 
     const baseResult = { statDeltas: { health: 35, happiness: -5 }, xp: 18, coins: 0 };
-    const modified = applyActionModifiers(baseResult, 'heal', personality, S.pet.behavioralFlags, S.pet.emergentState as any, S.pet.behavioralCounters, ctx);
+    const modified = applyActionModifiers(baseResult, 'heal', personality, S.pet.behavioralFlags, activeStates, S.pet.behavioralCounters, ctx);
 
     for (const [s, v] of Object.entries(modified.statDeltas)) {
       (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
@@ -833,13 +860,15 @@ export class MockApiService implements ApiService {
     if (S.pet.isAsleep) throw new Error('Питомец спит!');
 
     const personality = getPersonality(S.pet.personality);
-    const ctx = { clientLocalHour: mockNow().getHours(), coinBalance: S.coins };
-    const blocked = isActionBlocked('bond', S.pet.emergentState as any);
+    const now = mockNow();
+    const ctx = { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng };
+    const activeStates = activeEmergentStates();
+    const blocked = isActionBlocked('bond', activeStates);
     if (blocked) throw new Error(blocked.reason);
 
     // Для Эмпата bond восстанавливает все статы (+5 каждый)
     const baseResult = { statDeltas: { happiness: 15, bond: 20 }, xp: 6, coins: 0 };
-    const modified = applyActionModifiers(baseResult, 'bond', personality, S.pet.behavioralFlags, S.pet.emergentState as any, S.pet.behavioralCounters, ctx);
+    const modified = applyActionModifiers(baseResult, 'bond', personality, S.pet.behavioralFlags, activeStates, S.pet.behavioralCounters, ctx);
 
     for (const [s, v] of Object.entries(modified.statDeltas)) {
       (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
@@ -864,7 +893,7 @@ export class MockApiService implements ApiService {
     const now = mockNow();
     const lastUpdated = new Date(S.pet.lastUpdated);
     const elapsedMinutes = Math.max(0, (now.getTime() - lastUpdated.getTime()) / 60000);
-    const ctx = { clientLocalHour: now.getHours(), sessionGapHours: S.pet.behavioralCounters.sessionGapHours, coinBalance: S.coins };
+    const ctx = { clientLocalHour: now.getHours(), sessionGapHours: S.pet.behavioralCounters.sessionGapHours, coinBalance: S.coins, now, rng: mockRng };
 
     if (!S.pet.isAsleep) {
       // Decay с модификаторами характера
@@ -877,9 +906,9 @@ export class MockApiService implements ApiService {
 
       // Авто-сон
       if (personality.autoSleep.enabled && S.pet.stats.energy <= personality.autoSleep.energyThreshold) {
-        if (Math.random() < personality.autoSleep.probability) {
+        if (mockRng() < personality.autoSleep.probability) {
           S.pet.isAsleep = true;
-          onStartSleep(S.pet, { now });
+          onStartSleep(S.pet, { now, rng: mockRng });
           addEvent('sleep', 'Задремал сам', '😴');
         }
       }
@@ -899,7 +928,7 @@ export class MockApiService implements ApiService {
     }
 
     // Обновить счётчики и снапшот настроения
-    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'sync', S.pet.stats as any, { clientLocalHour: now.getHours(), coinBalance: S.coins });
+    S.pet.behavioralCounters = updateCounters(S.pet.behavioralCounters, 'sync', S.pet.stats as any, { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng });
 
     // Bad mood streak
     const currentMood = calcMoodWithBias(S.pet.stats as any, personality, S.pet.isAsleep);
@@ -931,17 +960,19 @@ export class MockApiService implements ApiService {
     const prevTraitVector = { ...S.pet.traitVector };
     applyRegression(S.pet);
     updateDailyTraitSnapshot(now);
-    checkVarianceHardReset(S.pet, { now });
-    checkEvolution(S.pet, { now });
+    checkVarianceHardReset(S.pet, { now, rng: mockRng });
+    checkEvolution(S.pet, { now, rng: mockRng });
     await checkThresholdCrossings(S.pet, prevTraitVector, {
       now,
       memoryTextGenerator,
       dominantInfluences: ['Синхронизация'],
+      rng: mockRng,
     });
     await checkWeeklyDrift(S.pet, {
       now,
       memoryTextGenerator,
       dominantInfluences: ['Синхронизация'],
+      rng: mockRng,
     });
 
     if (S.pet.stats.health > 80) {
@@ -964,7 +995,7 @@ export class MockApiService implements ApiService {
     await delay(rand(180, 300));
     const proposal = S.pet.evolutionProposal;
     if (!proposal) throw new Error('Нет активного предложения эволюции');
-    const accepted = acceptEvolution(S.pet, { now: mockNow(), memoryTextGenerator });
+    const accepted = acceptEvolution(S.pet, { now: mockNow(), memoryTextGenerator, rng: mockRng });
     if (!accepted) throw new Error('Нет активного предложения эволюции');
     const target = getPersonality(proposal.targetPersonalityId);
     addEvent('evolve', `Выбран путь: ${target.name}`, target.emoji);

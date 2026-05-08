@@ -2,6 +2,7 @@
 export * from './types';
 export * from './personalities';
 export * from './emergentStates';
+export * from './stateLayers';
 export * from './patternRules';
 export * from './PersonalityEngine';
 export * from './TraitEvolutionEngine';

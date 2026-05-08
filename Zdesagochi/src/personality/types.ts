@@ -379,6 +379,27 @@ export interface BehavioralFlag {
   lastHealAction?: string;          // ISO — последнее целебное действие
 }
 
+export type RollingCounterKey =
+  | 'feed_red'
+  | 'feed_green'
+  | 'sleep_forced'
+  | 'heal_healthy'
+  | 'night_wake'
+  | 'night_interaction'
+  | 'session_gap_48h'
+  | 'filth_crisis'
+  | 'play';
+
+export interface RollingDailyBucket {
+  date: string;
+  counts: Partial<Record<RollingCounterKey, number>>;
+  foodCounts?: Record<string, number>;
+}
+
+export interface BehavioralRollingWindows {
+  dailyBuckets: RollingDailyBucket[];
+}
+
 // ── Эмерджентные состояния ───────────────────────────────────────────────────
 
 export type EmergentStateType =
@@ -424,6 +445,16 @@ export interface EmergentStateDefinition {
   };
 }
 
+export type EmergentStateLayer = 'gameplay' | 'evolution' | 'cognitive';
+
+export interface ActiveEmergentState {
+  type: EmergentStateType;
+  layer: EmergentStateLayer;
+  enteredAt: string;
+}
+
+export type PetStateLayers = Partial<Record<EmergentStateLayer, ActiveEmergentState[]>>;
+
 // ── Накопительные счётчики (lazy Pattern Engine) ─────────────────────────────
 // Хранятся прямо в Pet. Обновляются инкрементально при каждом action (O(1)).
 // Pattern Engine читает счётчики, а не event log → нет тяжёлых запросов.
@@ -450,6 +481,7 @@ export interface BehavioralCounters {
   consecutiveBadMoodSyncs:   number; // синков подряд mood = sad
   maxConsecHighPlayDays:     number; // макс. дней подряд с > 8 играми
   currentHighPlayDays:       number; // текущая streak
+  nightSingleInteractionDays7d?: number; // ночей подряд с ровно 1 взаимодействием
 
   // Ежедневные (сбрасываются в полночь)
   playCountToday:  number;
@@ -476,6 +508,10 @@ export interface BehavioralCounters {
   enlightenmentStart?:  string;      // ISO
   chaosDailySeed:       number;      // 0–1, перерандомизируется раз в 24ч
   chaosSeedDate:        string;      // ISO-дата последнего seed
+
+  // Rolling source of truth для 7d/30d counters.
+  // Старые числовые поля выше остаются materialized summary для совместимости.
+  rollingWindows?:      BehavioralRollingWindows;
 }
 
 // ── Снапшот настроения (для графика 7 дней) ─────────────────────────────────
@@ -489,15 +525,26 @@ export interface MoodSnapshot {
 
 // ── Контекст для движка ──────────────────────────────────────────────────────
 
+export interface PersonalityRuntimeContext {
+  now?: Date;
+  rng?: () => number;
+  source?: string;
+  replayId?: string;
+}
+
 export interface ActionContext {
   foodId?:          string;
   clientLocalHour:  number;          // 0–23
   coinBalance:      number;
   itemId?:          string;
+  now?:             Date;
+  rng?:             () => number;
 }
 
 export interface SyncContext {
   clientLocalHour:  number;
   sessionGapHours:  number;
   coinBalance:      number;
+  now?:             Date;
+  rng?:             () => number;
 }

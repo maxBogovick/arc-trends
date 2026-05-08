@@ -3,6 +3,7 @@ import { getIntensityMultiplier } from './influenceRegistry';
 import { TemplateGenerator, type MemoryTextGenerator } from './memoryTextGenerator';
 import { PERSONALITIES } from './personalities';
 import { EVOLUTION_LEGACY, PERSONALITY_TRAIT_MAP } from './personalityTraitMap';
+import { clearLayeredEmergentState, setLayeredEmergentState } from './stateLayers';
 import type {
   CoreMemory,
   InfluenceCategory,
@@ -69,11 +70,14 @@ export interface TraitEvolutionContext {
   memoryTextGenerator?: MemoryTextGenerator;
   dominantInfluences?: string[];
   random?: () => number;
+  rng?: () => number;
 }
 
 export interface ApplyInfluenceResult {
   prevVector: TraitVector;
   budgetedDelta: Partial<TraitVector>;
+  applied: boolean;
+  blockedConditions?: InfluenceCondition[];
 }
 
 export function canApplyInfluenceAtSync(
@@ -129,6 +133,11 @@ export function applyInfluence(
 ): ApplyInfluenceResult {
   const prevVector = { ...pet.traitVector };
   const budgetedDelta: Partial<TraitVector> = {};
+  const blockedConditions = getBlockedInfluenceConditions(pet, influence, ctx);
+  if (blockedConditions.length > 0) {
+    return { prevVector, budgetedDelta, applied: false, blockedConditions };
+  }
+
   const intensity = computeIntensity(influence, pet, ctx);
   const multiplier = (ctx.getIntensityMultiplier ?? getIntensityMultiplier)(influence.id);
 
@@ -149,7 +158,7 @@ export function applyInfluence(
   const posSum = TRAIT_KEYS.reduce((sum, key) => sum + Math.max(0, budgetedDelta[key] ?? 0), 0);
   const negSum = TRAIT_KEYS.reduce((sum, key) => sum + Math.abs(Math.min(0, budgetedDelta[key] ?? 0)), 0);
   pet.dailyVectorVariance += posSum + negSum;
-  updateConfusedState(pet);
+  updateConfusedState(pet, ctx);
 
   if (influence.traumaDelta !== undefined) {
     pet.traumaLevel = clamp(pet.traumaLevel + influence.traumaDelta, 0, 100);
@@ -158,7 +167,7 @@ export function applyInfluence(
 
   updateFormationProgress(pet, influence, budgetedDelta, ctx);
 
-  return { prevVector, budgetedDelta };
+  return { prevVector, budgetedDelta, applied: true };
 }
 
 export function applyRegression(pet: Pet): void {
@@ -299,10 +308,8 @@ export function acceptEvolution(pet: Pet, ctx: TraitEvolutionContext = {}): bool
   pet.ticksInTargetZone = 0;
   pet.evolutionProposal = undefined;
   pet.voidSyncs = 0;
-  if (pet.emergentState === 'identity_crisis' || pet.emergentState === 'confused') {
-    pet.emergentState = null;
-    pet.emergentStateEnteredAt = undefined;
-  }
+  clearLayeredEmergentState(pet, 'identity_crisis');
+  clearLayeredEmergentState(pet, 'confused');
 
   addCoreMemory(pet, {
     tier: 'rare',
@@ -360,8 +367,7 @@ export function checkSingularity(pet: Pet, ctx: TraitEvolutionContext = {}): boo
   pet.voidSyncs = 0;
 
   if (pet.ticksInSingularity >= SINGULARITY_THRESHOLD_SYNCS && pet.emergentState !== 'singularity') {
-    pet.emergentState = 'singularity';
-    pet.emergentStateEnteredAt = getNow(ctx).toISOString();
+    setLayeredEmergentState(pet, 'singularity', getNow(ctx).toISOString());
     addCoreMemory(pet, {
       tier: 'rare',
       emoji: '✨',
@@ -379,13 +385,12 @@ export function collapseSingularity(pet: Pet, ctx: TraitEvolutionContext = {}): 
   if (!pet.singularityZones.length) return;
 
   const fromPersonalityId = pet.personality as PersonalityId;
-  const random = ctx.random ?? Math.random;
+  const random = getRandom(ctx);
   const target = pet.singularityZones[Math.floor(random() * pet.singularityZones.length)] ?? pet.singularityZones[0];
   const now = getNow(ctx).toISOString();
 
   pet.personality = target;
-  pet.emergentState = null;
-  pet.emergentStateEnteredAt = undefined;
+  clearLayeredEmergentState(pet, 'singularity');
   pet.currentTargetZone = null;
   pet.ticksInTargetZone = 0;
   pet.evolutionProposal = undefined;
@@ -420,8 +425,7 @@ export function checkShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): bool
   if (pet.emergentState === 'shadow_form') return true;
   if (!canEnterShadowForm(pet, ctx)) return false;
 
-  pet.emergentState = 'shadow_form';
-  pet.emergentStateEnteredAt = getNow(ctx).toISOString();
+  setLayeredEmergentState(pet, 'shadow_form', getNow(ctx).toISOString());
   pet.catharsisProgress = Math.max(0, pet.catharsisProgress ?? 0);
   pet.evolutionProposal = undefined;
   pet.currentTargetZone = null;
@@ -430,8 +434,7 @@ export function checkShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): bool
 }
 
 export function exitShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): void {
-  pet.emergentState = null;
-  pet.emergentStateEnteredAt = undefined;
+  clearLayeredEmergentState(pet, 'shadow_form');
   pet.traumaLevel = 0;
   pet.catharsisProgress = 0;
 
@@ -550,13 +553,17 @@ export function handleVoidState(pet: Pet, ctx: TraitEvolutionContext = {}): void
   pet.voidSyncs = (pet.voidSyncs ?? 0) + 1;
 
   if (pet.voidSyncs >= VOID_THRESHOLD_SYNCS && pet.emergentState !== 'identity_crisis') {
-    pet.emergentState = 'identity_crisis';
-    pet.emergentStateEnteredAt = getNow(ctx).toISOString();
+    setLayeredEmergentState(pet, 'identity_crisis', getNow(ctx).toISOString());
   }
 }
 
-export function updateConfusedState(pet: Pet): void {
+export function updateConfusedState(pet: Pet, ctx: TraitEvolutionContext = {}): void {
   pet.confusedState = pet.dailyVectorVariance >= CONFUSED_VARIANCE_THRESHOLD;
+  if (pet.confusedState) {
+    setLayeredEmergentState(pet, 'confused', getNow(ctx).toISOString());
+  } else {
+    clearLayeredEmergentState(pet, 'confused');
+  }
 }
 
 export function onStartSleep(pet: Pet, ctx: TraitEvolutionContext = {}): void {
@@ -575,6 +582,7 @@ export function onWakeFromSleep(
     if (naturalWake && sleptHours >= MINIMUM_RESET_SLEEP_HOURS) {
       pet.dailyVectorVariance = 0;
       pet.confusedState = false;
+      clearLayeredEmergentState(pet, 'confused');
       pet.lastSleepTimestamp = now.toISOString();
     }
   }
@@ -592,6 +600,7 @@ export function checkVarianceHardReset(pet: Pet, ctx: TraitEvolutionContext = {}
   if (hoursSinceSleep >= VARIANCE_HARD_RESET_HOURS) {
     pet.dailyVectorVariance = 0;
     pet.confusedState = false;
+    clearLayeredEmergentState(pet, 'confused');
   }
 }
 
@@ -743,7 +752,23 @@ function computeIntensity(
   }, 1);
 }
 
-function matchesInfluenceCondition(
+export function canApplyInfluence(
+  pet: Pet,
+  influence: RegisteredInfluence,
+  ctx: TraitEvolutionContext = {},
+): boolean {
+  return getBlockedInfluenceConditions(pet, influence, ctx).length === 0;
+}
+
+export function getBlockedInfluenceConditions(
+  pet: Pet,
+  influence: RegisteredInfluence,
+  ctx: TraitEvolutionContext = {},
+): InfluenceCondition[] {
+  return (influence.conditions ?? []).filter(condition => !matchesInfluenceCondition(condition, pet, ctx));
+}
+
+export function matchesInfluenceCondition(
   condition: InfluenceCondition,
   pet: Pet,
   ctx: TraitEvolutionContext,
@@ -767,11 +792,22 @@ function matchesInfluenceCondition(
       return typeof params.key === 'string' && pet.traitVector[params.key as TraitKey] < Number(params.value);
     case 'formation_period':
       return Boolean(params.active) !== pet.formationComplete;
-    case 'streak_days':
+    case 'streak_days': {
+      const days = Number(params.days);
+      if (!Number.isFinite(days) || days <= 0) return false;
+      const requiredSyncs = days * 24;
+      if (params.action === 'any') {
+        return (pet.behavioralCounters?.consecutiveGoodSyncs ?? 0) >= requiredSyncs;
+      }
       return false;
+    }
   }
 }
 
 function getNow(ctx: TraitEvolutionContext): Date {
   return ctx.now ?? new Date();
+}
+
+function getRandom(ctx: TraitEvolutionContext): () => number {
+  return ctx.rng ?? ctx.random ?? Math.random;
 }

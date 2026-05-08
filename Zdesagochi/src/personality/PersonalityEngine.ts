@@ -4,7 +4,7 @@ import type {
   BehavioralFlag, BehavioralFlagType,
   BehavioralCounters, ConditionOp, PatternCondition,
   EmergentStateType, BlockedAction,
-  ActionContext, SyncContext,
+  ActionContext, SyncContext, PersonalityRuntimeContext, RollingCounterKey, RollingDailyBucket,
 } from './types';
 import { MODIFIER_CAPS } from './types';
 import { EMERGENT_STATE_MAP } from './emergentStates';
@@ -33,6 +33,8 @@ const BASE_DECAY_PER_MINUTE: Record<StatKey, number> = {
 
 // Flat XP за игру при flat-режиме (stoic)
 const STOIC_FLAT_PLAY_XP = 15;
+const ROLLING_WINDOW_DAYS = 30;
+const HIGH_PLAY_THRESHOLD = 8;
 
 // ── Вспомогательные утилиты ──────────────────────────────────────────────────
 
@@ -57,12 +59,12 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-function getChaosMultipliers(counters: BehavioralCounters): {
+function getChaosMultipliers(counters: BehavioralCounters, context: PersonalityRuntimeContext = {}): {
   decayMult: number; restoreMult: number; xpMult: number; coinMult: number; negResist: number;
 } {
-  const now = new Date().toISOString();
+  const now = getContextNow(context).toISOString();
   const seed = isDifferentDay(counters.chaosSeedDate, now)
-    ? Math.floor(Math.random() * 1e9)
+    ? Math.floor(getContextRng(context)() * 1e9)
     : counters.chaosDailySeed;
 
   const rng = seededRandom(seed);
@@ -91,7 +93,7 @@ export function applyDecay(
 
   // Хаотик: рандомные модификаторы из суточного seed
   const chaosMult = personality.id === 'chaotic'
-    ? getChaosMultipliers(counters).decayMult
+    ? getChaosMultipliers(counters, context).decayMult
     : 1.0;
 
   for (const stat of keys) {
@@ -139,7 +141,7 @@ export function applyActionModifiers(
   action: ActionType,
   personality: PersonalityDefinition,
   flags: BehavioralFlag[],
-  emergentState: EmergentStateType | null,
+  emergentState: EmergentStateType | EmergentStateType[] | null,
   counters: BehavioralCounters,
   context: ActionContext,
 ): ActionResult {
@@ -149,7 +151,7 @@ export function applyActionModifiers(
     coins: base.coins,
   };
 
-  const chaos = personality.id === 'chaotic' ? getChaosMultipliers(counters) : null;
+  const chaos = personality.id === 'chaotic' ? getChaosMultipliers(counters, context) : null;
 
   // ── 1. Restore: аддитивные бонусы ─────────────────────────────────────────
   const restoreBonus = personality.restoreBonus[action] ?? {};
@@ -204,9 +206,11 @@ export function applyActionModifiers(
     }
   }
 
-  // ── 4. Эмерджентное состояние: аддитивные модификаторы ────────────────────
-  if (emergentState) {
-    const stateDef = EMERGENT_STATE_MAP.get(emergentState);
+  const activeStates = normalizeEmergentStates(emergentState);
+
+  // ── 4. Эмерджентные состояния: аддитивные модификаторы ────────────────────
+  for (const state of activeStates) {
+    const stateDef = EMERGENT_STATE_MAP.get(state);
     const stateModified = stateDef?.modifiedActions.find(m => m.actionType === action);
     if (stateModified) {
       for (const [s, v] of Object.entries(stateModified.statAdditives)) {
@@ -228,7 +232,7 @@ export function applyActionModifiers(
   const xpMults: number[] = [
     personality.xpMultipliers[action] ?? 1.0,
     chaos?.xpMult ?? 1.0,
-    getStateXpMult(emergentState, action),
+    getStateXpMult(activeStates, action),
     getFlagXpMult(flags, action),
   ];
 
@@ -254,7 +258,7 @@ export function applyActionModifiers(
   const coinMults: number[] = [
     personality.coinMultipliers[action] ?? 1.0,
     chaos?.coinMult ?? 1.0,
-    getStateCoinMult(emergentState, action),
+    getStateCoinMult(activeStates, action),
     getFlagCoinMult(flags, action),
   ];
   result.coins = Math.round(result.coins * clamp(multiplyAll(coinMults), MODIFIER_CAPS.COIN_MIN, MODIFIER_CAPS.COIN_MAX));
@@ -268,12 +272,15 @@ export function applyActionModifiers(
 
 export function isActionBlocked(
   action: ActionType,
-  emergentState: EmergentStateType | null,
+  emergentState: EmergentStateType | EmergentStateType[] | null,
 ): BlockedAction | null {
-  if (!emergentState) return null;
-  const def = EMERGENT_STATE_MAP.get(emergentState);
-  if (!def) return null;
-  return def.blockedActions.find(b => b.actionType === action) ?? null;
+  const states = normalizeEmergentStates(emergentState);
+  for (const state of states) {
+    const def = EMERGENT_STATE_MAP.get(state);
+    const blocked = def?.blockedActions.find(b => b.actionType === action);
+    if (blocked) return blocked;
+  }
+  return null;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -291,7 +298,7 @@ export function computeEmergentState(
 ): EmergentStateType | null {
   const candidates: { type: EmergentStateType; priority: number }[] = [];
   const avg = avgStats(stats);
-  const now = Date.now();
+  const now = getContextNow(context).getTime();
 
   const hasFlag = (f: BehavioralFlagType) => flags.some(fl => fl.type === f);
 
@@ -401,9 +408,11 @@ export function runPatternEngine(
   counters: BehavioralCounters,
   currentFlags: BehavioralFlag[],
   personality: PersonalityDefinition,
+  context: PersonalityRuntimeContext = {},
 ): BehavioralFlag[] {
+  normalizeRollingCounters(counters, getContextNow(context));
   let flags = [...currentFlags];
-  const now = new Date().toISOString();
+  const now = getContextNow(context).toISOString();
 
   const canSetFlag = (type: BehavioralFlagType) =>
     personality.possibleFlags.includes(type) || UNIVERSAL_FLAGS.includes(type);
@@ -492,8 +501,11 @@ function evalCondition(cond: PatternCondition, c: BehavioralCounters): boolean {
       return compare(value, threshold, op);
     }
     case 'time_of_day_action': {
-      const { threshold } = cond.params as Record<string, number>;
-      return compare(c.nightWakeCount7d, threshold, op);
+      const { action, threshold } = cond.params as Record<string, string | number>;
+      const value = action === 'night_single'
+        ? c.nightSingleInteractionDays7d ?? 0
+        : c.nightWakeCount7d;
+      return compare(value, Number(threshold), op);
     }
     case 'consecutive_syncs_cond': {
       const { threshold } = cond.params as Record<string, number>;
@@ -501,9 +513,10 @@ function evalCondition(cond: PatternCondition, c: BehavioralCounters): boolean {
     }
     case 'same_food_ratio': {
       const { ratio, minFeeds = 5 } = cond.params as Record<string, number>;
-      const totalFeeds = Object.values(c.dailyFoodLog).reduce((a, b) => a + b, 0);
+      const rollingFoodLog = rollingFoodCounts(c, 7);
+      const totalFeeds = Object.values(rollingFoodLog).reduce((a, b) => a + b, 0);
       if (totalFeeds < minFeeds) return false;
-      const maxCount = Math.max(...Object.values(c.dailyFoodLog), 0);
+      const maxCount = Math.max(...Object.values(rollingFoodLog), 0);
       return (maxCount / totalFeeds) > ratio;
     }
     case 'unique_items_used': {
@@ -570,8 +583,8 @@ export function updateCounters(
   stats: Record<StatKey, number>,
   context: ActionContext,
 ): BehavioralCounters {
-  const c = { ...counters };
-  const now = new Date().toISOString();
+  const c = normalizeRollingCounters(cloneCounters(counters), getContextNow(context));
+  const now = getContextNow(context).toISOString();
   const today = now.slice(0, 10);
 
   // Сессия: gap
@@ -581,7 +594,11 @@ export function updateCounters(
   c.lastActionTimestamp = now;
 
   if (c.sessionGapHours >= 48) {
-    c.sessionGapsOver48h_30d = Math.min(c.sessionGapsOver48h_30d + 1, 100);
+    incrementRollingCounter(c, today, 'session_gap_48h');
+  }
+
+  if (action !== 'sync' && context.clientLocalHour >= 0 && context.clientLocalHour <= 5) {
+    incrementRollingCounter(c, today, 'night_interaction');
   }
 
   // Сброс дневных счётчиков в новый день
@@ -595,35 +612,33 @@ export function updateCounters(
   if (action === 'feed') {
     if (context.foodId) {
       c.dailyFoodLog = { ...c.dailyFoodLog, [context.foodId]: (c.dailyFoodLog[context.foodId] ?? 0) + 1 };
+      incrementRollingFood(c, today, context.foodId);
       if (!c.uniqueFoodsTried.includes(context.foodId)) {
         c.uniqueFoodsTried = [...c.uniqueFoodsTried, context.foodId];
       }
     }
-    if (stats.hunger < 20) c.feedInRedZone7d++;
-    if (stats.hunger > 60) c.feedInGreenZone7d++;
+    if (stats.hunger < 20) incrementRollingCounter(c, today, 'feed_red');
+    if (stats.hunger > 60) incrementRollingCounter(c, today, 'feed_green');
   }
 
   if (action === 'play') {
     c.playCountToday++;
-    if (c.playCountToday > 8) {
-      c.currentHighPlayDays = Math.max(c.currentHighPlayDays, 1);
-      c.maxConsecHighPlayDays = Math.max(c.maxConsecHighPlayDays, c.currentHighPlayDays);
-    }
+    incrementRollingCounter(c, today, 'play');
   }
 
-  if (action === 'sleep' && stats.energy > 70) c.forcedSleepCount7d++;
+  if (action === 'sleep' && stats.energy > 70) incrementRollingCounter(c, today, 'sleep_forced');
   if (action === 'wake') {
     // Упрощённо: считаем за ночное пробуждение если час 0–2
-    if (context.clientLocalHour >= 0 && context.clientLocalHour <= 2) c.nightWakeCount7d++;
+    if (context.clientLocalHour >= 0 && context.clientLocalHour <= 2) incrementRollingCounter(c, today, 'night_wake');
   }
-  if (action === 'heal' && stats.health > 90) c.healWhenHealthy7d++;
+  if (action === 'heal' && stats.health > 90) incrementRollingCounter(c, today, 'heal_healthy');
   if (action === 'bond') {
     c.totalBondActions++;
     c.bondActionsInPhase++;
   }
 
   // filth crisis
-  if (stats.cleanliness < 10 && action === 'sync') c.filthCrisisCount30d++;
+  if (stats.cleanliness < 10 && action === 'sync') incrementRollingCounter(c, today, 'filth_crisis');
 
   // health neglect streak
   if (stats.health < 20 && action === 'sync') {
@@ -659,10 +674,11 @@ export function updateCounters(
 
   // Chaotic: seed
   if (isDifferentDay(c.chaosSeedDate, now)) {
-    c.chaosDailySeed = Math.random();
+    c.chaosDailySeed = getContextRng(context)();
     c.chaosSeedDate = today;
   }
 
+  materializeRollingCounters(c, getContextNow(context));
   return c;
 }
 
@@ -770,8 +786,8 @@ export function getPeakPerformanceMult(
 //  createDefaultCounters — начальное состояние счётчиков
 // ────────────────────────────────────────────────────────────────────────────
 
-export function createDefaultCounters(): BehavioralCounters {
-  const now = new Date().toISOString();
+export function createDefaultCounters(context: PersonalityRuntimeContext = {}): BehavioralCounters {
+  const now = getContextNow(context).toISOString();
   return {
     sessionGapHours: 0,
     lastActionTimestamp: now,
@@ -787,6 +803,7 @@ export function createDefaultCounters(): BehavioralCounters {
     consecutiveBadMoodSyncs: 0,
     maxConsecHighPlayDays: 0,
     currentHighPlayDays: 0,
+    nightSingleInteractionDays7d: 0,
     playCountToday: 0,
     lastDayReset: now.slice(0, 10),
     dailyFoodLog: {},
@@ -799,8 +816,9 @@ export function createDefaultCounters(): BehavioralCounters {
     bondActionsInPhase: 0,
     stoicPeakUsed: false,
     enlightenmentActive: false,
-    chaosDailySeed: Math.random(),
+    chaosDailySeed: getContextRng(context)(),
     chaosSeedDate: now.slice(0, 10),
+    rollingWindows: { dailyBuckets: [] },
   };
 }
 
@@ -819,17 +837,216 @@ function isNightHour(hour: number, range?: [number, number]): boolean {
   return hour >= start && hour < end;
 }
 
-
-function getStateXpMult(state: EmergentStateType | null, action: ActionType): number {
-  if (!state) return 1.0;
-  const def = EMERGENT_STATE_MAP.get(state);
-  return def?.modifiedActions.find(m => m.actionType === action)?.xpMultiplier ?? 1.0;
+function getContextNow(context: PersonalityRuntimeContext): Date {
+  return context.now ?? new Date();
 }
 
-function getStateCoinMult(state: EmergentStateType | null, action: ActionType): number {
-  if (!state) return 1.0;
-  const def = EMERGENT_STATE_MAP.get(state);
-  return def?.modifiedActions.find(m => m.actionType === action)?.coinMultiplier ?? 1.0;
+function getContextRng(context: PersonalityRuntimeContext): () => number {
+  return context.rng ?? Math.random;
+}
+
+function normalizeRollingCounters(counters: BehavioralCounters, now: Date): BehavioralCounters {
+  if (!counters.rollingWindows) {
+    counters.rollingWindows = { dailyBuckets: [] };
+    seedRollingBucketsFromLegacyCounters(counters, now);
+  }
+
+  counters.rollingWindows.dailyBuckets = pruneDailyBuckets(counters.rollingWindows.dailyBuckets, now);
+  materializeRollingCounters(counters, now);
+  return counters;
+}
+
+function cloneCounters(counters: BehavioralCounters): BehavioralCounters {
+  return {
+    ...counters,
+    dailyFoodLog: { ...counters.dailyFoodLog },
+    uniqueFoodsTried: [...counters.uniqueFoodsTried],
+    rollingWindows: counters.rollingWindows
+      ? {
+          dailyBuckets: counters.rollingWindows.dailyBuckets.map(bucket => ({
+            date: bucket.date,
+            counts: { ...bucket.counts },
+            foodCounts: bucket.foodCounts ? { ...bucket.foodCounts } : undefined,
+          })),
+        }
+      : undefined,
+  };
+}
+
+function seedRollingBucketsFromLegacyCounters(counters: BehavioralCounters, now: Date): void {
+  const counts: Partial<Record<RollingCounterKey, number>> = {};
+  if (counters.feedInRedZone7d > 0) counts.feed_red = counters.feedInRedZone7d;
+  if (counters.feedInGreenZone7d > 0) counts.feed_green = counters.feedInGreenZone7d;
+  if (counters.forcedSleepCount7d > 0) counts.sleep_forced = counters.forcedSleepCount7d;
+  if (counters.healWhenHealthy7d > 0) counts.heal_healthy = counters.healWhenHealthy7d;
+  if (counters.nightWakeCount7d > 0) counts.night_wake = counters.nightWakeCount7d;
+  if (counters.sessionGapsOver48h_30d > 0) counts.session_gap_48h = counters.sessionGapsOver48h_30d;
+  if (counters.filthCrisisCount30d > 0) counts.filth_crisis = counters.filthCrisisCount30d;
+  if ((counters.nightSingleInteractionDays7d ?? 0) > 0) {
+    counts.night_interaction = counters.nightSingleInteractionDays7d;
+  }
+  if (counters.playCountToday > 0) counts.play = counters.playCountToday;
+
+  if (Object.keys(counts).length === 0) return;
+  counters.rollingWindows = {
+    dailyBuckets: [{
+      date: toDateOnly(now),
+      counts,
+    }],
+  };
+}
+
+function incrementRollingCounter(counters: BehavioralCounters, date: string, key: RollingCounterKey, amount = 1): void {
+  counters.rollingWindows ??= { dailyBuckets: [] };
+  let bucket = counters.rollingWindows.dailyBuckets.find(entry => entry.date === date);
+  if (!bucket) {
+    bucket = { date, counts: {} };
+    counters.rollingWindows.dailyBuckets.push(bucket);
+    counters.rollingWindows.dailyBuckets.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  bucket.counts[key] = (bucket.counts[key] ?? 0) + amount;
+}
+
+function incrementRollingFood(counters: BehavioralCounters, date: string, foodId: string): void {
+  counters.rollingWindows ??= { dailyBuckets: [] };
+  let bucket = counters.rollingWindows.dailyBuckets.find(entry => entry.date === date);
+  if (!bucket) {
+    bucket = { date, counts: {}, foodCounts: {} };
+    counters.rollingWindows.dailyBuckets.push(bucket);
+    counters.rollingWindows.dailyBuckets.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  bucket.foodCounts ??= {};
+  bucket.foodCounts[foodId] = (bucket.foodCounts[foodId] ?? 0) + 1;
+}
+
+function materializeRollingCounters(counters: BehavioralCounters, now: Date): void {
+  counters.rollingWindows ??= { dailyBuckets: [] };
+  counters.rollingWindows.dailyBuckets = pruneDailyBuckets(counters.rollingWindows.dailyBuckets, now);
+
+  counters.feedInRedZone7d = rollingCount(counters, 'feed_red', 7, now);
+  counters.feedInGreenZone7d = rollingCount(counters, 'feed_green', 7, now);
+  counters.forcedSleepCount7d = rollingCount(counters, 'sleep_forced', 7, now);
+  counters.healWhenHealthy7d = rollingCount(counters, 'heal_healthy', 7, now);
+  counters.nightWakeCount7d = rollingCount(counters, 'night_wake', 7, now);
+  counters.sessionGapsOver48h_30d = rollingCount(counters, 'session_gap_48h', 30, now);
+  counters.filthCrisisCount30d = rollingCount(counters, 'filth_crisis', 30, now);
+  counters.currentHighPlayDays = consecutiveHighPlayDays(counters, now);
+  counters.maxConsecHighPlayDays = maxHighPlayStreak(counters, now);
+  counters.nightSingleInteractionDays7d = consecutiveSingleNightInteractionDays(counters, now);
+}
+
+function rollingCount(counters: BehavioralCounters, key: RollingCounterKey, days: number, now: Date): number {
+  const today = toDateOnly(now);
+  return (counters.rollingWindows?.dailyBuckets ?? [])
+    .filter(bucket => daysBetween(bucket.date, today) < days)
+    .reduce((sum, bucket) => sum + (bucket.counts[key] ?? 0), 0);
+}
+
+function pruneDailyBuckets(buckets: RollingDailyBucket[], now: Date): RollingDailyBucket[] {
+  const today = toDateOnly(now);
+  return buckets.filter(bucket => daysBetween(bucket.date, today) < ROLLING_WINDOW_DAYS);
+}
+
+function consecutiveHighPlayDays(counters: BehavioralCounters, now: Date): number {
+  const byDate = new Map((counters.rollingWindows?.dailyBuckets ?? []).map(bucket => [bucket.date, bucket]));
+  let streak = 0;
+  let cursor = toDateOnly(now);
+
+  while ((byDate.get(cursor)?.counts.play ?? 0) > HIGH_PLAY_THRESHOLD) {
+    streak++;
+    cursor = shiftDate(cursor, -1);
+  }
+
+  return streak;
+}
+
+function maxHighPlayStreak(counters: BehavioralCounters, now: Date): number {
+  const today = toDateOnly(now);
+  const days = Array.from({ length: 7 }, (_, idx) => shiftDate(today, -idx)).reverse();
+  const byDate = new Map((counters.rollingWindows?.dailyBuckets ?? []).map(bucket => [bucket.date, bucket]));
+  let best = 0;
+  let current = 0;
+
+  for (const date of days) {
+    if ((byDate.get(date)?.counts.play ?? 0) > HIGH_PLAY_THRESHOLD) {
+      current++;
+      best = Math.max(best, current);
+    } else {
+      current = 0;
+    }
+  }
+
+  return best;
+}
+
+function consecutiveSingleNightInteractionDays(counters: BehavioralCounters, now: Date): number {
+  const byDate = new Map((counters.rollingWindows?.dailyBuckets ?? []).map(bucket => [bucket.date, bucket]));
+  let streak = 0;
+  let cursor = toDateOnly(now);
+
+  while ((byDate.get(cursor)?.counts.night_interaction ?? 0) === 1) {
+    streak++;
+    cursor = shiftDate(cursor, -1);
+  }
+
+  return streak;
+}
+
+function rollingFoodCounts(counters: BehavioralCounters, days: number): Record<string, number> {
+  const buckets = counters.rollingWindows?.dailyBuckets ?? [];
+  const latestDate = buckets[buckets.length - 1]?.date ?? counters.lastDayReset;
+  const result: Record<string, number> = {};
+
+  for (const bucket of buckets) {
+    if (daysBetween(bucket.date, latestDate) >= days) continue;
+    for (const [foodId, count] of Object.entries(bucket.foodCounts ?? {})) {
+      result[foodId] = (result[foodId] ?? 0) + count;
+    }
+  }
+
+  return result;
+}
+
+function toDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function shiftDate(date: string, deltaDays: number): string {
+  const shifted = new Date(`${date}T00:00:00.000Z`);
+  shifted.setUTCDate(shifted.getUTCDate() + deltaDays);
+  return toDateOnly(shifted);
+}
+
+function daysBetween(date: string, today: string): number {
+  const start = new Date(`${date}T00:00:00.000Z`).getTime();
+  const end = new Date(`${today}T00:00:00.000Z`).getTime();
+  return Math.floor((end - start) / 86_400_000);
+}
+
+function normalizeEmergentStates(state: EmergentStateType | EmergentStateType[] | null): EmergentStateType[] {
+  if (!state) return [];
+  const states = Array.isArray(state) ? state : [state];
+  return [...new Set(states)].sort((a, b) => getStatePriority(a) - getStatePriority(b));
+}
+
+function getStateXpMult(states: EmergentStateType[], action: ActionType): number {
+  return states.reduce((mult, state) => {
+    const def = EMERGENT_STATE_MAP.get(state);
+    return mult * (def?.modifiedActions.find(m => m.actionType === action)?.xpMultiplier ?? 1.0);
+  }, 1.0);
+}
+
+function getStateCoinMult(states: EmergentStateType[], action: ActionType): number {
+  return states.reduce((mult, state) => {
+    const def = EMERGENT_STATE_MAP.get(state);
+    return mult * (def?.modifiedActions.find(m => m.actionType === action)?.coinMultiplier ?? 1.0);
+  }, 1.0);
+}
+
+function getStatePriority(state: EmergentStateType): number {
+  return EMERGENT_STATE_MAP.get(state)?.priority ?? 999;
 }
 
 // Эффекты флагов на restore (аддитивные)
