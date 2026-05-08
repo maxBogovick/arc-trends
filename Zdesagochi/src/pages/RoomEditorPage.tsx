@@ -2,8 +2,7 @@ import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePetStore, type RoomCustomization, type FloorStyle, type RoomPreset } from '../store/petStore';
 import { getFurniture, getFurnitureByCategory } from '../data/roomFurniture';
-import { BACKGROUNDS } from '../data/backgrounds';
-import { getBackground } from '../data/backgrounds';
+import { BACKGROUNDS, getBackground } from '../data/backgrounds';
 import { RoomScene } from '../components/Pet/RoomScene';
 
 type PanelTab = 'furniture' | 'room';
@@ -369,7 +368,7 @@ function FloorPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCus
 
 function AccentPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCustomization>) => void }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
         <SectionLabel>Цвет акцента</SectionLabel>
         <p className="text-[10px] mb-2" style={{ color: 'rgba(255,255,255,0.3)' }}>
@@ -382,8 +381,48 @@ function AccentPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCu
           <CustomColorPicker value={c.accentColor} onChange={v => set({ accentColor: v })} />
         </div>
       </div>
+
+      <div className="pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <SectionLabel>Освещение</SectionLabel>
+
+        {/* Light source side */}
+        <div className="flex gap-1.5 mb-3">
+          {([
+            { id: 'left',   label: '◁ Лево'   },
+            { id: 'center', label: '◈ Центр'  },
+            { id: 'right',  label: 'Право ▷'  },
+          ] as const).map(opt => (
+            <StyleButton
+              key={opt.id}
+              active={c.lightSide === opt.id}
+              onClick={() => set({ lightSide: opt.id })}
+            >
+              {opt.label}
+            </StyleButton>
+          ))}
+        </div>
+
+        {/* Intensity slider */}
+        <div className="flex items-center gap-2">
+          <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.25)' }}>🌑</span>
+          <input
+            type="range" min={0} max={1} step={0.05}
+            value={c.lightIntensity}
+            onChange={e => set({ lightIntensity: parseFloat(e.target.value) })}
+            className="flex-1 accent-purple-500"
+          />
+          <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.55)' }}>☀️</span>
+        </div>
+        <p className="text-[10px] mt-1 text-center" style={{ color: 'rgba(255,255,255,0.25)' }}>
+          {c.lightIntensity === 0 ? 'Выключено' : `${Math.round(c.lightIntensity * 100)}%`}
+        </p>
+      </div>
     </div>
   );
+}
+
+function extractGradientHex(gradient: string): string[] {
+  return gradient.match(/#[0-9A-Fa-f]{6}/g) ?? [];
 }
 
 function ThemePanel() {
@@ -391,13 +430,31 @@ function ThemePanel() {
 
   const applyThemeColors = (bgId: string) => {
     const bg = getBackground(bgId);
-    setRoomCustomization({ accentColor: bg.accentColor });
+    const hexes = extractGradientHex(bg.gradient);
+    const wallColor  = hexes[hexes.length - 1] ?? '#0D0020';
+    const wallColor2 = hexes[0] ?? wallColor;
+    setRoomCustomization({
+      accentColor:    bg.accentColor,
+      wallColor,
+      wallColor2,
+      wallStyle:      'v_gradient',
+      sideWallColor:  wallColor2,
+      sideWallColor2: wallColor,
+      sideWallStyle:  'v_gradient',
+      ceilingColor:   hexes[hexes.length - 1] ?? wallColor,
+      ceilingStyle:   'solid',
+      floorColor:     bg.accentColor,
+      wallImage:      null,
+      sideWallImage:  null,
+      ceilingImage:   null,
+      floorImage:     null,
+    });
   };
 
   return (
     <div className="space-y-3">
       <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
-        Тема определяет спецэффекты и декорации. Цвета стен/пола можно изменить отдельно.
+        Тема устанавливает эффекты и автоматически подбирает цвета стен, пола и акцента.
       </p>
       <div className="grid grid-cols-2 gap-2">
         {BACKGROUNDS.map(bgDef => {
@@ -469,26 +526,36 @@ function PresetPreview({ p }: { p: RoomPreset }) {
   return (
     <div
       style={{
-        width: 56, height: 40, borderRadius: 8, overflow: 'hidden',
+        width: 64, height: 46, borderRadius: 8, overflow: 'hidden',
         position: 'relative', flexShrink: 0,
         background: c.wallColor,
         border: '1px solid rgba(255,255,255,0.12)',
       }}
     >
       {/* side wall hints */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, bottom: '28%', width: '18%',
-        background: c.sideWallColor, opacity: 0.85,
-      }} />
-      <div style={{
-        position: 'absolute', top: 0, right: 0, bottom: '28%', width: '18%',
-        background: c.sideWallColor, opacity: 0.85,
-      }} />
+      <div style={{ position: 'absolute', top: 0, left: 0, bottom: '28%', width: '16%', background: c.sideWallColor, opacity: 0.8 }} />
+      <div style={{ position: 'absolute', top: 0, right: 0, bottom: '28%', width: '16%', background: c.sideWallColor, opacity: 0.8 }} />
       {/* floor */}
-      <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, height: '28%',
-        background: c.floorColor, opacity: 0.9,
-      }} />
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '28%', background: c.floorColor, opacity: 0.9 }} />
+      {/* accent glow */}
+      <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 70% 50% at 50% 60%, ${c.accentColor}22 0%, transparent 80%)` }} />
+      {/* furniture items */}
+      {p.furniture.slice(0, 10).map(f => {
+        const def = getFurniture(f.itemId);
+        if (!def) return null;
+        return (
+          <div key={f.uid} style={{
+            position: 'absolute',
+            left: `${f.x}%`, top: `${f.y}%`,
+            transform: `translate(-50%, -50%) scaleX(${f.flipped ? -1 : 1})`,
+            fontSize: `${Math.max(7, Math.min(11, f.scale * 7))}px`,
+            lineHeight: 1, pointerEvents: 'none',
+            filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))',
+          }}>
+            {def.emoji}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -496,15 +563,37 @@ function PresetPreview({ p }: { p: RoomPreset }) {
 // ── Presets panel ─────────────────────────────────────────────────────────────
 
 function PresetsPanel() {
-  const { roomPresets, saveRoomPreset, applyRoomPreset, deleteRoomPreset } = usePetStore();
+  const { roomPresets, saveRoomPreset, applyRoomPreset, deleteRoomPreset, exportRoomPreset, importRoomPreset } = usePetStore();
   const [nameInput, setNameInput] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [importCode, setImportCode] = useState('');
+  const [importError, setImportError] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const handleSave = () => {
     const name = nameInput.trim();
     if (!name) return;
     saveRoomPreset(name);
     setNameInput('');
+  };
+
+  const handleCopyCode = (id: string) => {
+    const code = exportRoomPreset(id);
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
+  };
+
+  const handleImport = () => {
+    const ok = importRoomPreset(importCode);
+    if (ok) {
+      setImportCode('');
+      setImportError(false);
+    } else {
+      setImportError(true);
+    }
   };
 
   return (
@@ -521,25 +610,53 @@ function PresetsPanel() {
             placeholder="Название пресета…"
             maxLength={30}
             className="flex-1 px-3 py-1.5 rounded-lg text-xs text-white placeholder:text-white/30 outline-none"
-            style={{
-              background: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(255,255,255,0.15)',
-            }}
+            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
           />
           <button
             onClick={handleSave}
             disabled={!nameInput.trim()}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all shrink-0"
+            className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0"
             style={{
-              background: nameInput.trim()
-                ? 'linear-gradient(135deg,#7C3AED,#EC4899)'
-                : 'rgba(255,255,255,0.08)',
+              background: nameInput.trim() ? 'linear-gradient(135deg,#7C3AED,#EC4899)' : 'rgba(255,255,255,0.08)',
               color: nameInput.trim() ? 'white' : 'rgba(255,255,255,0.3)',
             }}
           >
             💾 Сохранить
           </button>
         </div>
+      </div>
+
+      {/* Import by code */}
+      <div className="p-3 rounded-xl space-y-2" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <SectionLabel>Импорт по коду</SectionLabel>
+        <div className="flex gap-2">
+          <input
+            value={importCode}
+            onChange={e => { setImportCode(e.target.value); setImportError(false); }}
+            onKeyDown={e => e.key === 'Enter' && importCode.trim() && handleImport()}
+            placeholder="Вставить код комнаты…"
+            className="flex-1 px-3 py-1.5 rounded-lg text-xs text-white placeholder:text-white/30 outline-none"
+            style={{
+              background: 'rgba(255,255,255,0.08)',
+              border: `1px solid ${importError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.15)'}`,
+            }}
+          />
+          <button
+            onClick={handleImport}
+            disabled={!importCode.trim()}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0"
+            style={{
+              background: importCode.trim() ? 'rgba(16,185,129,0.25)' : 'rgba(255,255,255,0.08)',
+              color: importCode.trim() ? '#6EE7B7' : 'rgba(255,255,255,0.3)',
+              border: importCode.trim() ? '1px solid rgba(16,185,129,0.4)' : '1px solid transparent',
+            }}
+          >
+            📥 Загрузить
+          </button>
+        </div>
+        {importError && (
+          <p className="text-[10px]" style={{ color: '#FCA5A5' }}>Неверный код — проверьте и попробуйте снова</p>
+        )}
       </div>
 
       {/* List */}
@@ -579,6 +696,18 @@ function PresetsPanel() {
                   style={{ background: 'linear-gradient(135deg,rgba(124,58,237,0.5),rgba(236,72,153,0.3))', border: '1px solid rgba(124,58,237,0.4)' }}
                 >
                   ✓ Применить
+                </button>
+
+                <button
+                  onClick={() => handleCopyCode(preset.id)}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all"
+                  style={{
+                    background: copiedId === preset.id ? 'rgba(16,185,129,0.25)' : 'rgba(255,255,255,0.07)',
+                    color: copiedId === preset.id ? '#6EE7B7' : 'rgba(255,255,255,0.5)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                  }}
+                >
+                  {copiedId === preset.id ? '✓ Скопировано' : '📤 Код'}
                 </button>
 
                 {confirmDeleteId === preset.id ? (
@@ -622,7 +751,7 @@ function PresetsPanel() {
 // CSS left/top position updates, causing items to drift further on each drag.
 
 interface DraggableFurnitureItemProps {
-  placed: { uid: string; itemId: string; x: number; y: number; scale: number; flipped: boolean; zIndex: number };
+  placed: { uid: string; itemId: string; x: number; y: number; scale: number; flipped: boolean; zIndex: number; locked: boolean };
   isSelected: boolean;
   onMove: (uid: string, dx: number, dy: number) => void;
   onSelect: (uid: string) => void;
@@ -636,7 +765,10 @@ function DraggableFurnitureItem({ placed, isSelected, onMove, onSelect }: Dragga
 
   if (!def) return null;
 
+  const isDragging = !!(offset.x || offset.y);
+
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (placed.locked) { onSelect(placed.uid); return; }
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     dragging.current = true;
@@ -670,20 +802,26 @@ function DraggableFurnitureItem({ placed, isSelected, onMove, onSelect }: Dragga
         top: `${placed.y}%`,
         transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scaleX(${placed.flipped ? -1 : 1})`,
         fontSize: `${placed.scale * 2.5}rem`,
-        cursor: offset.x || offset.y ? 'grabbing' : 'grab',
-        zIndex: placed.zIndex + (offset.x || offset.y ? 50 : 0),
+        cursor: placed.locked ? 'default' : isDragging ? 'grabbing' : 'grab',
+        zIndex: placed.zIndex + (isDragging ? 50 : 0),
         filter: isSelected
           ? 'drop-shadow(0 0 10px rgba(124,58,237,0.9))'
           : 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))',
         userSelect: 'none',
         touchAction: 'none',
-        transition: offset.x || offset.y ? 'none' : 'filter 0.15s',
+        transition: isDragging ? 'none' : 'filter 0.15s',
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
       {def.emoji}
+      {placed.locked && (
+        <span style={{
+          position: 'absolute', top: '-0.15em', right: '-0.25em',
+          fontSize: '0.35em', lineHeight: 1, pointerEvents: 'none',
+        }}>🔒</span>
+      )}
     </div>
   );
 }
@@ -709,6 +847,7 @@ export function RoomEditorPage() {
   const [roomTab, setRoomTab] = useState<RoomTab>('wall');
   const [furnitureCategory, setFurnitureCategory] = useState<FurnitureCategory>('plant');
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
+  const [clearConfirm, setClearConfirm] = useState(false);
 
   const selectedItem = placedFurniture.find(p => p.uid === selectedUid) ?? null;
 
@@ -725,8 +864,8 @@ export function RoomEditorPage() {
     const placed = placedFurniture.find(p => p.uid === uid);
     if (!placed) return;
     updateRoomFurniture(uid, {
-      x: Math.max(2, Math.min(98, placed.x + (dx / rect.width) * 100)),
-      y: Math.max(2, Math.min(92, placed.y + (dy / rect.height) * 100)),
+      x: Math.max(3, Math.min(97, placed.x + (dx / rect.width) * 100)),
+      y: Math.max(3, Math.min(97, placed.y + (dy / rect.height) * 100)),
     });
   };
 
@@ -744,8 +883,8 @@ export function RoomEditorPage() {
     <motion.div
       className="fixed inset-0 z-50 flex"
       initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      animate={{ opacity: 1, pointerEvents: 'auto' }}
+      exit={{ opacity: 0, pointerEvents: 'none' }}
       transition={{ duration: 0.2 }}
       style={{ background: 'rgba(15,10,30,0.92)', backdropFilter: 'blur(8px)' }}
     >
@@ -910,29 +1049,33 @@ export function RoomEditorPage() {
         >
           <h1 className="font-display font-bold text-xl text-white">🛋️ Редактор комнаты</h1>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                if (window.confirm('Очистить всю мебель в комнате?')) {
-                  clearRoomFurniture();
-                  setSelectedUid(null);
-                }
-              }}
-              className="px-3 py-2 rounded-xl text-sm font-bold transition-all"
-              style={{
-                background: 'rgba(239,68,68,0.15)',
-                color: '#FCA5A5',
-                border: '1px solid rgba(239,68,68,0.3)',
-              }}
-            >
-              🗑️ Очистить всё
-            </button>
+            {clearConfirm ? (
+              <>
+                <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.55)' }}>Удалить всю мебель?</span>
+                <button
+                  onClick={() => { clearRoomFurniture(); setSelectedUid(null); setClearConfirm(false); }}
+                  className="px-3 py-2 rounded-xl text-sm font-bold transition-all"
+                  style={{ background: 'rgba(239,68,68,0.35)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.5)' }}
+                >Да</button>
+                <button
+                  onClick={() => setClearConfirm(false)}
+                  className="px-3 py-2 rounded-xl text-sm font-bold transition-all"
+                  style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}
+                >Нет</button>
+              </>
+            ) : (
+              <button
+                onClick={() => setClearConfirm(true)}
+                className="px-3 py-2 rounded-xl text-sm font-bold transition-all"
+                style={{ background: 'rgba(239,68,68,0.15)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.3)' }}
+              >
+                🗑️ Очистить всё
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('home')}
               className="px-4 py-2 rounded-xl text-sm font-bold text-white transition-all"
-              style={{
-                background: 'rgba(255,255,255,0.1)',
-                border: '1px solid rgba(255,255,255,0.15)',
-              }}
+              style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)' }}
             >
               ✕ Закрыть
             </button>
@@ -1000,20 +1143,53 @@ export function RoomEditorPage() {
                   >
                     ↔ Отразить
                   </button>
-                  <div className="flex gap-1">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        const maxZ = Math.max(...placedFurniture.map(f => f.zIndex));
+                        updateRoomFurniture(selectedItem.uid, { zIndex: maxZ + 1 });
+                      }}
+                      title="На самый перед"
+                      className="h-8 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center"
+                      style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
+                    >⤒</button>
                     <button
                       onClick={() => updateRoomFurniture(selectedItem.uid, { zIndex: selectedItem.zIndex + 1 })}
                       title="Слой выше"
                       className="w-8 h-8 rounded-lg text-sm font-bold transition-all flex items-center justify-center"
                       style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
                     >↑</button>
+                    <span
+                      className="text-[10px] font-mono w-6 text-center"
+                      style={{ color: 'rgba(255,255,255,0.35)' }}
+                    >{selectedItem.zIndex}</span>
                     <button
                       onClick={() => updateRoomFurniture(selectedItem.uid, { zIndex: Math.max(1, selectedItem.zIndex - 1) })}
                       title="Слой ниже"
                       className="w-8 h-8 rounded-lg text-sm font-bold transition-all flex items-center justify-center"
                       style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
                     >↓</button>
+                    <button
+                      onClick={() => {
+                        const minZ = Math.min(...placedFurniture.map(f => f.zIndex));
+                        updateRoomFurniture(selectedItem.uid, { zIndex: Math.max(1, minZ - 1) });
+                      }}
+                      title="На самый зад"
+                      className="h-8 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center"
+                      style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
+                    >⤓</button>
                   </div>
+                  <button
+                    onClick={() => updateRoomFurniture(selectedItem.uid, { locked: !selectedItem.locked })}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+                    style={{
+                      background: selectedItem.locked ? 'rgba(245,158,11,0.25)' : 'rgba(255,255,255,0.08)',
+                      color: selectedItem.locked ? '#FCD34D' : 'rgba(255,255,255,0.6)',
+                      border: selectedItem.locked ? '1px solid rgba(245,158,11,0.4)' : '1px solid rgba(255,255,255,0.12)',
+                    }}
+                  >
+                    {selectedItem.locked ? '🔒 Разблок.' : '🔓 Заблок.'}
+                  </button>
                   <button
                     onClick={() => { removeRoomFurniture(selectedItem.uid); setSelectedUid(null); }}
                     className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"

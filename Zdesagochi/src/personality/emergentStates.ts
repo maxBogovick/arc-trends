@@ -349,7 +349,7 @@ export const EMERGENT_STATE_DEFS: EmergentStateDefinition[] = [
     name: 'Кризис идентичности',
     description: 'Черты разошлись слишком далеко. Нужен устойчивый паттерн ухода.',
     emoji: '🌫',
-    priority: 2,
+    priority: 1.5,
     exclusive: true,
     blockedActions: [],
     modifiedActions: [
@@ -370,7 +370,7 @@ export const EMERGENT_STATE_DEFS: EmergentStateDefinition[] = [
     name: 'Теневая форма',
     description: 'Накопленная травма вышла наружу. Нужны спокойные действия и доверие.',
     emoji: '🌑',
-    priority: 1,
+    priority: 0.5,
     exclusive: true,
     blockedActions: [
       { actionType: 'play', reason: 'Сейчас игры ранят сильнее', alternativeHint: 'Сначала восстанови доверие' },

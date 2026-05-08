@@ -35,6 +35,7 @@ const BASE_DECAY_PER_MINUTE: Record<StatKey, number> = {
 const STOIC_FLAT_PLAY_XP = 15;
 const ROLLING_WINDOW_DAYS = 30;
 const HIGH_PLAY_THRESHOLD = 8;
+const FEAST_FRENZY_FEED_WINDOW_MS = 60 * 60 * 1000;
 
 // ── Вспомогательные утилиты ──────────────────────────────────────────────────
 
@@ -313,6 +314,7 @@ export function computeEmergentState(
   if (currentState === 'stoic_peak' && enteredAt) {
     const elapsed = (now - new Date(enteredAt).getTime()) / 3600000;
     if (elapsed >= 2) return null;
+    candidates.push({ type: 'stoic_peak', priority: 12 });
   }
 
   // enlightenment — sage, 7 дней avg > 70
@@ -324,11 +326,15 @@ export function computeEmergentState(
   // enlightenment истекает через 24ч или при avg < 50
   if (currentState === 'enlightenment' && enteredAt) {
     const elapsed = (now - new Date(enteredAt).getTime()) / 3600000;
-    if (elapsed >= 24 || avg < 50) return null;
+    if (elapsed >= 24 || avg < 50) {
+      counters.enlightenmentActive = false;
+      return null;
+    }
+    candidates.push({ type: 'enlightenment', priority: 11 });
   }
 
   // feast_frenzy — foodie
-  if (personality.id === 'foodie' && counters.playCountToday >= 3 && stats.happiness > 90) {
+  if (personality.id === 'foodie' && recentFeedCount(counters, now) >= 3 && stats.happiness > 90) {
     candidates.push({ type: 'feast_frenzy', priority: 14 });
   }
 
@@ -394,8 +400,14 @@ export function computeEmergentState(
   if (candidates.length === 0) return null;
 
   // Победитель — с наименьшим priority числом (1 = наивысший)
-  candidates.sort((a, b) => a.priority - b.priority);
-  return candidates[0].type;
+  candidates.sort((a, b) => a.priority - b.priority || a.type.localeCompare(b.type));
+  const winner = candidates[0].type;
+  if (winner === 'stoic_peak') counters.stoicPeakUsed = true;
+  if (winner === 'enlightenment') {
+    counters.enlightenmentActive = true;
+    counters.enlightenmentStart ??= getContextNow(context).toISOString();
+  }
+  return winner;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -508,7 +520,12 @@ function evalCondition(cond: PatternCondition, c: BehavioralCounters): boolean {
       return compare(value, Number(threshold), op);
     }
     case 'consecutive_syncs_cond': {
-      const { threshold } = cond.params as Record<string, number>;
+      const { threshold, allStatsAbove } = cond.params as Record<string, number>;
+      if (allStatsAbove !== undefined) {
+        const stats = c.lastStatsSnapshot ?? {};
+        const keys: StatKey[] = ['hunger', 'happiness', 'energy', 'health', 'cleanliness', 'bond'];
+        if (!keys.every(stat => (stats[stat] ?? -Infinity) > allStatsAbove)) return false;
+      }
       return compare(c.consecutiveGoodSyncs, threshold, op);
     }
     case 'same_food_ratio': {
@@ -586,6 +603,8 @@ export function updateCounters(
   const c = normalizeRollingCounters(cloneCounters(counters), getContextNow(context));
   const now = getContextNow(context).toISOString();
   const today = now.slice(0, 10);
+  c.lastStatsSnapshot = { ...stats };
+  c.recentFeedTimestamps = pruneRecentFeeds(c.recentFeedTimestamps ?? [], new Date(now).getTime());
 
   // Сессия: gap
   c.sessionGapHours = context.clientLocalHour >= 0
@@ -610,6 +629,7 @@ export function updateCounters(
 
   // Специфичные для действий
   if (action === 'feed') {
+    c.recentFeedTimestamps = [...(c.recentFeedTimestamps ?? []), now];
     if (context.foodId) {
       c.dailyFoodLog = { ...c.dailyFoodLog, [context.foodId]: (c.dailyFoodLog[context.foodId] ?? 0) + 1 };
       incrementRollingFood(c, today, context.foodId);
@@ -804,9 +824,11 @@ export function createDefaultCounters(context: PersonalityRuntimeContext = {}): 
     maxConsecHighPlayDays: 0,
     currentHighPlayDays: 0,
     nightSingleInteractionDays7d: 0,
+    lastStatsSnapshot: {},
     playCountToday: 0,
     lastDayReset: now.slice(0, 10),
     dailyFoodLog: {},
+    recentFeedTimestamps: [],
     uniqueFoodsTried: [],
     totalBondActions: 0,
     sameRoomHours: 0,
@@ -860,6 +882,8 @@ function cloneCounters(counters: BehavioralCounters): BehavioralCounters {
   return {
     ...counters,
     dailyFoodLog: { ...counters.dailyFoodLog },
+    recentFeedTimestamps: [...(counters.recentFeedTimestamps ?? [])],
+    lastStatsSnapshot: { ...(counters.lastStatsSnapshot ?? {}) },
     uniqueFoodsTried: [...counters.uniqueFoodsTried],
     rollingWindows: counters.rollingWindows
       ? {
@@ -1047,6 +1071,14 @@ function getStateCoinMult(states: EmergentStateType[], action: ActionType): numb
 
 function getStatePriority(state: EmergentStateType): number {
   return EMERGENT_STATE_MAP.get(state)?.priority ?? 999;
+}
+
+function recentFeedCount(counters: BehavioralCounters, nowMs: number): number {
+  return pruneRecentFeeds(counters.recentFeedTimestamps ?? [], nowMs).length;
+}
+
+function pruneRecentFeeds(timestamps: string[], nowMs: number): string[] {
+  return timestamps.filter(timestamp => nowMs - new Date(timestamp).getTime() <= FEAST_FRENZY_FEED_WINDOW_MS);
 }
 
 // Эффекты флагов на restore (аддитивные)

@@ -40,6 +40,9 @@ export interface RoomCustomization {
   floorColor: string;
   floorStyle: FloorStyle;
   floorImage: string | null;
+  // Lighting
+  lightIntensity: number;   // 0–1
+  lightSide: 'left' | 'center' | 'right';
   // Effects
   accentColor: string;
 }
@@ -60,6 +63,8 @@ export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
   floorColor: '#A855F7',
   floorStyle: 'grid',
   floorImage: null,
+  lightIntensity: 0.5,
+  lightSide: 'center',
   accentColor: '#A855F7',
 };
 
@@ -71,6 +76,7 @@ export interface PlacedFurnitureItem {
   scale: number;  // 0.5 - 3.0
   flipped: boolean;
   zIndex: number;
+  locked: boolean;
 }
 
 export interface RoomPreset {
@@ -143,6 +149,8 @@ interface PetStore {
   saveRoomPreset(name: string): void;
   applyRoomPreset(id: string): void;
   deleteRoomPreset(id: string): void;
+  exportRoomPreset(id: string): string;
+  importRoomPreset(code: string): boolean;
 
   petPresets: Record<string, any>;
   savePreset: (name: string) => void;
@@ -229,6 +237,42 @@ interface PetStore {
 
 let notifId = 0;
 
+// ── Room localStorage helpers ─────────────────────────────────────────────────
+
+function loadRoomCustomization(): RoomCustomization {
+  try {
+    const raw = localStorage.getItem('roomCustomization');
+    if (!raw) return DEFAULT_ROOM_CUSTOMIZATION;
+    return { ...DEFAULT_ROOM_CUSTOMIZATION, ...JSON.parse(raw) };
+  } catch { return DEFAULT_ROOM_CUSTOMIZATION; }
+}
+
+function loadPlacedFurniture(): PlacedFurnitureItem[] {
+  try {
+    const raw = localStorage.getItem('placedFurniture');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function loadOwnedFurnitureIds(): string[] {
+  const freeIds = FURNITURE.filter(f => f.price === 0).map(f => f.id);
+  try {
+    const raw = localStorage.getItem('ownedFurnitureIds');
+    if (!raw) return freeIds;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? [...new Set([...freeIds, ...parsed])] : freeIds;
+  } catch { return freeIds; }
+}
+
+function persistRoom(customization: RoomCustomization, placed: PlacedFurnitureItem[]) {
+  localStorage.setItem('roomCustomization', JSON.stringify(customization));
+  localStorage.setItem('placedFurniture', JSON.stringify(placed));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const usePetStore = create<PetStore>((set, get) => {
   const api = () => createApiService(get().apiMode, get().apiBaseUrl);
 
@@ -255,8 +299,8 @@ export const usePetStore = create<PetStore>((set, get) => {
     equippedTailId: 'none' as TailId,
     equippedBgId: 'void_dark',
     ownedBgs: BACKGROUNDS.filter(b => b.price === 0).map(b => b.id),
-    ownedFurnitureIds: FURNITURE.filter(f => f.price === 0).map(f => f.id),
-    placedFurniture: [],
+    ownedFurnitureIds: loadOwnedFurnitureIds(),
+    placedFurniture: loadPlacedFurniture(),
     petColorOverride: null,
     petMorph: { scale: 1, width: 1, height: 1 },
     equippedAuraId: 'none',
@@ -270,7 +314,7 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
     eyeStyleOverride: null,
     overlayOverride: null,
-    roomCustomization: DEFAULT_ROOM_CUSTOMIZATION,
+    roomCustomization: loadRoomCustomization(),
     roomPresets: JSON.parse(localStorage.getItem('roomPresets') || '[]'),
 
     saveRoomPreset(name: string) {
@@ -292,12 +336,12 @@ export const usePetStore = create<PetStore>((set, get) => {
       const { roomPresets, ownedFurnitureIds } = get();
       const preset = roomPresets.find(p => p.id === id);
       if (!preset) return;
-      set({
-        roomCustomization: { ...preset.customization },
-        placedFurniture: preset.furniture
-          .filter(f => ownedFurnitureIds.includes(f.itemId))
-          .map(f => ({ ...f })),
-      });
+      const customization = { ...DEFAULT_ROOM_CUSTOMIZATION, ...preset.customization };
+      const placed = preset.furniture
+        .filter(f => ownedFurnitureIds.includes(f.itemId))
+        .map(f => ({ ...f, locked: false }));
+      persistRoom(customization, placed);
+      set({ roomCustomization: customization, placedFurniture: placed });
       get().notify(`Комната «${preset.name}» применена`, 'info');
     },
 
@@ -307,6 +351,33 @@ export const usePetStore = create<PetStore>((set, get) => {
       set({ roomPresets: next });
       localStorage.setItem('roomPresets', JSON.stringify(next));
       if (preset) get().notify(`«${preset.name}» удалена`, 'info');
+    },
+
+    exportRoomPreset(id: string): string {
+      const preset = get().roomPresets.find(p => p.id === id);
+      if (!preset) return '';
+      try {
+        return btoa(encodeURIComponent(JSON.stringify(preset)));
+      } catch { return ''; }
+    },
+
+    importRoomPreset(code: string): boolean {
+      try {
+        const raw: RoomPreset = JSON.parse(decodeURIComponent(atob(code.trim())));
+        if (!raw.name || !raw.customization) return false;
+        const newPreset: RoomPreset = {
+          id: Date.now().toString(),
+          name: raw.name,
+          createdAt: Date.now(),
+          customization: { ...DEFAULT_ROOM_CUSTOMIZATION, ...raw.customization },
+          furniture: (raw.furniture ?? []).map(f => ({ ...f, locked: false })),
+        };
+        const next = [newPreset, ...get().roomPresets];
+        set({ roomPresets: next });
+        localStorage.setItem('roomPresets', JSON.stringify(next));
+        get().notify(`Комната «${newPreset.name}» импортирована`, 'success');
+        return true;
+      } catch { return false; }
     },
 
     petPresets: JSON.parse(localStorage.getItem('petPresets') || '{}'),
@@ -846,38 +917,54 @@ export const usePetStore = create<PetStore>((set, get) => {
     setEyeStyleOverride(s) { set({ eyeStyleOverride: s }); },
     setOverlayOverride(s) { set({ overlayOverride: s }); },
     setRoomCustomization(partial) {
-      set(s => ({ roomCustomization: { ...s.roomCustomization, ...partial } }));
+      set(s => {
+        const next = { ...s.roomCustomization, ...partial };
+        localStorage.setItem('roomCustomization', JSON.stringify(next));
+        return { roomCustomization: next };
+      });
     },
     resetRoomCustomization() {
+      localStorage.setItem('roomCustomization', JSON.stringify(DEFAULT_ROOM_CUSTOMIZATION));
       set({ roomCustomization: DEFAULT_ROOM_CUSTOMIZATION });
     },
 
     // ── Room Furniture ─────────────────────────────────────────────────────
 
     addRoomFurniture(itemId) {
-      const { placedFurniture } = get();
+      const { placedFurniture, roomCustomization } = get();
       const def = getFurniture(itemId);
       if (!def) return;
+      // Spread new items so they don't all pile up at center
+      const spread = (placedFurniture.length % 5) * 8 - 16;
       const newItem: PlacedFurnitureItem = {
         uid: Date.now().toString(),
         itemId,
-        x: 50,
-        y: 45,
+        x: 50 + spread,
+        y: def.onWall ? 25 + (placedFurniture.length % 3) * 8 : 65 + (placedFurniture.length % 3) * 6,
         scale: def.defaultScale,
         flipped: false,
         zIndex: placedFurniture.length + 1,
+        locked: false,
       };
-      set(s => ({ placedFurniture: [...s.placedFurniture, newItem] }));
+      const next = [...placedFurniture, newItem];
+      persistRoom(roomCustomization, next);
+      set({ placedFurniture: next });
     },
 
     removeRoomFurniture(uid) {
-      set(s => ({ placedFurniture: s.placedFurniture.filter(p => p.uid !== uid) }));
+      set(s => {
+        const next = s.placedFurniture.filter(p => p.uid !== uid);
+        persistRoom(s.roomCustomization, next);
+        return { placedFurniture: next };
+      });
     },
 
     updateRoomFurniture(uid, changes) {
-      set(s => ({
-        placedFurniture: s.placedFurniture.map(p => p.uid === uid ? { ...p, ...changes } : p),
-      }));
+      set(s => {
+        const next = s.placedFurniture.map(p => p.uid === uid ? { ...p, ...changes } : p);
+        persistRoom(s.roomCustomization, next);
+        return { placedFurniture: next };
+      });
     },
 
     buyRoomFurniture(itemId) {
@@ -889,15 +976,18 @@ export const usePetStore = create<PetStore>((set, get) => {
         return;
       }
       if (coins < def.price) { get().notify('Недостаточно монет 🪙', 'error'); return; }
+      const nextOwned = [...ownedFurnitureIds, itemId];
+      localStorage.setItem('ownedFurnitureIds', JSON.stringify(nextOwned));
       set(s => ({
         coins: s.coins - def.price,
-        ownedFurnitureIds: [...s.ownedFurnitureIds, itemId],
+        ownedFurnitureIds: nextOwned,
       }));
       get().notify(`🛋️ «${def.name}» куплено!`, 'coins');
       get().addRoomFurniture(itemId);
     },
 
     clearRoomFurniture() {
+      persistRoom(get().roomCustomization, []);
       set({ placedFurniture: [] });
     },
 

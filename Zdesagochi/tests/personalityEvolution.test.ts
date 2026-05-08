@@ -11,6 +11,7 @@ import {
 import type { BehavioralCounters, MoodSnapshot, TraitVector } from '../src/personality/types';
 import {
   applyActionModifiers,
+  computeEmergentState,
   createDefaultCounters,
   isActionBlocked,
   runPatternEngine,
@@ -69,6 +70,7 @@ import {
   markCommandsSynced,
   replayPersonalityCommands,
   saveOfflinePetSave,
+  trySaveOfflinePetSave,
   type OfflineKeyValueStorage,
   type PetCommand,
 } from '../src/personality';
@@ -243,6 +245,25 @@ test('offline sync window returns commands after last synced id', () => {
   assert.equal(unchanged, save);
 });
 
+test('offline command log can be compacted before persistence', () => {
+  let save = createOfflinePetSave(makePet(), '2026-05-04T00:00:00.000Z');
+  for (let i = 0; i < 300; i++) {
+    save = appendOfflineCommand(save, {
+      type: 'sync',
+      at: `2026-05-04T00:${String(i % 60).padStart(2, '0')}:00.000Z`,
+      commandId: `cmd-${i}`,
+    });
+  }
+
+  const compacted = createOfflinePetSave(save.petSnapshot, '2026-05-04T01:00:00.000Z', {
+    commandLog: save.commandLog.slice(-250),
+  });
+
+  assert.equal(compacted.commandLog.length, 250);
+  assert.equal(compacted.commandLog[0]?.commandId, 'cmd-50');
+  assert.equal(compacted.commandLog.at(-1)?.commandId, 'cmd-299');
+});
+
 test('offline storage saves loads and deletes valid saves', () => {
   const storage = makeMemoryStorage();
   const save = createOfflinePetSave(makePet(), '2026-05-04T00:00:00.000Z', {
@@ -261,6 +282,26 @@ test('offline storage saves loads and deletes valid saves', () => {
 
   deleteOfflinePetSave(storage);
   assert.deepEqual(loadOfflinePetSave(storage), { ok: false, reason: 'missing' });
+});
+
+test('offline storage reports quota exceeded without throwing through safe save', () => {
+  const quotaStorage: OfflineKeyValueStorage = {
+    getItem() {
+      return null;
+    },
+    setItem() {
+      throw new DOMException('quota', 'QuotaExceededError');
+    },
+    removeItem() {},
+  };
+
+  const result = trySaveOfflinePetSave(
+    quotaStorage,
+    createOfflinePetSave(makePet(), '2026-05-04T00:00:00.000Z'),
+  );
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.reason, 'quota_exceeded');
 });
 
 test('offline storage reports invalid json and invalid shape without throwing', () => {
@@ -293,6 +334,147 @@ test('pattern rule params validate against supported evaluator semantics', () =>
     ],
     effect: { flagType: 'trust_bond', action: 'activate' },
   }]), /unsupported/);
+});
+
+test('perfect_balance requires every stat above threshold, not only average streak', () => {
+  let counters = createDefaultCounters({
+    now: new Date('2026-05-01T10:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+  counters.consecutiveGoodSyncs = 10;
+
+  counters = updateCounters(
+    counters,
+    'sync',
+    { hunger: 100, happiness: 100, energy: 100, health: 100, cleanliness: 100, bond: 20 },
+    { clientLocalHour: 10, coinBalance: 0, now: new Date('2026-05-01T10:00:00.000Z'), rng: () => 0.1 },
+  ) as BehavioralCounters;
+  counters.consecutiveGoodSyncs = 10;
+
+  let flags = runPatternEngine(
+    counters,
+    [],
+    getPersonality('sage'),
+    { now: new Date('2026-05-01T10:00:00.000Z'), rng: () => 0.1 },
+  );
+  assert.equal(flags.some(flag => flag.type === 'perfect_balance'), false);
+
+  counters = updateCounters(
+    counters,
+    'sync',
+    { hunger: 71, happiness: 72, energy: 73, health: 74, cleanliness: 75, bond: 76 },
+    { clientLocalHour: 10, coinBalance: 0, now: new Date('2026-05-01T11:00:00.000Z'), rng: () => 0.1 },
+  ) as BehavioralCounters;
+  counters.consecutiveGoodSyncs = 10;
+
+  flags = runPatternEngine(
+    counters,
+    [],
+    getPersonality('sage'),
+    { now: new Date('2026-05-01T11:00:00.000Z'), rng: () => 0.1 },
+  );
+  assert.equal(flags.some(flag => flag.type === 'perfect_balance'), true);
+});
+
+test('stoic_peak and enlightenment set one-shot guards when entered', () => {
+  const stoicCounters = createDefaultCounters({
+    now: new Date('2026-05-01T10:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+  stoicCounters.consecutiveGoodSyncs = 10;
+  const stoicState = computeEmergentState(
+    { hunger: 80, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    getPersonality('stoic'),
+    [],
+    stoicCounters,
+    { clientLocalHour: 10, sessionGapHours: 0, coinBalance: 0, now: new Date('2026-05-01T10:00:00.000Z'), rng: () => 0.1 },
+    null,
+    undefined,
+  );
+  assert.equal(stoicState, 'stoic_peak');
+  assert.equal(stoicCounters.stoicPeakUsed, true);
+
+  const sageCounters = createDefaultCounters({
+    now: new Date('2026-05-01T10:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+  sageCounters.consecutiveGoodSyncs = 7 * 24;
+  const sageState = computeEmergentState(
+    { hunger: 80, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    getPersonality('sage'),
+    [],
+    sageCounters,
+    { clientLocalHour: 10, sessionGapHours: 0, coinBalance: 0, now: new Date('2026-05-01T10:00:00.000Z'), rng: () => 0.1 },
+    null,
+    undefined,
+  );
+  assert.equal(sageState, 'enlightenment');
+  assert.equal(sageCounters.enlightenmentActive, true);
+  assert.equal(sageCounters.enlightenmentStart, '2026-05-01T10:00:00.000Z');
+});
+
+test('feast_frenzy uses three feedings in the last hour, not play count', () => {
+  let counters = createDefaultCounters({
+    now: new Date('2026-05-01T10:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+
+  for (let play = 0; play < 3; play++) {
+    counters = updateCounters(
+      counters,
+      'play',
+      { hunger: 80, happiness: 95, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+      { clientLocalHour: 10, coinBalance: 0, now: new Date(`2026-05-01T10:0${play}:00.000Z`), rng: () => 0.1 },
+    ) as BehavioralCounters;
+  }
+
+  let state = computeEmergentState(
+    { hunger: 80, happiness: 95, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    getPersonality('foodie'),
+    [],
+    counters,
+    { clientLocalHour: 10, sessionGapHours: 0, coinBalance: 0, now: new Date('2026-05-01T10:10:00.000Z'), rng: () => 0.1 },
+    null,
+    undefined,
+  );
+  assert.equal(state, null);
+
+  for (let feed = 0; feed < 3; feed++) {
+    counters = updateCounters(
+      counters,
+      'feed',
+      { hunger: 80, happiness: 95, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+      {
+        foodId: `food-${feed}`,
+        clientLocalHour: 10,
+        coinBalance: 0,
+        now: new Date(`2026-05-01T10:${20 + feed}:00.000Z`),
+        rng: () => 0.1,
+      },
+    ) as BehavioralCounters;
+  }
+
+  state = computeEmergentState(
+    { hunger: 80, happiness: 95, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    getPersonality('foodie'),
+    [],
+    counters,
+    { clientLocalHour: 10, sessionGapHours: 0, coinBalance: 0, now: new Date('2026-05-01T10:30:00.000Z'), rng: () => 0.1 },
+    null,
+    undefined,
+  );
+  assert.equal(state, 'feast_frenzy');
+
+  state = computeEmergentState(
+    { hunger: 80, happiness: 95, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    getPersonality('foodie'),
+    [],
+    counters,
+    { clientLocalHour: 11, sessionGapHours: 0, coinBalance: 0, now: new Date('2026-05-01T11:23:01.000Z'), rng: () => 0.1 },
+    null,
+    undefined,
+  );
+  assert.equal(state, null);
 });
 
 test('pattern counters materialize seven day rolling action windows', () => {
@@ -588,6 +770,51 @@ await testAsync('personality replay advances sync buckets and preserves cooldown
   assert.equal(result.events.filter(event => event.type === 'influence_cooldown_skipped').length, 1);
   assert.equal(result.commandResults[1]?.events.some(event => event.type === 'trait_vector_changed'), false);
   assert.equal(result.commandResults[3]?.events.some(event => event.type === 'trait_vector_changed'), true);
+});
+
+await testAsync('personality command handler owns gameplay counters without inflating sync streaks on actions', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    personality: 'foodie',
+    stats: { hunger: 80, happiness: 95, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  });
+  const commands: PetCommand[] = [
+    { type: 'feed', foodId: 'apple', at: '2026-05-04T01:00:00.000Z', commandId: 'cmd-gameplay-feed-1' },
+    { type: 'feed', foodId: 'salad', at: '2026-05-04T01:10:00.000Z', commandId: 'cmd-gameplay-feed-2' },
+    { type: 'feed', foodId: 'soup', at: '2026-05-04T01:20:00.000Z', commandId: 'cmd-gameplay-feed-3' },
+  ];
+
+  const result = await replayPersonalityCommands(pet, commands, { initialSync: 0 });
+
+  assert.equal(result.pet.behavioralCounters.dailyFoodLog.apple, 1);
+  assert.equal(result.pet.behavioralCounters.dailyFoodLog.salad, 1);
+  assert.equal(result.pet.behavioralCounters.dailyFoodLog.soup, 1);
+  assert.equal(result.pet.behavioralCounters.recentFeedTimestamps?.length, 3);
+  assert.equal(result.pet.behavioralCounters.consecutiveGoodSyncs, 0);
+  assert.equal(result.pet.moodHistory.length, 0);
+  assert.equal(result.pet.stateLayers?.gameplay?.some(state => state.type === 'feast_frenzy'), true);
+  assert.equal(result.pet.emergentState, 'feast_frenzy');
+});
+
+await testAsync('personality command sync applies gameplay decay mood history and pattern flags', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    personality: 'playful',
+    lastUpdated: '2026-05-04T00:00:00.000Z',
+    stats: { hunger: 80, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  });
+
+  const result = await applyPersonalityCommand(pet, {
+    type: 'sync',
+    at: '2026-05-04T00:10:00.000Z',
+    commandId: 'cmd-gameplay-sync',
+  });
+
+  assert.equal(result.pet.lastUpdated, '2026-05-04T00:10:00.000Z');
+  assert.equal(result.pet.stats.hunger < 80, true);
+  assert.equal(result.pet.moodHistory.length, 1);
+  assert.equal(result.pet.behavioralCounters.consecutiveGoodSyncs, 1);
+  assert.equal(result.pet.behavioralCounters.lastStatsSnapshot?.hunger !== undefined, true);
 });
 
 await testAsync('personality command replay uses deterministic rng for singularity collapse', async () => {

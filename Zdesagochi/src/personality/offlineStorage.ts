@@ -12,12 +12,33 @@ export type OfflinePetSaveLoadResult =
   | { ok: true; save: OfflinePetSave }
   | { ok: false; reason: 'missing' | 'invalid_json' | 'invalid_shape' };
 
+export type OfflinePetSaveResult =
+  | { ok: true }
+  | { ok: false; reason: 'quota_exceeded' | 'write_failed'; error: unknown };
+
 export function saveOfflinePetSave(
   storage: OfflineKeyValueStorage,
   save: OfflinePetSave,
   key = DEFAULT_OFFLINE_PET_SAVE_KEY,
 ): void {
   storage.setItem(key, JSON.stringify(save));
+}
+
+export function trySaveOfflinePetSave(
+  storage: OfflineKeyValueStorage,
+  save: OfflinePetSave,
+  key = DEFAULT_OFFLINE_PET_SAVE_KEY,
+): OfflinePetSaveResult {
+  try {
+    saveOfflinePetSave(storage, save, key);
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: isQuotaExceededError(error) ? 'quota_exceeded' : 'write_failed',
+      error,
+    };
+  }
 }
 
 export function loadOfflinePetSave(
@@ -69,4 +90,13 @@ function isNumberRecord(value: unknown): value is Record<string, number> {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isQuotaExceededError(error: unknown): boolean {
+  return error instanceof DOMException && (
+    error.name === 'QuotaExceededError' ||
+    error.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    error.code === 22 ||
+    error.code === 1014
+  );
 }

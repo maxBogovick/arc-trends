@@ -82,7 +82,7 @@ export default function App() {
 
       {/* Full-screen room editor */}
       <AnimatePresence>
-        {activeTab === 'room' && <RoomEditorPage />}
+        {activeTab === 'room' && <RoomEditorPage key="room-editor" />}
       </AnimatePresence>
 
       <Notifications />

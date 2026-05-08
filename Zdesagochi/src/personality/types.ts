@@ -482,11 +482,13 @@ export interface BehavioralCounters {
   maxConsecHighPlayDays:     number; // макс. дней подряд с > 8 играми
   currentHighPlayDays:       number; // текущая streak
   nightSingleInteractionDays7d?: number; // ночей подряд с ровно 1 взаимодействием
+  lastStatsSnapshot?: Partial<Record<StatKey, number>>; // последний снимок статов для conditional streak rules
 
   // Ежедневные (сбрасываются в полночь)
   playCountToday:  number;
   lastDayReset:    string;           // ISO-дата последнего сброса дневных счётчиков
   dailyFoodLog:    Record<string, number>; // foodId → count за сегодня
+  recentFeedTimestamps?: string[];   // ISO кормлений за последний час для feast_frenzy
 
   // Lifetime
   uniqueFoodsTried: string[];        // все уникальные foodId за всё время

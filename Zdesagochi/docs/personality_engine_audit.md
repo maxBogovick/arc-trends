@@ -378,3 +378,77 @@ interface CoreMemory {
 > - B-3 (Core Memories) уточнён: 5 машиночитаемых полей уже есть, проблема в causal learning
 > - B-7 (EVOLUTION_LEGACY) уточнён: legacy применяется к стартовому traitVector, не хватает economy бонусов
 > - Архитектурная заметка уточнена: PE и TEE связаны через 3 точки, проблема — размазанность связи
+
+---
+
+## Сверка после повторного чтения
+
+> **Дата:** 2026-05-08  
+> **Вывод:** актуальная версия аудита признана рабочим roadmap. Согласие: ~90–95%.
+
+Полностью подтверждены:
+
+- `CRIT-1` — `commandHandlers` не оркестрирует полный `PersonalityEngine`; gameplay-логика всё ещё в основном живёт в `mockApi`.
+- `CRIT-2` — hardcoded `personality.id` проверки противоречат data-driven принципу.
+- `BUG-1`, `BUG-2`, `BUG-3`, `CONTRA-1`, `CONTRA-2` — реальные дефекты/расхождения.
+- `B-1..B-7` — корректные ограничения для будущего causal learning и адаптивной эволюции.
+- `TD-1..TD-7` — актуальный технический долг.
+
+Уточнения:
+
+- `BUG-4`: формулировка про недетерминизм `.sort()` слишком сильная для современных JS-движков со stable sort, но одинаковые priority всё равно создают неявную семантику. Требуется уникальный priority или явный tie-breaker.
+- `ARCH-1`: `MockApi.finalizePet()` уже маршрутизирует gameplay state через `setLayeredEmergentState`, поэтому проблема не в полном отсутствии layers, а в размазанном orchestration order и legacy-возврате одиночного state из `computeEmergentState`.
+- `B-1`: rolling windows уже имеют daily buckets, но это не raw event history; для обучения и причинных объяснений всё ещё нужен отдельный event log.
+- `CONTRA-2`: “3 кормёжки за час” нельзя корректно чинить через дневной счётчик; нужен часовой след кормлений или полноценная история событий.
+
+Следующий порядок работ:
+
+1. Закрыть P0-баги: guards для `enlightenment`/`stoic_peak`, `allStatsAbove`, `feast_frenzy`, duplicate priority/tie-breaker.
+2. После P0 перейти к `CRIT-1`: единый `applyPersonalityCommand` orchestration для PE + TEE.
+3. Затем `CRIT-2`: вынести personality-specific условия из engine в data registry.
+
+---
+
+## P0 Fix Log
+
+> **Дата:** 2026-05-08  
+> **Статус:** P0-баги из аудита закрыты кодом и тестами.
+
+| ID | Что исправлено | Доказательство |
+|---|---|---|
+| BUG-1 | `enlightenmentActive` выставляется при входе в `enlightenment`; состояние удерживается до истечения 24ч или падения avg < 50 | тест `stoic_peak and enlightenment set one-shot guards when entered` |
+| BUG-2 | `stoicPeakUsed` выставляется при входе в `stoic_peak`, сохраняя one-shot семантику | тест `stoic_peak and enlightenment set one-shot guards when entered` |
+| BUG-3 | `consecutive_syncs_cond` теперь учитывает `allStatsAbove` через последний снимок статов | тест `perfect_balance requires every stat above threshold, not only average streak` |
+| BUG-4 | `shadow_form` и `identity_crisis` разведены по priority; сортировка кандидатов получила deterministic tie-breaker | существующие state-layer тесты + `npm test` |
+| CONTRA-2 | `feast_frenzy` больше не зависит от `playCountToday`; условие использует 3 кормления за последний час | тест `feast_frenzy uses three feedings in the last hour, not play count` |
+
+---
+
+## CRIT-1 Progress Log
+
+> **Дата:** 2026-05-08  
+> **Статус:** практически закрыто. `applyPersonalityCommand` стал доменным оркестратором gameplay-состояния, а `mockApi` переведён на thin wrapper для основных personality-команд.
+
+Что перенесено в command layer:
+
+- `updateCounters()` вызывается для gameplay-команд и `sync`.
+- `runPatternEngine()` вызывается после обновления counters.
+- `computeEmergentState()` маршрутизируется через `stateLayers` (`setLayeredEmergentState` / `clearEmergentStateLayer`).
+- `applyDecay()` и `computeNaturalPassives()` вызываются на `sync`.
+- `calcMoodWithBias()` обновляет `pet.mood`; `moodHistory` и `consecutive*Syncs` обновляются только на `sync`, чтобы действия не разгоняли sync streak.
+- `mockApi` вызывает `applyPersonalityCommand()` для `feed`, `play`, `sleep`, `wake`, `bathe`, `heal`, `bond`, `sync`, `use_item`, `equip_room`, `accept_evolution`, `reject_evolution`.
+- `mockApi.finalizePet()` больше не пересчитывает counters/flags/gameplay state и не двигает `lastUpdated`; он только нормализует legacy/layers, stage и persistence.
+
+Доказательство:
+
+- `personality command handler owns gameplay counters without inflating sync streaks on actions`
+- `personality command sync applies gameplay decay mood history and pattern flags`
+- `MockApi play action moves trait vector as side effect`
+- `MockApi persists offline snapshot command log and cooldowns`
+- `npm test`
+- `npm run build`
+
+Что осталось для полного закрытия `CRIT-1`:
+
+1. Убрать последний совместимый fallback `applyPetInfluence('action:feed')` для food `use_item` без собственного item influence, когда появится явная семантика item-as-food в command layer.
+2. Добавить отдельный regression-тест на `MockApi.feedPet()`/`useInventoryItem()` для проверки отсутствия двойного применения counters после полной миграции item fallback.

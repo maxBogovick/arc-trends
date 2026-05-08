@@ -1,8 +1,19 @@
-import type { Pet } from '../api/types';
+import type { Pet, PetMood } from '../api/types';
 import type { DomainEvent, InfluenceCooldownState, PetCommand, PetCommandResult } from './commands';
 import { PERSONALITY_ENGINE_VERSION, STATIC_REGISTRY_VERSION } from './engineVersion';
 import { getInfluenceRegistry, getIntensityMultiplier as getGlobalIntensityMultiplier } from './influenceRegistry';
 import { createMemoryTextGenerator, type MemoryTextGenerator } from './memoryTextGenerator';
+import {
+  applyDecay,
+  calcMoodWithBias,
+  computeEmergentState,
+  computeNaturalPassives,
+  createDefaultCounters,
+  runPatternEngine,
+  updateCounters,
+} from './PersonalityEngine';
+import { getPersonality } from './personalities';
+import { clearEmergentStateLayer, setLayeredEmergentState, syncLayeredStatesFromLegacy } from './stateLayers';
 import {
   applyInfluence,
   applyRegression,
@@ -17,7 +28,7 @@ import {
   rejectEvolution,
   recordDailyTraitSnapshot,
 } from './TraitEvolutionEngine';
-import type { RegisteredInfluence, TraitVector } from './types';
+import type { ActionContext, ActionType, RegisteredInfluence, StatKey, SyncContext, TraitVector } from './types';
 
 export interface PersonalityCommandHandlerOptions {
   influenceRegistry?: RegisteredInfluence[];
@@ -26,6 +37,7 @@ export interface PersonalityCommandHandlerOptions {
   getIntensityMultiplier?: (influenceId: string) => number;
   memoryTextGenerator?: MemoryTextGenerator;
   rng?: () => number;
+  coinBalance?: number;
   engineVersion?: string;
   registryVersion?: string;
 }
@@ -107,6 +119,12 @@ export async function applyPersonalityCommand(
   };
 
   if (command.type === 'sync') {
+    applyGameplayCommand(nextPet, command, {
+      now,
+      rng,
+      coinBalance: options.coinBalance ?? 0,
+      applySyncDecay: true,
+    });
     const prevVector = cloneTraitVector(nextPet.traitVector);
     applyRegression(nextPet);
     recordDailyTraitSnapshot(nextPet, now);
@@ -118,6 +136,11 @@ export async function applyPersonalityCommand(
     onStartSleep(nextPet, ctx);
     events.push({ type: 'sleep_started', at: command.at, commandId: command.commandId });
     await applyCommandInfluence(nextPet, command, options, ctx, events, influenceCooldowns, currentSync);
+    applyGameplayCommand(nextPet, command, {
+      now,
+      rng,
+      coinBalance: options.coinBalance ?? 0,
+    });
   } else if (command.type === 'wake') {
     const sleptHours = nextPet.sleepStartedAt
       ? Math.max(0, (now.getTime() - new Date(nextPet.sleepStartedAt).getTime()) / 3_600_000)
@@ -143,6 +166,11 @@ export async function applyPersonalityCommand(
         currentSync,
       );
     }
+    applyGameplayCommand(nextPet, command, {
+      now,
+      rng,
+      coinBalance: options.coinBalance ?? 0,
+    });
   } else if (command.type === 'accept_evolution') {
     const accepted = acceptEvolution(nextPet, ctx);
     const record = nextPet.evolutionHistory[nextPet.evolutionHistory.length - 1];
@@ -158,6 +186,11 @@ export async function applyPersonalityCommand(
     rejectEvolution(nextPet);
   } else {
     await applyCommandInfluence(nextPet, command, options, ctx, events, influenceCooldowns, currentSync);
+    applyGameplayCommand(nextPet, command, {
+      now,
+      rng,
+      coinBalance: options.coinBalance ?? 0,
+    });
   }
 
   collectStateEvents({
@@ -178,6 +211,166 @@ export async function applyPersonalityCommand(
     engineVersion: options.engineVersion ?? PERSONALITY_ENGINE_VERSION,
     registryVersion: options.registryVersion ?? STATIC_REGISTRY_VERSION,
   };
+}
+
+function applyGameplayCommand(
+  pet: Pet,
+  command: PetCommand,
+  context: {
+    now: Date;
+    rng: () => number;
+    coinBalance: number;
+    applySyncDecay?: boolean;
+  },
+): void {
+  pet.behavioralCounters ??= createDefaultCounters({ now: context.now, rng: context.rng });
+  pet.behavioralFlags ??= [];
+  pet.moodHistory ??= [];
+
+  const personality = getPersonality(pet.personality);
+  const actionType = toGameplayAction(command);
+  const syncContext: SyncContext = {
+    clientLocalHour: context.now.getHours(),
+    sessionGapHours: pet.behavioralCounters.sessionGapHours,
+    coinBalance: context.coinBalance,
+    now: context.now,
+    rng: context.rng,
+  };
+
+  if (context.applySyncDecay) {
+    const lastUpdated = new Date(pet.lastUpdated);
+    const elapsedMinutes = Math.max(0, (context.now.getTime() - lastUpdated.getTime()) / 60_000);
+
+    if (!pet.isAsleep) {
+      const decayed = applyDecay(
+        pet.stats as Record<StatKey, number>,
+        personality,
+        elapsedMinutes,
+        pet.behavioralCounters,
+        syncContext,
+      );
+      if (pet.stats.cleanliness < 30) {
+        decayed.health = clampStat(decayed.health - 0.5 * elapsedMinutes);
+      }
+      pet.stats = decayed as Pet['stats'];
+    } else {
+      const restoreBonus = personality.restoreBonus.sleep?.energy ?? 0;
+      pet.stats.energy = clampStat(pet.stats.energy + (5 + restoreBonus) * (elapsedMinutes / 15));
+      pet.stats.hunger = clampStat(pet.stats.hunger - 0.8 * (elapsedMinutes / 15));
+      pet.stats.health = clampStat(pet.stats.health + 0.5 * (elapsedMinutes / 15));
+    }
+
+    const passives = computeNaturalPassives(
+      pet.stats as Record<StatKey, number>,
+      personality,
+      pet.behavioralCounters,
+    );
+    for (const [stat, value] of Object.entries(passives)) {
+      const key = stat as StatKey;
+      pet.stats[key] = clampStat(pet.stats[key] + (value ?? 0));
+    }
+  }
+
+  if (actionType) {
+    const actionContext: ActionContext = {
+      clientLocalHour: context.now.getHours(),
+      coinBalance: context.coinBalance,
+      now: context.now,
+      rng: context.rng,
+      foodId: command.type === 'feed' ? command.foodId : undefined,
+      itemId: command.type === 'use_item' ? command.itemId : undefined,
+    };
+    pet.behavioralCounters = updateCounters(
+      pet.behavioralCounters,
+      actionType,
+      pet.stats as Record<StatKey, number>,
+      actionContext,
+    );
+  }
+
+  const currentMood = calcMoodWithBias(
+    pet.stats as Record<StatKey, number>,
+    personality,
+    pet.isAsleep,
+  ) as PetMood;
+  pet.mood = currentMood;
+  if (actionType === 'sync') {
+    updateMoodStreaks(pet, currentMood);
+    pet.moodHistory.unshift({
+      timestamp: context.now.toISOString(),
+      mood: currentMood,
+      avgStats: avgStats(pet.stats as Record<StatKey, number>),
+    });
+    if (pet.moodHistory.length > 168) pet.moodHistory.pop();
+  }
+
+  pet.behavioralFlags = runPatternEngine(
+    pet.behavioralCounters,
+    pet.behavioralFlags,
+    personality,
+    { now: context.now, rng: context.rng },
+  );
+
+  const currentGameplayState = pet.stateLayers?.gameplay?.[0]?.type ?? null;
+  const computedState = computeEmergentState(
+    pet.stats as Record<StatKey, number>,
+    personality,
+    pet.behavioralFlags,
+    pet.behavioralCounters,
+    syncContext,
+    currentGameplayState,
+    pet.stateLayers?.gameplay?.[0]?.enteredAt,
+  );
+  if (computedState) {
+    setLayeredEmergentState(pet, computedState, context.now.toISOString());
+  } else {
+    clearEmergentStateLayer(pet, 'gameplay');
+  }
+  syncLayeredStatesFromLegacy(pet);
+  pet.lastUpdated = context.now.toISOString();
+}
+
+function toGameplayAction(command: PetCommand): ActionType | null {
+  switch (command.type) {
+    case 'feed':
+    case 'play':
+    case 'sleep':
+    case 'wake':
+    case 'bathe':
+    case 'heal':
+    case 'bond':
+    case 'use_item':
+    case 'sync':
+      return command.type;
+    case 'equip_room':
+    case 'npc_visit':
+    case 'accept_evolution':
+    case 'reject_evolution':
+      return null;
+  }
+}
+
+function updateMoodStreaks(pet: Pet, mood: PetMood): void {
+  if (mood === 'sad') {
+    pet.behavioralCounters.consecutiveBadMoodSyncs++;
+  } else {
+    pet.behavioralCounters.consecutiveBadMoodSyncs = 0;
+  }
+
+  if (avgStats(pet.stats as Record<StatKey, number>) > 70) {
+    pet.behavioralCounters.consecutiveGoodSyncs++;
+  } else {
+    pet.behavioralCounters.consecutiveGoodSyncs = 0;
+  }
+}
+
+function avgStats(stats: Record<StatKey, number>): number {
+  const values = Object.values(stats) as number[];
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function clampStat(value: number): number {
+  return Math.max(0, Math.min(100, value));
 }
 
 async function applyCommandInfluence(

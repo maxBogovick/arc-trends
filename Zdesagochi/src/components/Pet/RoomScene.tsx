@@ -163,6 +163,9 @@ export function RoomScene({
   const sideWallStyle = buildSideWallStyle(c);
   const ceilingStyle = buildCeilingStyle(c);
 
+  const lightX = c.lightSide === 'left' ? '18%' : c.lightSide === 'right' ? '82%' : '50%';
+  const lightAlpha = Math.round(c.lightIntensity * 60).toString(16).padStart(2, '0');
+
   return (
     // overflow:hidden must be on a SEPARATE element from perspective — Safari flattens
     // preserve-3d when overflow:hidden and perspective are on the same element.
@@ -272,11 +275,9 @@ export function RoomScene({
 
       {/* Ambient light */}
       <div
-        className="absolute pointer-events-none"
+        className="absolute inset-0 pointer-events-none"
         style={{
-          top: '8%', left: '50%', transform: 'translate(-50%, 0)',
-          width: '78%', height: '62%',
-          background: `radial-gradient(ellipse at 50% 48%, ${accent}1E 0%, transparent 68%)`,
+          background: `radial-gradient(ellipse 72% 58% at ${lightX} 42%, ${accent}${lightAlpha} 0%, transparent 78%)`,
           zIndex: 2,
         }}
       />

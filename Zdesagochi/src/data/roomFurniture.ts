@@ -6,13 +6,14 @@ export interface FurnitureDefinition {
   price: number;
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
   defaultScale: number;
+  onWall?: boolean;  // hangs on back wall, Y locked to upper zone
 }
 
 export const FURNITURE: FurnitureDefinition[] = [
   // ── Plants ─────────────────────────────────────────────────────────────────
   { id: 'cactus',    name: 'Кактус',    emoji: '🌵', category: 'plant',     price: 0,   rarity: 'common',    defaultScale: 1.2 },
   { id: 'pot',       name: 'Горшок',    emoji: '🪴', category: 'plant',     price: 0,   rarity: 'common',    defaultScale: 1.0 },
-  { id: 'lantern',   name: 'Фонарь',    emoji: '🏮', category: 'lamp',      price: 50,  rarity: 'common',    defaultScale: 1.0 },
+  { id: 'lantern',   name: 'Фонарь',    emoji: '🏮', category: 'lamp',      price: 50,  rarity: 'common',    defaultScale: 1.0, onWall: true },
   { id: 'palm',      name: 'Пальма',    emoji: '🌴', category: 'plant',     price: 100, rarity: 'common',    defaultScale: 1.4 },
   { id: 'mushroom',  name: 'Гриб',      emoji: '🍄', category: 'plant',     price: 150, rarity: 'rare',      defaultScale: 1.0 },
   { id: 'sakura',    name: 'Сакура',    emoji: '🌸', category: 'plant',     price: 200, rarity: 'rare',      defaultScale: 1.3 },
@@ -22,20 +23,20 @@ export const FURNITURE: FurnitureDefinition[] = [
   { id: 'torch',     name: 'Фонарик',   emoji: '🔦', category: 'lamp',      price: 50,  rarity: 'common',    defaultScale: 1.0 },
   { id: 'floorlamp', name: 'Торшер',    emoji: '💡', category: 'lamp',      price: 100, rarity: 'common',    defaultScale: 1.2 },
   { id: 'oillamp',   name: 'Лампадка',  emoji: '🪔', category: 'lamp',      price: 200, rarity: 'rare',      defaultScale: 1.0 },
-  { id: 'chandelier',name: 'Люстра',    emoji: '✨', category: 'lamp',      price: 300, rarity: 'epic',      defaultScale: 1.5 },
+  { id: 'chandelier',name: 'Люстра',    emoji: '✨', category: 'lamp',      price: 300, rarity: 'epic',      defaultScale: 1.5, onWall: true },
 
   // ── Decor ──────────────────────────────────────────────────────────────────
-  { id: 'painting',  name: 'Картина',   emoji: '🖼️', category: 'decor',     price: 0,   rarity: 'common',    defaultScale: 1.2 },
-  { id: 'mirror',    name: 'Зеркало',   emoji: '🪞', category: 'decor',     price: 150, rarity: 'rare',      defaultScale: 1.2 },
+  { id: 'painting',  name: 'Картина',   emoji: '🖼️', category: 'decor',     price: 0,   rarity: 'common',    defaultScale: 1.2, onWall: true },
+  { id: 'mirror',    name: 'Зеркало',   emoji: '🪞', category: 'decor',     price: 150, rarity: 'rare',      defaultScale: 1.2, onWall: true },
   { id: 'easel',     name: 'Мольберт',  emoji: '🎨', category: 'decor',     price: 200, rarity: 'rare',      defaultScale: 1.3 },
-  { id: 'mask',      name: 'Маска',     emoji: '🎭', category: 'decor',     price: 250, rarity: 'rare',      defaultScale: 1.0 },
+  { id: 'mask',      name: 'Маска',     emoji: '🎭', category: 'decor',     price: 250, rarity: 'rare',      defaultScale: 1.0, onWall: true },
   { id: 'trophy',    name: 'Кубок',     emoji: '🏆', category: 'decor',     price: 300, rarity: 'epic',      defaultScale: 1.1 },
 
   // ── Furniture ──────────────────────────────────────────────────────────────
   { id: 'sofa',      name: 'Диван',     emoji: '🛋️', category: 'furniture', price: 0,   rarity: 'common',    defaultScale: 1.6 },
-  { id: 'door',      name: 'Дверь',     emoji: '🚪', category: 'furniture', price: 100, rarity: 'common',    defaultScale: 1.5 },
+  { id: 'door',      name: 'Дверь',     emoji: '🚪', category: 'furniture', price: 100, rarity: 'common',    defaultScale: 1.5, onWall: true },
   { id: 'armchair',  name: 'Кресло',    emoji: '🪑', category: 'furniture', price: 100, rarity: 'common',    defaultScale: 1.2 },
-  { id: 'shelf',     name: 'Полка',     emoji: '📚', category: 'furniture', price: 150, rarity: 'common',    defaultScale: 1.3 },
+  { id: 'shelf',     name: 'Полка',     emoji: '📚', category: 'furniture', price: 150, rarity: 'common',    defaultScale: 1.3, onWall: true },
   { id: 'bed',       name: 'Кровать',   emoji: '🛏️', category: 'furniture', price: 200, rarity: 'rare',      defaultScale: 1.8 },
 
   // ── Gadgets ────────────────────────────────────────────────────────────────

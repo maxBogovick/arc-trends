@@ -261,6 +261,7 @@ function validatePatternCondition(ruleId: string, condition: PatternCondition): 
       return;
     case 'consecutive_syncs_cond':
       requireNumber(ruleId, params.threshold, 'threshold');
+      if (params.allStatsAbove !== undefined) requireNumber(ruleId, params.allStatsAbove, 'allStatsAbove');
       return;
     case 'same_food_ratio':
       requireNumber(ruleId, params.ratio, 'ratio');
