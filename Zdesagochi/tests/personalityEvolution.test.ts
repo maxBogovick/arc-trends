@@ -8,7 +8,7 @@ import {
   setMockOfflineStorage,
   setMockTimeScale,
 } from '../src/api/mockApi';
-import type { BehavioralCounters, MoodSnapshot, TraitVector } from '../src/personality/types';
+import type { BehavioralCounters, BehavioralFlag, MoodSnapshot, TraitVector } from '../src/personality/types';
 import {
   applyActionModifiers,
   computeEmergentState,
@@ -1446,6 +1446,39 @@ test('action modifiers stack effects from all active state layers', () => {
   assert.equal(result.statDeltas.bond, 15);
   assert.equal(result.xp, 20);
   assert.equal(result.coins, 5);
+});
+
+test('perfect_balance is XP-only and does not add hidden stat passives', () => {
+  const counters = createDefaultCounters({
+    now: new Date('2026-05-04T00:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+  const flags: BehavioralFlag[] = [{
+    type: 'perfect_balance',
+    activatedAt: '2026-05-04T00:00:00.000Z',
+    severity: 1,
+    healProgress: 0,
+  }];
+  const personality = {
+    ...getPersonality('playful'),
+    xpMultipliers: {},
+    coinMultipliers: {},
+    restoreBonus: {},
+  };
+
+  const result = applyActionModifiers(
+    { statDeltas: { happiness: 4, bond: 2 }, xp: 100, coins: 10 },
+    'bond',
+    personality,
+    flags,
+    null,
+    counters,
+    { clientLocalHour: 12, coinBalance: 0, now: new Date('2026-05-04T00:00:00.000Z'), rng: () => 0.1 },
+  );
+
+  assert.deepEqual(result.statDeltas, { happiness: 4, bond: 2 });
+  assert.equal(result.xp, 115);
+  assert.equal(result.coins, 10);
 });
 
 test('action blockers scan all active state layers by priority', () => {

@@ -1097,9 +1097,6 @@ const FLAG_RESTORE_EFFECTS: Partial<Record<BehavioralFlagType, Partial<Record<Ac
   culinary_explorer: {
     feed: { happiness: 5, health: 3 },
   },
-  perfect_balance: {
-    // пассивный бонус — обрабатывается в computeNaturalPassives
-  },
 };
 
 function getFlagXpMult(flags: BehavioralFlag[], action: ActionType): number {
@@ -1108,6 +1105,7 @@ function getFlagXpMult(flags: BehavioralFlag[], action: ActionType): number {
     if (flag.type === 'culinary_explorer' && action === 'feed') mult *= 1.1;
     if (flag.type === 'play_burnout'      && action === 'play') mult *= 0.5;
     if (flag.type === 'night_guardian'    && action === 'play') mult *= 1.2;
+    // perfect_balance пока только XP-бонус; stat passive намеренно нет.
     if (flag.type === 'perfect_balance')                         mult *= 1.15;
   }
   return mult;

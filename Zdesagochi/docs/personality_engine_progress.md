@@ -172,8 +172,8 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 | Current Step | Sprint 1 — Cleanup before refactor |
 | Why This Step | Нельзя безопасно выносить правила в data registry, пока в engine есть noop-код, устаревшие комментарии и неподтвержденные specialRules |
 | Current Vector | Правильный: уменьшаем хаос перед архитектурной миграцией |
-| Next Step | Решить `perfect_balance` mismatch |
-| Why Next | После удаления noop-кода следующий ложный сигнал — комментарий о passive bonus, которого фактически нет |
+| Next Step | Реализовать или явно удалить `chaos_surge` |
+| Why Next | После закрытия `perfect_balance` следующий ложный сигнал — state есть в типах/definitions, но фактическая lifecycle-семантика не закреплена в engine |
 | Required Verification | `npm test`, `npm run build`, targeted `rg` checks when relevant |
 
 ---
@@ -182,38 +182,30 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Удален melancholic XP noop из `src/personality/PersonalityEngine.ts`.
+Решен `perfect_balance` mismatch.
 
 ### Why
 
-В `applyActionModifiers()` был блок:
-
-```ts
-if (personality.specialRules?.xpEveryOtherAction) {
-  result.xp = result.xp;
-}
-```
-
-Он не менял поведение, но создавал ложное впечатление, что `xpEveryOtherAction` обрабатывается в `PersonalityEngine`. Фактически это поведение пока живет в `mockApi` и должно быть перенесено позже в command/gameplay outcome.
+В `FLAG_RESTORE_EFFECTS` была пустая запись `perfect_balance` с комментарием, что passive bonus обрабатывается в `computeNaturalPassives`. Фактически stat passive не существовал, а реальное поведение флага — XP multiplier `1.15`.
 
 ### Impact
 
-В `PersonalityEngine` стало меньше мертвого кода и меньше ложных ownership-сигналов. Это помогает будущему P3: command result должен владеть gameplay outcome, включая melancholic XP rule.
+Семантика `perfect_balance` теперь однозначна: это XP-only flag без скрытого stat passive. Это предотвращает перенос несуществующей механики в будущий data registry и снижает риск ложных требований при P2 refactor.
 
 ### Verification
 
-- `rg "result\\.xp = result\\.xp|xpEveryOtherAction" src/personality/PersonalityEngine.ts` — no matches.
+- `rg "perfect_balance:|passive bonus|пассивный бонус|perfect_balance.*computeNaturalPassives|computeNaturalPassives.*perfect_balance" src/personality/PersonalityEngine.ts tests/personalityEvolution.test.ts docs/personality_engine_next_steps.md docs/personality_engine_progress.md` — no stale engine/test references; docs mention only resolved status/history.
 - `npm test` — passed.
 - `npm run build` — passed.
 - Vite chunk size warning remains non-blocking.
 
 ### Next
 
-Решить `perfect_balance` mismatch.
+Реализовать или явно удалить `chaos_surge`.
 
 ### Why Next
 
-Это следующий cleanup пункт: сейчас `perfect_balance` имеет XP multiplier, но комментарии говорят про passive stat bonus, которого нет. Нужно выбрать фактическую семантику и привести код/документы к одному смыслу.
+Это следующий cleanup пункт: `chaos_surge` присутствует как state/тип/definition, но комментарии и lifecycle ownership не дают проверяемой механики. Нужно либо реализовать его через правильный owner, либо явно убрать из active roadmap.
 
 ---
 
@@ -307,7 +299,7 @@ Concrete tasks:
 
 1. Remove `anxiousMult` noop. Done.
 2. Remove melancholic XP noop or move semantics into command/gameplay outcome. Done: noop removed; real semantic move remains part of P3 command outcome.
-3. Resolve `perfect_balance` mismatch.
+3. Resolve `perfect_balance` mismatch. Done: XP-only semantics documented and tested.
 4. Decide/handle `chaos_surge`.
 5. Add validator for unsupported `specialRules`.
 
@@ -315,13 +307,13 @@ Concrete tasks:
 
 Start with:
 
-> Resolve `perfect_balance` mismatch.
+> Implement or explicitly remove `chaos_surge`.
 
 Why first:
 
-- it is the next misleading code/comment mismatch;
-- it clarifies whether `perfect_balance` is XP-only or also a stat passive;
-- it prevents migrating a non-existent passive into the future data registry.
+- it is the next misleading state/ownership mismatch;
+- it clarifies whether `chaos_surge` is real active gameplay or deferred/removed;
+- it prevents migrating an undefined lifecycle into the future data registry.
 
 ---
 
@@ -336,18 +328,18 @@ npm run build
 
 Status:
 
-- passed after removing melancholic XP noop;
+- passed after resolving `perfect_balance` XP-only semantics;
 - Vite chunk size warning remains non-blocking.
 
 Latest cleanup check:
 
 ```bash
-rg "result\\.xp = result\\.xp|xpEveryOtherAction" src/personality/PersonalityEngine.ts
+rg "perfect_balance:|passive bonus|пассивный бонус|perfect_balance.*computeNaturalPassives|computeNaturalPassives.*perfect_balance" src/personality/PersonalityEngine.ts tests/personalityEvolution.test.ts docs/personality_engine_next_steps.md docs/personality_engine_progress.md
 ```
 
 Status:
 
-- no matches.
+- no stale engine/test references; docs mention only resolved status/history.
 
 Latest domain-internal check:
 

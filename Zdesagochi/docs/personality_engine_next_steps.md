@@ -97,11 +97,9 @@
    - Нужно либо перенести `xpEveryOtherAction` в command/economy pipeline, либо явно оставить это в mock economy и удалить engine noop.
 
 3. Разобраться с `perfect_balance`.
-   - Сейчас есть XP multiplier.
-   - Комментарий говорит про passive bonus в `computeNaturalPassives`, но stat passive не реализован.
-   - Нужно выбрать одно:
-     - оставить только XP multiplier и поправить описание;
-     - или добавить stat passive.
+   - Done: оставлена фактическая XP-only семантика.
+   - Удален ложный restore/passive placeholder из `FLAG_RESTORE_EFFECTS`.
+   - Добавлен regression test: `perfect_balance is XP-only and does not add hidden stat passives`.
 
 4. Решить `chaos_surge`.
    - Сейчас state есть в типах/definitions, но комментарий говорит, что он "управляется mockApi/server".
@@ -357,7 +355,7 @@ Reports:
 
 1. Удалить `anxiousMult`.
 2. Убрать melancholic XP noop или перенести семантику в command/economy layer.
-3. Решить `perfect_balance` passive mismatch.
+3. Решить `perfect_balance` passive mismatch. Done: XP-only семантика зафиксирована кодом и тестом.
 4. Реализовать или удалить `chaos_surge`.
 5. Добавить validator для unsupported `specialRules`.
 

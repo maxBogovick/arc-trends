@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { getFurniture } from '../../data/roomFurniture';
-import type { PlacedFurnitureItem } from '../../store/petStore';
+import { usePetStore, type PlacedFurnitureItem } from '../../store/petStore';
 import type React from 'react';
 import { useImageUrl } from '../../utils/imageStore';
 
@@ -29,6 +29,7 @@ export function FurnitureItemVisual({
 }: Props) {
   // Must be called before any early return (Rules of Hooks)
   const paintingImage = useImageUrl(placed.imageUrl);
+  const ambientDarkness = usePetStore(s => s.roomCustomization.ambientDarkness);
 
   const def = getFurniture(placed.itemId);
   if (!def) return null;
@@ -63,9 +64,12 @@ export function FurnitureItemVisual({
         ].join(' '),
         fontSize: `${placed.scale * 2.5}rem`,
         zIndex: placed.zIndex + (isDragging ? 50 : 0),
-        filter: isSelected
-          ? 'drop-shadow(0 0 10px rgba(124,58,237,0.9))'
-          : 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))',
+        filter: [
+          ambientDarkness > 0 ? `brightness(${Math.max(0.05, 1 - ambientDarkness * 0.88).toFixed(2)})` : null,
+          isSelected
+            ? 'drop-shadow(0 0 10px rgba(124,58,237,0.9))'
+            : 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))',
+        ].filter(Boolean).join(' '),
         cursor: interactive
           ? placed.locked ? 'default' : isDragging ? 'grabbing' : 'grab'
           : onClick ? 'pointer' : undefined,
