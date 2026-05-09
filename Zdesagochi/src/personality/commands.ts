@@ -17,7 +17,7 @@ export type PetCommand =
   | { type: 'bathe'; at: string; commandId: string }
   | { type: 'heal'; at: string; commandId: string }
   | { type: 'bond'; at: string; commandId: string }
-  | { type: 'use_item'; itemId: string; at: string; commandId: string }
+  | { type: 'use_item'; itemId: string; itemKind?: 'food' | 'toy' | 'medicine' | 'decoration'; at: string; commandId: string }
   | { type: 'equip_room'; roomId: string; at: string; commandId: string }
   | { type: 'npc_visit'; npcPersonalityId: PersonalityId; at: string; commandId: string }
   | { type: 'accept_evolution'; proposalId?: string; at: string; commandId: string }

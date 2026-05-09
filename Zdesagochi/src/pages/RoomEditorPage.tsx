@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePetStore, type RoomCustomization, type FloorStyle, type RoomPreset } from '../store/petStore';
+import { usePetStore, type RoomCustomization, type FloorStyle, type RoomPreset, type PlacedFurnitureItem } from '../store/petStore';
+import { FurnitureItemVisual } from '../components/Pet/FurnitureItemVisual';
 import { getFurniture, getFurnitureByCategory } from '../data/roomFurniture';
 import { BACKGROUNDS, getBackground } from '../data/backgrounds';
 import { RoomScene } from '../components/Pet/RoomScene';
@@ -751,23 +752,20 @@ function PresetsPanel() {
 // CSS left/top position updates, causing items to drift further on each drag.
 
 interface DraggableFurnitureItemProps {
-  placed: { uid: string; itemId: string; x: number; y: number; scale: number; flipped: boolean; zIndex: number; locked: boolean };
+  placed: PlacedFurnitureItem;
   isSelected: boolean;
   onMove: (uid: string, dx: number, dy: number) => void;
   onSelect: (uid: string) => void;
 }
 
 function DraggableFurnitureItem({ placed, isSelected, onMove, onSelect }: DraggableFurnitureItemProps) {
-  const def = getFurniture(placed.itemId);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragging = React.useRef(false);
   const startPointer = React.useRef({ x: 0, y: 0 });
 
-  if (!def) return null;
-
   const isDragging = !!(offset.x || offset.y);
 
-  const handlePointerDown = (e: React.PointerEvent) => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (placed.locked) { onSelect(placed.uid); return; }
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -776,12 +774,12 @@ function DraggableFurnitureItem({ placed, isSelected, onMove, onSelect }: Dragga
     setOffset({ x: 0, y: 0 });
   };
 
-  const handlePointerMove = (e: React.PointerEvent) => {
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragging.current) return;
     setOffset({ x: e.clientX - startPointer.current.x, y: e.clientY - startPointer.current.y });
   };
 
-  const handlePointerUp = (e: React.PointerEvent) => {
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragging.current) return;
     dragging.current = false;
     const dx = e.clientX - startPointer.current.x;
@@ -795,34 +793,16 @@ function DraggableFurnitureItem({ placed, isSelected, onMove, onSelect }: Dragga
   };
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        left: `${placed.x}%`,
-        top: `${placed.y}%`,
-        transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scaleX(${placed.flipped ? -1 : 1})`,
-        fontSize: `${placed.scale * 2.5}rem`,
-        cursor: placed.locked ? 'default' : isDragging ? 'grabbing' : 'grab',
-        zIndex: placed.zIndex + (isDragging ? 50 : 0),
-        filter: isSelected
-          ? 'drop-shadow(0 0 10px rgba(124,58,237,0.9))'
-          : 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))',
-        userSelect: 'none',
-        touchAction: 'none',
-        transition: isDragging ? 'none' : 'filter 0.15s',
-      }}
+    <FurnitureItemVisual
+      placed={placed}
+      isSelected={isSelected}
+      dragOffset={offset}
+      isDragging={isDragging}
+      interactive
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-    >
-      {def.emoji}
-      {placed.locked && (
-        <span style={{
-          position: 'absolute', top: '-0.15em', right: '-0.25em',
-          fontSize: '0.35em', lineHeight: 1, pointerEvents: 'none',
-        }}>🔒</span>
-      )}
-    </div>
+    />
   );
 }
 
@@ -1124,7 +1104,49 @@ export function RoomEditorPage() {
                   <span className="text-sm font-bold text-white">{getFurniture(selectedItem.itemId)?.name}</span>
                 </div>
 
-                <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+                {/* Painting photo upload */}
+                {selectedItem.itemId === 'painting' && (
+                  <div className="flex items-center gap-2 w-full">
+                    {selectedItem.imageUrl ? (
+                      <>
+                        <img
+                          src={selectedItem.imageUrl}
+                          style={{ width: 40, height: 32, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(201,162,39,0.6)', flexShrink: 0 }}
+                        />
+                        <span className="text-xs flex-1 truncate" style={{ color: 'rgba(255,255,255,0.5)' }}>Своя фотография</span>
+                        <button
+                          onClick={() => updateRoomFurniture(selectedItem.uid, { imageUrl: undefined })}
+                          className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all shrink-0"
+                          style={{ background: 'rgba(239,68,68,0.2)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.3)' }}
+                        >✕ Убрать</button>
+                      </>
+                    ) : (
+                      <label
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all w-full"
+                        style={{ background: 'rgba(201,162,39,0.12)', border: '1px dashed rgba(201,162,39,0.4)', color: 'rgba(255,220,100,0.8)' }}
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = ev => updateRoomFurniture(selectedItem.uid, { imageUrl: ev.target?.result as string });
+                            reader.readAsDataURL(file);
+                            e.target.value = '';
+                          }}
+                        />
+                        <span style={{ fontSize: 16 }}>🖼️</span>
+                        <span className="text-xs font-semibold">Добавить фото в картину</span>
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                {/* Size */}
+                <div className="flex items-center gap-2 w-full">
                   <span className="text-xs text-purple-300 shrink-0">Размер</span>
                   <input
                     type="range" min={0.5} max={3} step={0.1}
@@ -1135,6 +1157,65 @@ export function RoomEditorPage() {
                   <span className="text-xs text-purple-300 w-8 text-right">{selectedItem.scale.toFixed(1)}</span>
                 </div>
 
+                {/* Rotation (Z) */}
+                <div className="flex items-center gap-2 w-full">
+                  <span className="text-xs text-purple-300 shrink-0 w-16">Поворот</span>
+                  <input
+                    type="range" min={-180} max={180} step={1}
+                    value={selectedItem.rotation ?? 0}
+                    onChange={e => updateRoomFurniture(selectedItem.uid, { rotation: parseFloat(e.target.value) })}
+                    className="flex-1 accent-purple-500"
+                  />
+                  <span className="text-xs text-purple-300 w-10 text-right">{(selectedItem.rotation ?? 0).toFixed(0)}°</span>
+                </div>
+
+                {/* Tilt X (lean forward/back in 3D) */}
+                <div className="flex items-center gap-2 w-full">
+                  <span className="text-xs text-purple-300 shrink-0 w-16">3D ось X</span>
+                  <input
+                    type="range" min={-80} max={80} step={1}
+                    value={selectedItem.tiltX ?? 0}
+                    onChange={e => updateRoomFurniture(selectedItem.uid, { tiltX: parseFloat(e.target.value) })}
+                    className="flex-1 accent-purple-500"
+                  />
+                  <span className="text-xs text-purple-300 w-10 text-right">{(selectedItem.tiltX ?? 0).toFixed(0)}°</span>
+                </div>
+
+                {/* Tilt Y (lean left/right in 3D) */}
+                <div className="flex items-center gap-2 w-full">
+                  <span className="text-xs text-purple-300 shrink-0 w-16">3D ось Y</span>
+                  <input
+                    type="range" min={-80} max={80} step={1}
+                    value={selectedItem.tiltY ?? 0}
+                    onChange={e => updateRoomFurniture(selectedItem.uid, { tiltY: parseFloat(e.target.value) })}
+                    className="flex-1 accent-purple-500"
+                  />
+                  <span className="text-xs text-purple-300 w-10 text-right">{(selectedItem.tiltY ?? 0).toFixed(0)}°</span>
+                </div>
+
+                {/* Color / Hue */}
+                <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+                  <span className="text-xs text-purple-300 shrink-0">Цвет</span>
+                  <div className="relative flex-1">
+                    <input
+                      type="range" min={0} max={359} step={1}
+                      value={selectedItem.hue ?? 0}
+                      onChange={e => updateRoomFurniture(selectedItem.uid, { hue: parseFloat(e.target.value) })}
+                      className="w-full h-3 rounded-full appearance-none cursor-pointer"
+                      style={{
+                        background: 'linear-gradient(to right,#ff0000,#ffff00,#00ff00,#00ffff,#0000ff,#ff00ff,#ff0000)',
+                        WebkitAppearance: 'none',
+                      }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => updateRoomFurniture(selectedItem.uid, { hue: 0 })}
+                    className="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                    style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)' }}
+                    title="Сбросить цвет"
+                  >↺</button>
+                </div>
+
                 <div className="flex items-center gap-2 shrink-0 flex-wrap">
                   <button
                     onClick={() => updateRoomFurniture(selectedItem.uid, { flipped: !selectedItem.flipped })}
@@ -1143,6 +1224,23 @@ export function RoomEditorPage() {
                   >
                     ↔ Отразить
                   </button>
+                  {getFurniture(selectedItem.itemId)?.category === 'lamp' && (
+                    <button
+                      onClick={() => updateRoomFurniture(selectedItem.uid, { isOn: !(selectedItem.isOn ?? true) })}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+                      style={{
+                        background: (selectedItem.isOn ?? true)
+                          ? 'rgba(251,191,36,0.25)'
+                          : 'rgba(255,255,255,0.08)',
+                        color: (selectedItem.isOn ?? true) ? '#FCD34D' : 'rgba(255,255,255,0.45)',
+                        border: (selectedItem.isOn ?? true)
+                          ? '1px solid rgba(251,191,36,0.45)'
+                          : '1px solid rgba(255,255,255,0.12)',
+                      }}
+                    >
+                      {(selectedItem.isOn ?? true) ? '💡 Выкл.' : '🌑 Вкл.'}
+                    </button>
+                  )}
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => {

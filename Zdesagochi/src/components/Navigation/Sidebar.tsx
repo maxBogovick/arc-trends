@@ -18,6 +18,7 @@ const ITEMS: NavItem[] = [
   { id: 'quests',       emoji: '🎯', label: 'Задания' },
   { id: 'achievements', emoji: '🏆', label: 'Достижения' },
   { id: 'leaderboard',  emoji: '📊', label: 'Рейтинг' },
+  { id: 'personality_test', emoji: '🧪', label: 'Тест' },
 ];
 
 export function Sidebar() {

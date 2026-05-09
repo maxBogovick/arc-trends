@@ -382,7 +382,8 @@ async function applyCommandInfluence(
   influenceCooldowns: InfluenceCooldownState,
   currentSync: number,
 ): Promise<void> {
-  const influenceId = getInfluenceIdForCommand(pet, command);
+  const registry = options.influenceRegistry ?? getInfluenceRegistry();
+  const influenceId = getInfluenceIdForCommand(pet, command, registry);
   if (!influenceId) return;
   await applyRegisteredInfluence(pet, influenceId, command, options, ctx, events, influenceCooldowns, currentSync);
 }
@@ -443,7 +444,11 @@ function createDeterministicRng(seedText: string): () => number {
   };
 }
 
-function getInfluenceIdForCommand(pet: Pet, command: PetCommand): string | null {
+function getInfluenceIdForCommand(
+  pet: Pet,
+  command: PetCommand,
+  registry: RegisteredInfluence[] = getInfluenceRegistry(),
+): string | null {
   switch (command.type) {
     case 'feed':
       return 'action:feed';
@@ -457,8 +462,11 @@ function getInfluenceIdForCommand(pet: Pet, command: PetCommand): string | null 
       return 'action:heal';
     case 'bond':
       return 'action:bond';
-    case 'use_item':
-      return `item:${command.itemId}`;
+    case 'use_item': {
+      const itemInfluenceId = `item:${command.itemId}`;
+      if (registry.some(influence => influence.id === itemInfluenceId)) return itemInfluenceId;
+      return command.itemKind === 'food' ? 'action:feed' : itemInfluenceId;
+    }
     case 'equip_room':
       return 'env:new_room';
     case 'npc_visit':

@@ -1,8 +1,12 @@
 # Personality Engine — актуальный план работ
 
-> Дата: 2026-05-08  
-> Основано на: `docs/personality_engine_audit.md`, текущем коде `src/personality/`, `src/api/mockApi.ts`, тестах `tests/personalityEvolution.test.ts`  
+> Дата: 2026-05-09  
+> Основано на: `docs/personality_engine_progress.md`, `docs/personality_engine_audit.md`, `docs/personality_engine_v5_gap_analysis.md`, `docs/personality_engine_coding_rules.md`, текущем коде `src/personality/`, `src/api/mockApi.ts`, тестах `tests/personalityEvolution.test.ts`  
 > Назначение: рабочий backlog по движку характера с учетом уже закрытого прогресса.
+
+> Перед выполнением любой задачи сначала читать `docs/personality_engine_progress.md`.
+> Каноничный gap-analysis относительно `PERSONALITY_EVOLUTION_SYSTEM.md`: `docs/personality_engine_v5_gap_analysis.md`.
+> Инженерные правила движения по roadmap: `docs/personality_engine_coding_rules.md`.
 
 ---
 
@@ -53,7 +57,7 @@
 - `stoic_peak and enlightenment set one-shot guards when entered`
 - `feast_frenzy uses three feedings in the last hour, not play count`
 
-### CRIT-1 — почти закрыто
+### CRIT-1 — закрыто
 
 Было: `commandHandlers` не вызывал `PersonalityEngine`, поэтому backend/replay могли терять gameplay-характер.
 
@@ -68,39 +72,48 @@
 - `mockApi` вызывает `applyPersonalityCommand()` для основных команд.
 - `mockApi.finalizePet()` больше не пересчитывает gameplay state и не двигает `lastUpdated`.
 
-Остаток:
-
-- В `useInventoryItem()` еще есть fallback `applyPetInfluence('action:feed')` для food-item без собственного `item:*` influence.
-- Нужны отдельные regression tests на отсутствие двойного применения counters в `MockApi.feedPet()` и `MockApi.useInventoryItem()`.
+- `useInventoryItem()` больше не вызывает `applyPetInfluence('action:feed')`.
+- Food-item без собственного `item:*` influence обрабатывается в command layer через `itemKind: 'food'`.
+- `mockApi.ts` больше не содержит прямых вызовов `applyInfluence`, `canApplyInfluenceAtSync`, `checkThresholdCrossings`, `getInfluenceRegistry`.
+- Добавлены regression tests на food fallback, item influence precedence, offline `use_item` log и `MockApi.getPet()` без mutation.
 
 ---
 
 ## 3. Главные нерешенные проблемы
 
-### P1. Закрыть хвосты CRIT-1
+### P1. Cleanup before data-driven refactor
 
-Цель: сделать `mockApi` настоящим adapter layer без скрытой personality-логики.
+Цель: убрать ложные сигналы и мёртвый код перед переносом gameplay logic в data registry.
 
 Задачи:
 
-1. Добавить явную семантику item-as-food в command layer.
-   - Сейчас `use_item` применяет `item:${itemId}`, если influence существует.
-   - Если food item не имеет собственного influence, `mockApi` вручную вызывает `action:feed`.
-   - Нужно решить на уровне `applyPersonalityCommand`, как `use_item` с food-effect влияет на trait vector.
+1. Удалить `anxiousMult`.
+   - Сейчас `const anxiousMult = personality.id === 'anxious' ? 1.0 : 1.0`.
+   - Это noop.
 
-2. Убрать `applyPetInfluence()` из `mockApi`.
-   - После переноса item fallback эта функция должна стать не нужна.
-   - `mockApi` не должен напрямую вызывать `applyInfluence()`.
+2. Убрать XP noop для melancholic.
+   - Сейчас `result.xp = result.xp`.
+   - Нужно либо перенести `xpEveryOtherAction` в command/economy pipeline, либо явно оставить это в mock economy и удалить engine noop.
 
-3. Добавить regression tests.
-   - `MockApi.feedPet()` увеличивает feed counters ровно один раз.
-   - `MockApi.useInventoryItem(food)` не применяет trait influence дважды.
-   - `MockApi.getPet()` не меняет `lastUpdated`, counters, flags, state.
+3. Разобраться с `perfect_balance`.
+   - Сейчас есть XP multiplier.
+   - Комментарий говорит про passive bonus в `computeNaturalPassives`, но stat passive не реализован.
+   - Нужно выбрать одно:
+     - оставить только XP multiplier и поправить описание;
+     - или добавить stat passive.
+
+4. Решить `chaos_surge`.
+   - Сейчас state есть в типах/definitions, но комментарий говорит, что он "управляется mockApi/server".
+   - Нужно либо реализовать, либо явно вынести из active roadmap.
+
+5. Добавить validator для unsupported `specialRules`.
+   - Для каждого specialRules поля должна быть реализация или явное предупреждение validator'а.
 
 Критерий готовности:
 
-- В `mockApi.ts` нет прямых вызовов `applyInfluence`, `canApplyInfluenceAtSync`, `checkThresholdCrossings` для обычных gameplay-команд.
-- `rg "applyPetInfluence|applyInfluence|updateCounters|runPatternEngine|computeEmergentState|applyDecay|computeNaturalPassives" src/api/mockApi.ts` не находит доменных дублей, кроме допустимых imports для UI modifiers.
+- Нет noop-кода в `PersonalityEngine`.
+- Комментарии соответствуют фактическому поведению.
+- Для каждого specialRules поля есть реализация или validator warning/error.
 - `npm test` и `npm run build` проходят.
 
 ---
@@ -108,6 +121,8 @@
 ### P2. Data-driven refactor для gameplay conditions
 
 Цель: убрать hardcoded `personality.id === ...` из `PersonalityEngine`.
+
+Полный контекст и phased roadmap: `docs/personality_engine_v5_gap_analysis.md`.
 
 Проблема:
 
@@ -117,7 +132,7 @@
 
 Задачи:
 
-1. Добавить в `PersonalityDefinition` data-driven блоки:
+1. Добавить gameplay rule registry.
    - `emergentConditions`
    - `passiveEffects`
    - `decayRules`
@@ -132,6 +147,7 @@
    - `wanderlust`
    - `midnight_zoomies`
    - `coin_obsession`
+   - `food_panic`
    - `trust_collapse`
    - `apathy`
    - `tantrum`
@@ -155,40 +171,63 @@
 
 ---
 
-### P3. Убрать мертвый и вводящий в заблуждение код
+### P3. Command result owns full gameplay outcome
 
-Цель: убрать ложные сигналы, что логика реализована внутри engine, когда она фактически живет снаружи или не работает.
+Цель: сделать `applyPersonalityCommand()` единым доменным source of truth не только для trait/personality side effects, но и для gameplay outcome.
+
+Проблема:
+
+- `mockApi` всё ещё рассчитывает base stat deltas, XP, coins и часть special cases.
+- Replay через `applyPersonalityCommand()` не восстанавливает полный gameplay/economy outcome.
+- Backend должен будет дублировать логику mock adapter'а.
 
 Задачи:
 
-1. Удалить `anxiousMult`.
-   - Сейчас `const anxiousMult = personality.id === 'anxious' ? 1.0 : 1.0`.
-   - Это noop.
+1. Расширить `PetCommandResult`.
+   - `statDeltas`
+   - `xpDelta`
+   - `coinDelta`
+   - `blockedAction`
+   - `appliedModifiers`
 
-2. Убрать XP noop для melancholic.
-   - Сейчас `result.xp = result.xp`.
-   - Нужно либо перенести `xpEveryOtherAction` в command/economy pipeline, либо явно оставить это в mock economy и удалить engine noop.
+2. Перенести base action result calculation из `mockApi` в command/gameplay layer.
 
-3. Разобраться с `perfect_balance`.
-   - Сейчас есть XP multiplier.
-   - Комментарий говорит про passive bonus в `computeNaturalPassives`, но stat passive не реализован.
-   - Нужно выбрать одно:
-     - оставить только XP multiplier и поправить описание;
-     - или добавить stat passive.
-
-4. Обработать `newRoomBonusEnabled`.
-   - Сейчас special rule есть у adventurer, но engine не имеет общей обработки.
-   - Нужно связать с `equip_room` / `env:new_room` через command layer или registry.
+3. Оставить в `mockApi`:
+   - inventory;
+   - achievements;
+   - quests;
+   - persistence;
+   - UI events.
 
 Критерий готовности:
 
-- Нет noop-кода в `PersonalityEngine`.
-- Комментарии соответствуют фактическому поведению.
-- Для каждого specialRules поля есть либо реализация, либо validator предупреждает, что поле не поддержано.
+- backend/mock/replay используют один command outcome.
+- `mockApi` не содержит personality/gameplay calculators для care/play actions.
 
 ---
 
-### P4. State layers как окончательный source of truth
+### P4. System influences and lifecycle hooks
+
+Цель: сделать influence registry реально управляющим system behavior.
+
+Задачи:
+
+1. На `sync` запускать `applyEligibleSystemInfluences()`.
+2. Подключить:
+   - `system:inactivity_long`
+   - `system:consistent_week`
+   - `system:starvation`
+   - `env:same_room_48h`
+3. Реализовать generic `onApply` lifecycle hook.
+
+Критерий готовности:
+
+- system/environment influences меняют trait vector через registry.
+- sleep/wake lifecycle hooks не размазаны по ручным веткам.
+
+---
+
+### P5. State layers как окончательный source of truth
 
 Цель: завершить миграцию от single `pet.emergentState` к layered state model.
 
@@ -200,28 +239,21 @@
 
 Задачи:
 
-1. Обновить UI/API, где нужно показывать несколько активных состояний.
-   - Сейчас `pet.emergentState` показывает только highest-priority state.
-   - Для richer UX нужны все active states: gameplay + evolution + cognitive.
-
-2. Добавить публичный selector/API field.
+1. Добавить публичный selector/API field.
    - Например `activeEmergentStates`.
-   - Не обязательно ломать старое `emergentState`.
 
-3. Уточнить priority model.
-   - Сейчас priority может быть дробным (`0.5`, `1.5`).
-   - Нужно решить, это официальный подход или временный workaround.
-   - Лучше завести `priority` + `tieBreaker` или layer-aware priority.
+2. Обновить UI/API, где нужно показывать несколько активных состояний.
+
+3. Пометить `pet.emergentState` как legacy projection.
 
 Критерий готовности:
 
-- `pet.emergentState` помечен как legacy в типах/доках.
 - UI может показывать несколько states без ручного чтения internal `stateLayers`.
 - State conflict resolution покрыт тестами.
 
 ---
 
-### P5. Event history для обучения и объяснимости
+### P6. Event history для обучения и объяснимости
 
 Цель: перейти от агрегированных counters к истории причин.
 
@@ -239,6 +271,7 @@
    - counters changed
    - flag activated/healed/deactivated
    - emergent state entered/exited
+   - stat/xp/coin deltas
    - trait vector changed
    - memory added
    - evolution proposed/accepted/rejected
@@ -260,215 +293,78 @@
 
 ---
 
-### P6. CoreMemory features для causal learning
+### P7. Legacy / Catharsis / Singularity promises
 
-Цель: сделать memories не только текстом и простыми полями, а обучающим материалом.
-
-Текущее состояние:
-
-- `CoreMemory` уже имеет machine-readable поля:
-  - `traitKey`
-  - `direction`
-  - `category`
-  - `personalityHint`
-  - `tier`
-
-Недостаток:
-
-- Нет causal features.
-- Нет связи с command/event ids.
-- Нет hash/group key.
-- Нет compact numeric vector для future ML/similarity.
+Цель: закрыть расхождения с `PERSONALITY_EVOLUTION_SYSTEM.md`.
 
 Задачи:
 
-1. Расширить `CoreMemory`.
-   - `sourceEventIds?: string[]`
-   - `features?: Record<string, number>`
-   - `cause?: string`
-   - `effect?: string`
-   - `hash?: string`
-
-2. Заполнять features при создании memory.
-   - influence category
-   - trait delta magnitude
-   - state before/after
-   - relevant counters
-   - active flags
-
-3. Добавить tests на deterministic memory features.
+1. Подключить `EVOLUTION_LEGACY` XP/coin/uniqueTrait бонусы.
+2. Реализовать или удалить catharsis XP x5 burst на 2 часа.
+3. Реализовать или удалить singularity item cooldown bypass.
+4. Проверить LiveOps runtime path.
 
 Критерий готовности:
 
-- По memory можно машинно понять, какое поведение к ней привело.
-- Несколько похожих memories можно группировать без чтения текста.
+- В документе не остаётся обещаний, которых нет в коде.
+- Или обещания реализованы и покрыты тестами.
 
 ---
 
-### P7. Emergent states должны влиять на trait vector
+### P8. UI/product слой evolution system
 
-Цель: сделать сильные состояния частью развития характера, а не только временным gameplay-модификатором.
-
-Проблема:
-
-- `shadow_form`, `tantrum`, `enlightenment`, `breakdown` влияют на actions, но не сдвигают trait vector напрямую.
-- Травматический опыт частично идет через `traumaDelta`, но state-level effects не участвуют в долгосрочном характере.
+Цель: вывести важные mechanics из debug/test views в production UX.
 
 Задачи:
 
-1. Добавить в `EmergentStateDefinition` поле:
-   - `traitDeltasOnEnter?`
-   - `traitDeltasPerSync?`
-   - `traitDeltasOnExit?`
+1. Production view для:
+   - active states;
+   - trait vector;
+   - Core Memories;
+   - evolution proposal;
+   - singularity;
+   - shadow/catharsis;
+   - legacy/new life.
 
-2. Применять эти deltas через тот же budget/smoothing механизм, что influences.
-
-3. Ограничить силу эффектов.
-   - state deltas не должны ломать daily budget.
-   - legendary/evolution states могут иметь отдельный cap.
+2. Решить, какие debug элементы остаются только в `PersonalityTestPage`.
 
 Критерий готовности:
 
-- Вход в `shadow_form` или длительное пребывание в нем оставляет измеримый след.
-- `enlightenment` может закреплять позитивный паттерн.
-- Есть тесты на state trait effects и budget caps.
+- Игрок понимает систему через narrative UI, а не через скрытые числа.
 
 ---
 
-### P8. Legacy economy bonuses
+### P9. Simulation / balance
 
-Цель: сделать “Новая жизнь в новом теле” ощутимой не только через стартовый trait vector.
+Цель: проверить скорость и устойчивость системы.
 
-Текущее состояние:
+Reports:
 
-- `recordLegacy()` сохраняет `legacyVector`, `legacyCoefficient`, `legacyGeneration`, `memoryGuardian`.
-- `createInitialTraitVector()` использует legacy echo-vector.
-- `EVOLUTION_LEGACY` содержит `xpMultiplierBonus`, `coinMultiplierBonus`, `uniqueTrait`, но gameplay/economy их не использует.
-
-Задачи:
-
-1. Решить, где живут account-wide bonuses.
-   - `Account.legacyBonuses`
-   - или computed selector из `legacyVector` / `evolutionHistory`
-
-2. Подключить bonuses к economy pipeline.
-   - XP multiplier
-   - coin multiplier
-   - unique trait hints
-
-3. Не превращать legacy в pay-to-win/overpower.
-   - Нужны caps.
-   - Нужна UI-подача как “память помогает”, а не “старый питомец умер и дал буст”.
-
-Критерий готовности:
-
-- New Life дает понятный, ограниченный бонус.
-- Бонус виден в UI и покрыт тестом.
-
----
-
-### P9. Simulation и баланс скорости эволюции
-
-Цель: понять, насколько живым ощущается темп характера.
-
-Проблема:
-
-- `SMOOTHING_ALPHA`, daily budget, thresholds и stability syncs сейчас заданы вручную.
-- По расчету большие переходы могут занимать недели.
-- Без simulation непонятно, хорошо это или слишком медленно.
-
-Задачи:
-
-1. Написать simulation tests/scripts.
-   - стабильная забота 7/14/30 дней
-   - хаотичная забота
-   - neglect сценарий
-   - recovery сценарий
-   - mixed behavior
-
-2. Собирать метрики:
-   - days to formation
-   - days to first evolution proposal
-   - number of memories
-   - number of flags/states
-   - trait vector distance over time
-
-3. Подобрать параметры.
-   - `SMOOTHING_ALPHA`
-   - daily budgets
-   - `STABILITY_SYNCS`
-   - hysteresis
-   - shadow/void/singularity thresholds
-
-Критерий готовности:
-
-- Есть repeatable simulation report.
-- Изменения баланса делаются на основании метрик, а не ощущения.
-
----
-
-### P10. Backend / LiveOps readiness
-
-Цель: подготовить personality engine к серверному authority и remote balance.
-
-Задачи:
-
-1. Backend replay/validation adapter.
-   - Сервер принимает `PetCommand`.
-   - Сервер валидирует command order, cooldowns, state shape.
-   - Сервер возвращает authoritative pet snapshot + events.
-
-2. Remote influence registry endpoint.
-   - `/api/influence-registry`
-   - server-side validation
-   - versioning
-   - rollback
-
-3. GlobalBalancePatch pipeline.
-   - 7-day rolling average
-   - max ±2% per week
-   - audit trail
-
-4. Runtime validation.
-   - Pet shape validation before command application.
-   - Registry validation on startup.
-   - Pattern rules validation on startup or build/test step.
-
-Критерий готовности:
-
-- Client and backend replay produce same result for same command log.
-- Remote registry cannot inject unsafe influences.
-- Balance patches are capped and auditable.
+- formation speed;
+- evolution speed;
+- shadow entry/recovery;
+- confused frequency;
+- singularity rarity;
+- memory generation rate;
+- personality distribution under common play styles.
 
 ---
 
 ## 4. Рекомендуемый порядок работ
 
-### Sprint 1 — Finish CRIT-1
-
-1. Добавить item-as-food semantics в `applyPersonalityCommand`.
-2. Убрать `applyPetInfluence()` из `mockApi`.
-3. Добавить regression tests на `MockApi.feedPet()`, `MockApi.useInventoryItem()`, `MockApi.getPet()`.
-4. Обновить audit log: `CRIT-1 closed`.
-
-Почему это первое:
-
-- Это завершает разделение domain layer и adapter layer.
-- После этого backend/replay путь становится надежной основой.
-
-### Sprint 2 — Cleanup before refactor
+### Sprint 1 — Cleanup before refactor
 
 1. Удалить `anxiousMult`.
 2. Убрать melancholic XP noop или перенести семантику в command/economy layer.
 3. Решить `perfect_balance` passive mismatch.
-4. Реализовать или удалить `newRoomBonusEnabled`.
-5. Убрать `TraitEvolutionContext.random` или `rng`.
+4. Реализовать или удалить `chaos_surge`.
+5. Добавить validator для unsupported `specialRules`.
 
 Почему до data-driven:
 
 - Мертвый код мешает корректно выносить правила в data.
 
-### Sprint 3 — Data-driven conditions
+### Sprint 2 — Data-driven conditions
 
 1. Спроектировать `emergentConditions` schema.
 2. Добавить validator.
@@ -480,12 +376,23 @@
 
 - Это самая рискованная часть. Нужен incremental migration.
 
+### Sprint 3 — Command outcome and system influences
+
+1. Расширить `PetCommandResult` gameplay outcome.
+2. Перенести base action result calculation из `mockApi`.
+3. Реализовать `applyEligibleSystemInfluences()`.
+4. Реализовать generic `onApply` lifecycle hooks.
+
+Почему здесь:
+
+- После data-driven conditions command layer должен стать единым source of truth.
+
 ### Sprint 4 — Learning foundation
 
 1. Добавить durable event history.
 2. Расширить `CoreMemory.features`.
 3. Добавить explain helpers.
-4. Добавить state trait deltas.
+4. Подключить event history к memories и explanations.
 
 Почему после data-driven:
 
@@ -513,31 +420,3 @@
 - Evolution speed подтверждена simulation tests.
 - Backend replay дает тот же результат, что client replay.
 - Все registry/rules валидируются автоматически.
-
----
-
-## 6. Ближайшая конкретная задача
-
-Следующая задача должна быть:
-
-**Закрыть остаток CRIT-1: item-as-food semantics + убрать `applyPetInfluence()` из `mockApi`.**
-
-Минимальный план:
-
-1. В `applyPersonalityCommand()` для `use_item` поддержать fallback influence:
-   - если есть `item:${itemId}` — применить его;
-   - если item помечен как food/food-like — применить `action:feed`;
-   - не применять оба без явного правила.
-
-2. Передать в command context достаточно metadata для `use_item`.
-   - Сейчас команда знает только `itemId`.
-   - Нужно либо registry lookup, либо `itemKind` в command payload.
-
-3. Удалить `applyPetInfluence()` из `mockApi`.
-
-4. Добавить тесты:
-   - food item без `item:*` influence применяет `action:feed` один раз;
-   - item с `item:*` influence не применяет `action:feed` дополнительно;
-   - offline command log сохраняет `use_item`;
-   - `getPet()` не мутирует personality state.
-

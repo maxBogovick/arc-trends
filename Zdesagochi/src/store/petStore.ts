@@ -15,7 +15,7 @@ import { getAura } from '../data/auras';
 import { getAccessoriesBySlot } from '../data/accessories';
 import { FURNITURE, getFurniture } from '../data/roomFurniture';
 
-export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 'leaderboard' | 'skins' | 'editor' | 'room';
+export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 'leaderboard' | 'skins' | 'editor' | 'room' | 'personality_test';
 
 export type FloorStyle = 'flat' | 'grid' | 'wood' | 'tile' | 'marble' | 'metal';
 
@@ -77,6 +77,12 @@ export interface PlacedFurnitureItem {
   flipped: boolean;
   zIndex: number;
   locked: boolean;
+  rotation: number;   // -180 to 180 degrees, around Z axis (2D)
+  tiltX: number;      // -80 to 80 degrees, 3D rotateX (lean fwd/back)
+  tiltY: number;      // -80 to 80 degrees, 3D rotateY (lean left/right)
+  hue: number;        // 0-360 for CSS hue-rotate
+  isOn: boolean;      // lamps: light on/off
+  imageUrl?: string;  // painting: custom photo (data URL)
 }
 
 export interface RoomPreset {
@@ -252,7 +258,12 @@ function loadPlacedFurniture(): PlacedFurnitureItem[] {
     const raw = localStorage.getItem('placedFurniture');
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return parsed.map((p: any): PlacedFurnitureItem => ({
+      rotation: 0, tiltX: 0, tiltY: 0, hue: 0, isOn: true,
+      ...p,
+    }));
   } catch { return []; }
 }
 
@@ -945,6 +956,11 @@ export const usePetStore = create<PetStore>((set, get) => {
         flipped: false,
         zIndex: placedFurniture.length + 1,
         locked: false,
+        rotation: 0,
+        tiltX: 0,
+        tiltY: 0,
+        hue: 0,
+        isOn: true,
       };
       const next = [...placedFurniture, newItem];
       persistRoom(roomCustomization, next);

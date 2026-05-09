@@ -20,16 +20,12 @@ import {
   getParanoidRestoreMult, createDefaultCounters,
 } from '../personality/PersonalityEngine';
 import {
-  canApplyInfluenceAtSync,
-  applyInfluence,
   addCatharsisProgress,
-  checkThresholdCrossings,
   recordLegacy,
   onStartSleep,
   createInitialTraitVector,
 } from '../personality/TraitEvolutionEngine';
 import {
-  getInfluenceRegistry,
   getIntensityMultiplier,
 } from '../personality/influenceRegistry';
 import { createMemoryTextGenerator } from '../personality/memoryTextGenerator';
@@ -570,35 +566,6 @@ function normalizePetEvolutionFields(pet: Pet): Pet {
   return p;
 }
 
-async function applyPetInfluence(influenceId: string): Promise<void> {
-  normalizePetEvolutionFields(S.pet);
-  const influence = getInfluenceRegistry().find(inf => inf.id === influenceId);
-  if (!influence) return;
-
-  const lastAppliedAt = influenceCooldowns.get(influence.id);
-  if (!canApplyInfluenceAtSync(lastAppliedAt, traitSyncCounter, influence.cooldownSyncs ?? 0)) return;
-
-  const now = mockNow();
-  const { prevVector, applied } = applyInfluence(S.pet, influence, {
-    now,
-    clientLocalHour: now.getHours(),
-    getIntensityMultiplier,
-    memoryTextGenerator,
-    dominantInfluences: [influence.label],
-    rng: mockRng,
-  });
-  if (!applied) return;
-
-  influenceCooldowns.set(influence.id, traitSyncCounter);
-
-  await checkThresholdCrossings(S.pet, prevVector, {
-    now,
-    memoryTextGenerator,
-    dominantInfluences: [influence.label],
-    rng: mockRng,
-  });
-}
-
 function finalizePet(): Pet {
   ensureOfflineHydrated();
   normalizePetEvolutionFields(S.pet);
@@ -990,12 +957,12 @@ export class MockApiService implements ApiService {
     if (effect.bond) S.pet.stats.bond = clamp(S.pet.stats.bond + effect.bond);
     if (effect.xp) gainXp(effect.xp);
 
-    const itemInfluenceId = `item:${itemId}`;
-    const hasItemInfluence = getInfluenceRegistry().some(inf => inf.id === itemInfluenceId);
-    await applyMockPersonalityCommand({ type: 'use_item', itemId, at: mockNow().toISOString() });
-    if (!hasItemInfluence && item.type === 'food') {
-      await applyPetInfluence('action:feed');
-    }
+    await applyMockPersonalityCommand({
+      type: 'use_item',
+      itemId,
+      itemKind: item.type,
+      at: mockNow().toISOString(),
+    });
 
     addEvent('feed', `Использовал «${item.name}»`, item.emoji);
     if (item.type === 'medicine') { tickQuest('q_heal'); S.healCount++; }

@@ -1,10 +1,11 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { usePetStore } from '../../store/petStore';
 import { PetDisplay } from './PetDisplay';
 import { PetTalk } from './PetTalk';
 import { RoomScene } from './RoomScene';
 import type { PetMood } from '../../api';
+import { FurnitureItemVisual } from './FurnitureItemVisual';
 import { getFurniture } from '../../data/roomFurniture';
 
 export const MOOD_LABELS: Record<PetMood, { text: string; emoji: string; color: string }> = {
@@ -27,9 +28,13 @@ const STAGE_INFO: Record<string, { label: string; emoji: string }> = {
 };
 
 export function PetScene() {
-  const { pet, updatePetName, actionLoading, placedFurniture } = usePetStore();
+  const { pet, updatePetName, actionLoading, placedFurniture, updateRoomFurniture } = usePetStore();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
+  const [selectedUid, setSelectedUid] = useState<string | null>(null);
+
+  const selectedPlaced = placedFurniture.find(p => p.uid === selectedUid) ?? null;
+  const selectedDef    = selectedPlaced ? getFurniture(selectedPlaced.itemId) : null;
 
   if (!pet) return null;
 
@@ -46,29 +51,72 @@ export function PetScene() {
     <div className="flex flex-col items-center gap-4 w-full">
 
       {/* ── Main scene ─────────────────────────────────────────────── */}
-      <RoomScene height="clamp(340px, 42vw, 460px)" maxWidth="520px">
+      <RoomScene
+        height="clamp(340px, 42vw, 460px)"
+        maxWidth="520px"
+        onSceneClick={() => setSelectedUid(null)}
+      >
 
-        {/* Placed furniture items */}
+        {/* Placed furniture items — lamp items are clickable */}
         {placedFurniture.map(placed => {
           const def = getFurniture(placed.itemId);
-          if (!def) return null;
+          const hasEffects = def?.category === 'lamp';
           return (
-            <div
+            <FurnitureItemVisual
               key={placed.uid}
-              className="absolute pointer-events-none select-none"
-              style={{
-                left: `${placed.x}%`,
-                top: `${placed.y}%`,
-                transform: `translate(-50%, -50%) scaleX(${placed.flipped ? -1 : 1})`,
-                fontSize: `${placed.scale * 2.5}rem`,
-                zIndex: placed.zIndex + 10,
-                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
-              }}
-            >
-              {def.emoji}
-            </div>
+              placed={placed}
+              isSelected={placed.uid === selectedUid}
+              onClick={hasEffects ? () => setSelectedUid(uid => uid === placed.uid ? null : placed.uid) : undefined}
+            />
           );
         })}
+
+        {/* Effects popup */}
+        <AnimatePresence>
+          {selectedPlaced && selectedDef && (
+            <motion.div
+              key={selectedPlaced.uid}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-3 px-3 py-2 rounded-2xl"
+              style={{
+                zIndex: 50,
+                background: 'rgba(15,10,30,0.88)',
+                border: '1px solid rgba(124,58,237,0.35)',
+                backdropFilter: 'blur(8px)',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+                whiteSpace: 'nowrap',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <span className="text-xl leading-none">{selectedDef.emoji}</span>
+              <span className="text-xs font-bold text-white">{selectedDef.name}</span>
+
+              {/* Light toggle for lamps */}
+              {selectedDef.category === 'lamp' && (
+                <button
+                  onClick={() => updateRoomFurniture(selectedPlaced.uid, { isOn: !(selectedPlaced.isOn ?? true) })}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold transition-all"
+                  style={{
+                    background: (selectedPlaced.isOn ?? true) ? 'rgba(251,191,36,0.2)' : 'rgba(255,255,255,0.08)',
+                    color: (selectedPlaced.isOn ?? true) ? '#FCD34D' : 'rgba(255,255,255,0.4)',
+                    border: (selectedPlaced.isOn ?? true) ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(255,255,255,0.12)',
+                  }}
+                >
+                  {(selectedPlaced.isOn ?? true) ? '💡 Вкл' : '🌑 Выкл'}
+                </button>
+              )}
+
+              <button
+                onClick={() => setSelectedUid(null)}
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-[11px]"
+                style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)' }}
+              >✕</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Mood badge */}
         <motion.div

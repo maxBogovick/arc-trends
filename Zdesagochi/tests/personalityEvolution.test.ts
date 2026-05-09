@@ -691,6 +691,42 @@ await testAsync('personality command feed applies exact trait deltas without mut
   assert.equal(result.registryVersion, STATIC_REGISTRY_VERSION);
 });
 
+await testAsync('personality command use_item food falls back to feed influence when item influence is missing', async () => {
+  const pet = makePet({ formationComplete: true });
+  const result = await applyPersonalityCommand(pet, {
+    type: 'use_item',
+    itemId: 'premium_burger',
+    itemKind: 'food',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-use-food-fallback',
+  });
+
+  closeTo(result.pet.traitVector.appetite, 50 + 2 * 0.08);
+  closeTo(result.pet.traitVector.sociality, 50 + 0.5 * 0.08);
+  closeTo(result.pet.traitVector.curiosity, 50);
+  assert.equal(result.influenceCooldowns['action:feed'], 0);
+  assert.equal(result.influenceCooldowns['item:premium_burger'], undefined);
+  assert.equal(result.events.filter(event => event.type === 'trait_vector_changed').length, 1);
+});
+
+await testAsync('personality command use_item prefers item influence over food fallback', async () => {
+  const pet = makePet({ formationComplete: true });
+  const result = await applyPersonalityCommand(pet, {
+    type: 'use_item',
+    itemId: 'magic_potion',
+    itemKind: 'food',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-use-food-item-influence',
+  });
+
+  closeTo(result.pet.traitVector.curiosity, 50 + 3 * 0.08);
+  closeTo(result.pet.traitVector.appetite, 50 + 2 * 0.08);
+  closeTo(result.pet.traitVector.sociality, 50);
+  assert.equal(result.influenceCooldowns['item:magic_potion'], 0);
+  assert.equal(result.influenceCooldowns['action:feed'], undefined);
+  assert.equal(result.events.filter(event => event.type === 'trait_vector_changed').length, 1);
+});
+
 await testAsync('personality command handler gates influences with serializable cooldown state', async () => {
   const pet = makePet({ formationComplete: true });
   const first = await applyPersonalityCommand(pet, {
@@ -1706,6 +1742,54 @@ await testAsync('MockApi persists offline snapshot command log and cooldowns', a
     const rehydrated = await new MockApiService().getPet();
     closeTo(rehydrated.traitVector.sociality, afterBond.traitVector.sociality);
     assert.equal(rehydrated.coreMemories.length, afterBond.coreMemories.length);
+  } finally {
+    setMockOfflineStorage(null);
+    clearMockOfflineRuntimeState();
+  }
+});
+
+await testAsync('MockApi useInventoryItem writes use_item command to offline log', async () => {
+  const storage = makeMemoryStorage();
+  setMockOfflineStorage(storage);
+  clearMockOfflineRuntimeState();
+
+  try {
+    const api = new MockApiService();
+    await api.getPet();
+    await api.buyItem('vitamin');
+    await api.useInventoryItem('vitamin');
+
+    const loaded = loadOfflinePetSave(storage);
+    assert.equal(loaded.ok, true);
+    if (!loaded.ok) assert.fail('offline save was not persisted');
+
+    const lastCommand = loaded.save.commandLog.at(-1);
+    assert.equal(lastCommand?.type, 'use_item');
+    if (lastCommand?.type === 'use_item') {
+      assert.equal(lastCommand.itemId, 'vitamin');
+      assert.equal(lastCommand.itemKind, 'medicine');
+    }
+  } finally {
+    setMockOfflineStorage(null);
+    clearMockOfflineRuntimeState();
+  }
+});
+
+await testAsync('MockApi getPet does not mutate personality counters flags or state', async () => {
+  const storage = makeMemoryStorage();
+  setMockOfflineStorage(storage);
+  clearMockOfflineRuntimeState();
+
+  try {
+    const api = new MockApiService();
+    const before = await api.getPet();
+    const after = await api.getPet();
+
+    assert.equal(after.lastUpdated, before.lastUpdated);
+    assert.deepEqual(after.behavioralCounters, before.behavioralCounters);
+    assert.deepEqual(after.behavioralFlags, before.behavioralFlags);
+    assert.deepEqual(after.stateLayers, before.stateLayers);
+    assert.equal(after.emergentState, before.emergentState);
   } finally {
     setMockOfflineStorage(null);
     clearMockOfflineRuntimeState();

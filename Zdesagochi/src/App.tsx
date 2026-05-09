@@ -14,7 +14,7 @@ import { LeaderboardPage } from './pages/LeaderboardPage';
 import { SkinsPage } from './pages/SkinsPage';
 import { PetEditorPage } from './pages/PetEditorPage';
 import { RoomEditorPage } from './pages/RoomEditorPage';
-
+import { PersonalityTestPage } from './pages/PersonalityTestPage';
 type GameType = 'stars' | 'memory' | null;
 
 const SYNC_MS = 15_000;
@@ -64,6 +64,7 @@ export default function App() {
               {activeTab === 'quests'       && <QuestsPage />}
               {activeTab === 'achievements' && <AchievementsPage />}
               {activeTab === 'leaderboard'  && <LeaderboardPage />}
+              {activeTab === 'personality_test' && <PersonalityTestPage />}
             </motion.div>
           </AnimatePresence>
         </div>
