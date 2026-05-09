@@ -2,6 +2,7 @@
 
 > Дата создания: 2026-05-09  
 > Назначение: единый файл процесса. Перед любой работой по движку характера сначала читать этот файл, затем `docs/personality_engine_coding_rules.md`, затем `docs/personality_engine_next_steps.md`.
+> Архитектурные решения фиксировать в `docs/personality_engine_decisions.md`.
 
 ---
 
@@ -10,7 +11,7 @@
 Перед началом любой задачи по personality engine:
 
 ```text
-Сначала прочитай docs/personality_engine_progress.md, docs/personality_engine_coding_rules.md и docs/personality_engine_next_steps.md. После этого скажи, какой текущий шаг, почему он следующий, какие проверки будут выполнены и как этот шаг двигает нас к конечной цели.
+Сначала прочитай docs/personality_engine_progress.md, docs/personality_engine_coding_rules.md, docs/personality_engine_next_steps.md и при архитектурных изменениях docs/personality_engine_decisions.md. После этого скажи, какой текущий шаг, почему он следующий, какие проверки будут выполнены и как этот шаг двигает нас к конечной цели.
 ```
 
 Эта команда является рабочим правилом для всех следующих сессий.
@@ -147,11 +148,133 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
    - “Идем по правильному вектору”;
    - или “Есть отклонение: ...”;
 4. какие проверки выполнены;
-5. какой следующий шаг.
+5. какой следующий шаг;
+6. почему следующий шаг именно такой;
+7. что следующий шаг даст конечной цели;
+8. что будет плохо, если следующий шаг пропустить;
+9. как проверить, что следующий шаг выполнен правильно.
+
+Запрещено завершать ответ короткой строкой вида:
+
+```text
+Следующий шаг: ...
+```
+
+Любое упоминание следующего шага должно использовать формат из раздела `Mandatory Next Step Format`.
 
 ---
 
-## 5. Roadmap Status
+## 5. Control Dashboard
+
+| Field | Current Value |
+|---|---|
+| Current Goal | Подготовить движок к data-driven refactor без ложного/мертвого поведения |
+| Current Step | Sprint 1 — Cleanup before refactor |
+| Why This Step | Нельзя безопасно выносить правила в data registry, пока в engine есть noop-код, устаревшие комментарии и неподтвержденные specialRules |
+| Current Vector | Правильный: уменьшаем хаос перед архитектурной миграцией |
+| Next Step | Убрать `anxiousMult` noop |
+| Why Next | Это самый низкорисковый cleanup, который сразу убирает ложный сигнал в `applyDecay()` |
+| Required Verification | `npm test`, `npm run build`, targeted `rg` checks when relevant |
+
+---
+
+## 6. Last Completed Step
+
+### What
+
+Усилен процесс контроля personality engine:
+
+- создан `docs/personality_engine_progress.md`;
+- создан `docs/personality_engine_coding_rules.md`;
+- создан `docs/personality_engine_v5_gap_analysis.md`;
+- создан `docs/personality_engine_decisions.md`;
+- `docs/personality_engine_next_steps.md` связан с progress/coding/gap documents.
+
+### Why
+
+Нужно было создать управляемый процесс, потому что один roadmap не отвечает на вопросы:
+
+- почему этот шаг был нужен;
+- чем он помог конечной цели;
+- что проверено;
+- почему следующий шаг именно такой.
+
+### Impact
+
+Теперь каждая задача должна проходить через явный цикл:
+
+> read -> vector check -> plan -> implement -> verify -> update progress -> final report.
+
+Это снижает риск добавлять код без архитектурной пользы.
+
+### Verification
+
+Документационные файлы созданы и связаны. Code/test verification не запускалась, потому что изменения были только в docs.
+
+### Next
+
+Начать Sprint 1 cleanup: убрать `anxiousMult` noop.
+
+### Why Next
+
+Это первый маленький технический шаг, который очищает `PersonalityEngine` перед data-driven migration и не меняет игровую механику.
+
+---
+
+## 7. Required Closeout Format
+
+Каждая завершенная задача должна обновлять `Last Completed Step` в этом формате:
+
+```md
+### What
+Что сделали.
+
+### Why
+Почему это нужно было сделать.
+
+### Impact
+Как это приблизило конечную цель.
+
+### Verification
+Что проверили и какой результат.
+
+### Next
+Следующий шаг.
+
+### Why Next
+Почему следующий шаг именно такой.
+```
+
+Если задача включала архитектурное решение, добавить запись в `docs/personality_engine_decisions.md`.
+
+---
+
+## 8. Mandatory Next Step Format
+
+Каждый финальный ответ и каждое промежуточное сообщение, где называется следующий шаг, обязано содержать:
+
+```md
+### Next Step
+Что делать следующим.
+
+### Why Next
+Почему именно этот шаг следующий, а не другой.
+
+### Expected Impact
+Что этот шаг даст конечной цели движка.
+
+### Risk If Skipped
+Что будет плохо, если этот шаг пропустить.
+
+### Verification
+Как понять, что следующий шаг выполнен правильно.
+```
+
+Ответ считается неполным, если после слов “следующий шаг” нет `Why Next`, `Expected Impact`, `Risk If Skipped` и `Verification`.
+
+---
+
+## 9. Roadmap Status
 
 ### Completed
 
@@ -171,6 +294,7 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 - Documentation added:
   - `docs/personality_engine_v5_gap_analysis.md`;
   - `docs/personality_engine_coding_rules.md`;
+  - `docs/personality_engine_decisions.md`;
   - this progress log.
 
 ### Current Step
@@ -205,7 +329,7 @@ Why first:
 
 ---
 
-## 6. Verification Log
+## 10. Verification Log
 
 Latest known verification:
 
@@ -231,7 +355,7 @@ Status:
 
 ---
 
-## 7. Open Risks
+## 11. Open Risks
 
 1. `PersonalityEngine.ts` still has hardcoded personality IDs.
 2. `mockApi.ts` still calculates full gameplay/economy outcome.
@@ -243,15 +367,16 @@ Status:
 
 ---
 
-## 8. How To Update This File
+## 12. How To Update This File
 
 At the end of each personality-engine task:
 
-1. Add completed work to `Completed`.
-2. Move `Current Step` if the sprint changes.
-3. Update `Next Step`.
-4. Add or remove `Open Risks`.
-5. Update `Verification Log`.
+1. Update `Last Completed Step`.
+2. Add completed work to `Completed` if it changed roadmap status.
+3. Move `Current Step` if the sprint changes.
+4. Update `Next Step`.
+5. Add or remove `Open Risks`.
+6. Update `Verification Log`.
+7. Add a decision to `docs/personality_engine_decisions.md` if the task made an architectural choice.
 
 Keep this file factual. Do not use it for speculative ideas; put those in `docs/personality_engine_v5_gap_analysis.md` or `docs/personality_engine_next_steps.md`.
-

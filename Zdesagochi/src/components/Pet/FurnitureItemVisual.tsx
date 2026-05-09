@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { getFurniture } from '../../data/roomFurniture';
 import type { PlacedFurnitureItem } from '../../store/petStore';
 import type React from 'react';
+import { useImageUrl } from '../../utils/imageStore';
 
 interface Props {
   placed: PlacedFurnitureItem;
@@ -26,6 +27,9 @@ export function FurnitureItemVisual({
   onPointerMove,
   onPointerUp,
 }: Props) {
+  // Must be called before any early return (Rules of Hooks)
+  const paintingImage = useImageUrl(placed.imageUrl);
+
   const def = getFurniture(placed.itemId);
   if (!def) return null;
 
@@ -122,7 +126,7 @@ export function FurnitureItemVisual({
       )}
 
       {/* Painting with custom photo */}
-      {placed.itemId === 'painting' && placed.imageUrl ? (
+      {placed.itemId === 'painting' && paintingImage ? (
         <div style={{
           display: 'inline-block', position: 'relative', zIndex: 1,
           width: '2.2em', height: '1.8em',
@@ -134,7 +138,7 @@ export function FurnitureItemVisual({
           filter: emojiFilter,
         }}>
           <img
-            src={placed.imageUrl}
+            src={paintingImage}
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
           />
         </div>

@@ -1,10 +1,11 @@
 # Personality Engine — актуальный план работ
 
 > Дата: 2026-05-09  
-> Основано на: `docs/personality_engine_progress.md`, `docs/personality_engine_audit.md`, `docs/personality_engine_v5_gap_analysis.md`, `docs/personality_engine_coding_rules.md`, текущем коде `src/personality/`, `src/api/mockApi.ts`, тестах `tests/personalityEvolution.test.ts`  
+> Основано на: `docs/personality_engine_progress.md`, `docs/personality_engine_decisions.md`, `docs/personality_engine_audit.md`, `docs/personality_engine_v5_gap_analysis.md`, `docs/personality_engine_coding_rules.md`, текущем коде `src/personality/`, `src/api/mockApi.ts`, тестах `tests/personalityEvolution.test.ts`  
 > Назначение: рабочий backlog по движку характера с учетом уже закрытого прогресса.
 
 > Перед выполнением любой задачи сначала читать `docs/personality_engine_progress.md`.
+> Архитектурные решения фиксировать в `docs/personality_engine_decisions.md`.
 > Каноничный gap-analysis относительно `PERSONALITY_EVOLUTION_SYSTEM.md`: `docs/personality_engine_v5_gap_analysis.md`.
 > Инженерные правила движения по roadmap: `docs/personality_engine_coding_rules.md`.
 

@@ -2,7 +2,7 @@
 
 > Дата: 2026-05-09  
 > Назначение: правила для кодера, чтобы не сбиться с целевой архитектуры движка характера.  
-> Использовать вместе с `docs/personality_engine_progress.md`, `PERSONALITY_EVOLUTION_SYSTEM.md`, `docs/personality_engine_v5_gap_analysis.md`, `docs/personality_engine_next_steps.md`.
+> Использовать вместе с `docs/personality_engine_progress.md`, `docs/personality_engine_decisions.md`, `PERSONALITY_EVOLUTION_SYSTEM.md`, `docs/personality_engine_v5_gap_analysis.md`, `docs/personality_engine_next_steps.md`.
 
 > Обязательное правило: перед любой задачей по движку характера сначала читать `docs/personality_engine_progress.md`.
 
@@ -226,7 +226,8 @@ applyPersonalityCommand(pet, command, options)
 1. Прочитать `docs/personality_engine_progress.md`.
 2. Прочитать этот файл.
 3. Прочитать `docs/personality_engine_next_steps.md`.
-4. Назвать пользователю:
+4. Если задача архитектурная, прочитать `docs/personality_engine_decisions.md`.
+5. Назвать пользователю:
    - текущий шаг;
    - почему он следующий;
    - какие проверки будут выполнены;
@@ -376,12 +377,55 @@ UI делать после того, как domain model стабилизиро�
 - не ломает replay assumptions;
 - обновляет docs, если меняет контракт или обещание;
 - обновляет `docs/personality_engine_progress.md`;
+- обновляет `docs/personality_engine_decisions.md`, если принято архитектурное решение;
 - `npm test` проходит;
 - `npm run build` проходит.
 
 ---
 
-## 7. Stop Conditions
+## 7. Mandatory Final Response Checklist
+
+Финальный ответ по personality engine задаче не считается корректным, если в нем нет:
+
+1. `What changed` — что сделано.
+2. `Why` — почему это нужно было сделать.
+3. `Impact` — чем это помогло конечной цели.
+4. `Vector` — подтверждение, что идем по правильному вектору, или описание отклонения.
+5. `Verification` — какие проверки выполнены.
+6. `Next Step` — что делать дальше.
+7. `Why Next` — почему следующий шаг именно такой.
+8. `Expected Impact` — что следующий шаг даст.
+9. `Risk If Skipped` — что будет плохо, если следующий шаг пропустить.
+10. `Verification For Next` — как проверить следующий шаг.
+
+Запрещено писать только:
+
+```text
+Следующий шаг: ...
+```
+
+Правильный формат:
+
+```md
+### Next Step
+...
+
+### Why Next
+...
+
+### Expected Impact
+...
+
+### Risk If Skipped
+...
+
+### Verification For Next
+...
+```
+
+---
+
+## 8. Stop Conditions
 
 Остановиться и не продолжать “быстро чинить”, если:
 
@@ -396,7 +440,7 @@ UI делать после того, как domain model стабилизиро�
 
 ---
 
-## 8. Definition of Done для всего движка
+## 9. Definition of Done для всего движка
 
 Движок готов, когда:
 

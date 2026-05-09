@@ -3,6 +3,7 @@ import type { RefObject, ReactNode, MouseEventHandler, CSSProperties } from 'rea
 import { usePetStore, type RoomCustomization, type FloorStyle } from '../../store/petStore';
 import { getBackground } from '../../data/backgrounds';
 import { SceneEffects } from './SceneEffects';
+import { LightingLayer } from './LightingLayer';
 
 const DEPTH = 400;
 
@@ -163,8 +164,6 @@ export function RoomScene({
   const sideWallStyle = buildSideWallStyle(c);
   const ceilingStyle = buildCeilingStyle(c);
 
-  const lightX = c.lightSide === 'left' ? '18%' : c.lightSide === 'right' ? '82%' : '50%';
-  const lightAlpha = Math.round(c.lightIntensity * 60).toString(16).padStart(2, '0');
 
   return (
     // overflow:hidden must be on a SEPARATE element from perspective — Safari flattens
@@ -273,14 +272,8 @@ export function RoomScene({
         <SceneEffects effects={bg.effects} />
       </div>
 
-      {/* Ambient light */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: `radial-gradient(ellipse 72% 58% at ${lightX} 42%, ${accent}${lightAlpha} 0%, transparent 78%)`,
-          zIndex: 2,
-        }}
-      />
+      {/* Light sources — mix-blend-mode: screen layer */}
+      <LightingLayer />
 
       {/* Ceiling/top darkening */}
       <div

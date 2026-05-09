@@ -19,6 +19,16 @@ export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 
 
 export type FloorStyle = 'flat' | 'grid' | 'wood' | 'tile' | 'marble' | 'metal';
 
+export interface RoomLight {
+  id: string;
+  name: string;
+  x: number;         // 0–100 horizontal %
+  y: number;         // 0–100 vertical %
+  color: string;     // hex
+  intensity: number; // 0–1 (alpha of glow)
+  size: number;      // 20–200 (% of scene width for light diameter)
+  isOn: boolean;
+}
 
 export interface RoomCustomization {
   // Back wall
@@ -40,12 +50,15 @@ export interface RoomCustomization {
   floorColor: string;
   floorStyle: FloorStyle;
   floorImage: string | null;
-  // Lighting
-  lightIntensity: number;   // 0–1
-  lightSide: 'left' | 'center' | 'right';
+  // Light sources
+  roomLights: RoomLight[];
   // Effects
   accentColor: string;
 }
+
+export const DEFAULT_ROOM_LIGHTS: RoomLight[] = [
+  { id: 'ceiling_default', name: 'Потолочный свет', x: 50, y: 22, color: '#C084FC', intensity: 0.45, size: 90, isOn: true },
+];
 
 export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
   wallColor: '#0D0020',
@@ -63,8 +76,7 @@ export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
   floorColor: '#A855F7',
   floorStyle: 'grid',
   floorImage: null,
-  lightIntensity: 0.5,
-  lightSide: 'center',
+  roomLights: DEFAULT_ROOM_LIGHTS,
   accentColor: '#A855F7',
 };
 
@@ -193,6 +205,9 @@ interface PetStore {
   setOverlayOverride(s: string | null): void;
   setRoomCustomization(partial: Partial<RoomCustomization>): void;
   resetRoomCustomization(): void;
+  addRoomLight(light: Omit<RoomLight, 'id'>): void;
+  updateRoomLight(id: string, changes: Partial<RoomLight>): void;
+  removeRoomLight(id: string): void;
 
   loadPet(): Promise<void>;
   feedPet(foodId: string): Promise<void>;
@@ -245,11 +260,27 @@ let notifId = 0;
 
 // ── Room localStorage helpers ─────────────────────────────────────────────────
 
+// Raw base64 data URLs must never reach localStorage — they blow the 5 MB quota.
+// Images go to IndexedDB (imageStore.ts) and only the short "idb:key" ref is stored.
+// Any legacy base64 that somehow survived is stripped here to unblock the user.
+const isBase64 = (v: unknown): v is string =>
+  typeof v === 'string' && v.startsWith('data:');
+
+function stripBase64FromCustomization(c: RoomCustomization): RoomCustomization {
+  return {
+    ...c,
+    wallImage:     isBase64(c.wallImage)     ? null : c.wallImage,
+    sideWallImage: isBase64(c.sideWallImage) ? null : c.sideWallImage,
+    ceilingImage:  isBase64(c.ceilingImage)  ? null : c.ceilingImage,
+    floorImage:    isBase64(c.floorImage)    ? null : c.floorImage,
+  };
+}
+
 function loadRoomCustomization(): RoomCustomization {
   try {
     const raw = localStorage.getItem('roomCustomization');
     if (!raw) return DEFAULT_ROOM_CUSTOMIZATION;
-    return { ...DEFAULT_ROOM_CUSTOMIZATION, ...JSON.parse(raw) };
+    return stripBase64FromCustomization({ ...DEFAULT_ROOM_CUSTOMIZATION, ...JSON.parse(raw) });
   } catch { return DEFAULT_ROOM_CUSTOMIZATION; }
 }
 
@@ -263,6 +294,7 @@ function loadPlacedFurniture(): PlacedFurnitureItem[] {
     return parsed.map((p: any): PlacedFurnitureItem => ({
       rotation: 0, tiltX: 0, tiltY: 0, hue: 0, isOn: true,
       ...p,
+      imageUrl: isBase64(p.imageUrl) ? undefined : p.imageUrl,
     }));
   } catch { return []; }
 }
@@ -278,8 +310,12 @@ function loadOwnedFurnitureIds(): string[] {
 }
 
 function persistRoom(customization: RoomCustomization, placed: PlacedFurnitureItem[]) {
-  localStorage.setItem('roomCustomization', JSON.stringify(customization));
-  localStorage.setItem('placedFurniture', JSON.stringify(placed));
+  const safeCustomization = stripBase64FromCustomization(customization);
+  const safePlaced = placed.map(p =>
+    isBase64(p.imageUrl) ? { ...p, imageUrl: undefined } : p
+  );
+  localStorage.setItem('roomCustomization', JSON.stringify(safeCustomization));
+  localStorage.setItem('placedFurniture', JSON.stringify(safePlaced));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -929,7 +965,7 @@ export const usePetStore = create<PetStore>((set, get) => {
     setOverlayOverride(s) { set({ overlayOverride: s }); },
     setRoomCustomization(partial) {
       set(s => {
-        const next = { ...s.roomCustomization, ...partial };
+        const next = stripBase64FromCustomization({ ...s.roomCustomization, ...partial });
         localStorage.setItem('roomCustomization', JSON.stringify(next));
         return { roomCustomization: next };
       });
@@ -937,6 +973,18 @@ export const usePetStore = create<PetStore>((set, get) => {
     resetRoomCustomization() {
       localStorage.setItem('roomCustomization', JSON.stringify(DEFAULT_ROOM_CUSTOMIZATION));
       set({ roomCustomization: DEFAULT_ROOM_CUSTOMIZATION });
+    },
+    addRoomLight(light) {
+      const newLight: RoomLight = { ...light, id: `light_${Date.now()}` };
+      get().setRoomCustomization({ roomLights: [...get().roomCustomization.roomLights, newLight] });
+    },
+    updateRoomLight(id, changes) {
+      const lights = get().roomCustomization.roomLights.map(l => l.id === id ? { ...l, ...changes } : l);
+      get().setRoomCustomization({ roomLights: lights });
+    },
+    removeRoomLight(id) {
+      const lights = get().roomCustomization.roomLights.filter(l => l.id !== id);
+      get().setRoomCustomization({ roomLights: lights });
     },
 
     // ── Room Furniture ─────────────────────────────────────────────────────

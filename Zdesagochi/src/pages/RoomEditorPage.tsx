@@ -1,13 +1,14 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePetStore, type RoomCustomization, type FloorStyle, type RoomPreset, type PlacedFurnitureItem } from '../store/petStore';
+import { usePetStore, type RoomCustomization, type FloorStyle, type RoomPreset, type PlacedFurnitureItem, type RoomLight } from '../store/petStore';
+import { saveImage, deleteImage, useImageUrl } from '../utils/imageStore';
 import { FurnitureItemVisual } from '../components/Pet/FurnitureItemVisual';
 import { getFurniture, getFurnitureByCategory } from '../data/roomFurniture';
 import { BACKGROUNDS, getBackground } from '../data/backgrounds';
 import { RoomScene } from '../components/Pet/RoomScene';
 
 type PanelTab = 'furniture' | 'room';
-type RoomTab = 'wall' | 'floor' | 'accent' | 'theme' | 'presets';
+type RoomTab = 'wall' | 'floor' | 'accent' | 'lighting' | 'theme' | 'presets';
 type FurnitureCategory = 'plant' | 'lamp' | 'decor' | 'furniture' | 'gadget' | 'special';
 
 const FURNITURE_CATEGORIES: Array<{ id: FurnitureCategory; emoji: string; label: string }> = [
@@ -132,14 +133,25 @@ function ImageUpload({
   value: string | null;
   onChange: (v: string | null) => void;
 }) {
+  // Resolves "idb:key" → data URL for display; passes through null or legacy URLs
+  const resolvedUrl = useImageUrl(value);
+
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const input = e.target; // capture before async
     const reader = new FileReader();
-    reader.onload = ev => onChange(ev.target?.result as string);
+    reader.onload = async ev => {
+      const ref = await saveImage(ev.target?.result as string); // save to IDB
+      onChange(ref);           // store short "idb:key" in state / localStorage
+      input.value = '';        // reset so same file can be re-selected
+    };
     reader.readAsDataURL(file);
-    // reset input so same file can be re-selected
-    e.target.value = '';
+  };
+
+  const handleRemove = () => {
+    deleteImage(value);  // async cleanup, fire-and-forget
+    onChange(null);
   };
 
   return (
@@ -147,13 +159,13 @@ function ImageUpload({
       <SectionLabel>Своё изображение</SectionLabel>
       {value ? (
         <div className="relative rounded-xl overflow-hidden" style={{ height: 68 }}>
-          <img src={value} alt="" className="w-full h-full object-cover" />
+          {resolvedUrl && <img src={resolvedUrl} alt="" className="w-full h-full object-cover" />}
           <div
             className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
             style={{ background: 'rgba(0,0,0,0.55)' }}
           >
             <button
-              onClick={() => onChange(null)}
+              onClick={handleRemove}
               className="px-3 py-1 rounded-lg text-xs font-bold text-white"
               style={{ background: 'rgba(239,68,68,0.8)' }}
             >
@@ -382,42 +394,161 @@ function AccentPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCu
           <CustomColorPicker value={c.accentColor} onChange={v => set({ accentColor: v })} />
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-        <SectionLabel>Освещение</SectionLabel>
+// ── Lighting panel ────────────────────────────────────────────────────────────
 
-        {/* Light source side */}
-        <div className="flex gap-1.5 mb-3">
-          {([
-            { id: 'left',   label: '◁ Лево'   },
-            { id: 'center', label: '◈ Центр'  },
-            { id: 'right',  label: 'Право ▷'  },
-          ] as const).map(opt => (
-            <StyleButton
-              key={opt.id}
-              active={c.lightSide === opt.id}
-              onClick={() => set({ lightSide: opt.id })}
+const LIGHT_PRESETS: Array<Omit<RoomLight, 'id' | 'isOn'>> = [
+  { name: 'Потолочный',     x: 50, y: 22, color: '#FFFFFF', intensity: 0.45, size: 90  },
+  { name: 'Бра левое',      x: 12, y: 38, color: '#FFE0A0', intensity: 0.38, size: 52  },
+  { name: 'Бра правое',     x: 88, y: 38, color: '#FFE0A0', intensity: 0.38, size: 52  },
+  { name: 'Подсветка пола', x: 50, y: 90, color: '#8060FF', intensity: 0.30, size: 75  },
+  { name: 'Солнце',         x: 88, y: 8,  color: '#FFF5C0', intensity: 0.65, size: 140 },
+  { name: 'Луна',           x: 78, y: 12, color: '#C0D8FF', intensity: 0.28, size: 85  },
+  { name: 'Неон',           x: 50, y: 50, color: '#FF00FF', intensity: 0.32, size: 100 },
+];
+
+function LightCard({ light, onUpdate, onRemove }: {
+  light: RoomLight;
+  onUpdate: (changes: Partial<RoomLight>) => void;
+  onRemove: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isOn = light.isOn;
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${isOn ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.07)'}` }}
+    >
+      {/* Header row */}
+      <div className="flex items-center gap-2 px-3 py-2">
+        {/* On/off dot */}
+        <button
+          onClick={() => onUpdate({ isOn: !isOn })}
+          style={{
+            width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+            background: isOn ? light.color : 'rgba(255,255,255,0.18)',
+            boxShadow: isOn ? `0 0 6px ${light.color}` : 'none',
+            border: 'none', cursor: 'pointer',
+          }}
+        />
+        <span
+          className="flex-1 text-xs font-semibold truncate cursor-pointer"
+          style={{ color: isOn ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.35)' }}
+          onClick={() => setExpanded(e => !e)}
+        >
+          {light.name}
+        </span>
+        {/* Colour swatch */}
+        <label style={{ width: 16, height: 16, borderRadius: 4, background: light.color, flexShrink: 0, cursor: 'pointer', position: 'relative' }}>
+          <input type="color" value={light.color} onChange={e => onUpdate({ color: e.target.value })}
+            style={{ opacity: 0, position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+        </label>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="text-[11px] w-5 h-5 flex items-center justify-center rounded"
+          style={{ color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.06)' }}
+        >{expanded ? '▲' : '▼'}</button>
+        <button
+          onClick={onRemove}
+          className="text-[10px] w-5 h-5 flex items-center justify-center rounded"
+          style={{ color: '#FCA5A5', background: 'rgba(239,68,68,0.12)' }}
+        >✕</button>
+      </div>
+
+      {/* Expanded controls */}
+      {expanded && (
+        <div className="px-3 pb-3 space-y-2" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+          <div className="flex items-center gap-2 pt-2">
+            <span className="text-[10px] w-14 shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }}>Яркость</span>
+            <input type="range" min={0.05} max={1} step={0.05} value={light.intensity}
+              onChange={e => onUpdate({ intensity: parseFloat(e.target.value) })}
+              className="flex-1 accent-purple-500" />
+            <span className="text-[10px] w-7 text-right" style={{ color: 'rgba(255,255,255,0.4)' }}>{Math.round(light.intensity * 100)}%</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] w-14 shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }}>Размер</span>
+            <input type="range" min={20} max={200} step={5} value={light.size}
+              onChange={e => onUpdate({ size: parseFloat(e.target.value) })}
+              className="flex-1 accent-purple-500" />
+            <span className="text-[10px] w-7 text-right" style={{ color: 'rgba(255,255,255,0.4)' }}>{light.size}%</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] w-14 shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }}>← Право</span>
+            <input type="range" min={0} max={100} step={1} value={light.x}
+              onChange={e => onUpdate({ x: parseFloat(e.target.value) })}
+              className="flex-1 accent-purple-500" />
+            <span className="text-[10px] w-7 text-right" style={{ color: 'rgba(255,255,255,0.4)' }}>{light.x}%</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] w-14 shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }}>↑ Низ</span>
+            <input type="range" min={0} max={100} step={1} value={light.y}
+              onChange={e => onUpdate({ y: parseFloat(e.target.value) })}
+              className="flex-1 accent-purple-500" />
+            <span className="text-[10px] w-7 text-right" style={{ color: 'rgba(255,255,255,0.4)' }}>{light.y}%</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LightingPanel() {
+  const { roomCustomization: c, addRoomLight, updateRoomLight, removeRoomLight } = usePetStore();
+  const [showPresets, setShowPresets] = useState(false);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+          Источники света смешиваются через screen — как настоящий свет
+        </p>
+        <button
+          onClick={() => setShowPresets(s => !s)}
+          className="px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0"
+          style={{ background: 'rgba(124,58,237,0.25)', color: '#C4B5FD', border: '1px solid rgba(124,58,237,0.4)' }}
+        >+ Добавить</button>
+      </div>
+
+      {/* Preset picker */}
+      {showPresets && (
+        <div className="grid grid-cols-2 gap-1.5 p-2 rounded-xl" style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          {LIGHT_PRESETS.map(preset => (
+            <button
+              key={preset.name}
+              onClick={() => { addRoomLight({ ...preset, isOn: true }); setShowPresets(false); }}
+              className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
             >
-              {opt.label}
-            </StyleButton>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: preset.color, flexShrink: 0, boxShadow: `0 0 5px ${preset.color}` }} />
+              <span className="text-[10px] font-semibold text-white truncate">{preset.name}</span>
+            </button>
           ))}
         </div>
+      )}
 
-        {/* Intensity slider */}
-        <div className="flex items-center gap-2">
-          <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.25)' }}>🌑</span>
-          <input
-            type="range" min={0} max={1} step={0.05}
-            value={c.lightIntensity}
-            onChange={e => set({ lightIntensity: parseFloat(e.target.value) })}
-            className="flex-1 accent-purple-500"
-          />
-          <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.55)' }}>☀️</span>
+      {/* Light list */}
+      {c.roomLights.length === 0 ? (
+        <p className="text-center text-xs py-4" style={{ color: 'rgba(255,255,255,0.25)' }}>Нет источников света</p>
+      ) : (
+        <div className="space-y-2">
+          {c.roomLights.map(light => (
+            <LightCard
+              key={light.id}
+              light={light}
+              onUpdate={changes => updateRoomLight(light.id, changes)}
+              onRemove={() => removeRoomLight(light.id)}
+            />
+          ))}
         </div>
-        <p className="text-[10px] mt-1 text-center" style={{ color: 'rgba(255,255,255,0.25)' }}>
-          {c.lightIntensity === 0 ? 'Выключено' : `${Math.round(c.lightIntensity * 100)}%`}
-        </p>
-      </div>
+      )}
+
+      <p className="text-[9px] pt-1" style={{ color: 'rgba(255,255,255,0.2)' }}>
+        💡 Мебельные лампы (свеча, фонарик…) автоматически добавляют свет когда включены
+      </p>
     </div>
   );
 }
@@ -830,6 +961,7 @@ export function RoomEditorPage() {
   const [clearConfirm, setClearConfirm] = useState(false);
 
   const selectedItem = placedFurniture.find(p => p.uid === selectedUid) ?? null;
+  const selectedPaintingUrl = useImageUrl(selectedItem?.imageUrl);
 
   const countInRoom = (itemId: string) =>
     placedFurniture.filter(p => p.itemId === itemId).length;
@@ -850,11 +982,12 @@ export function RoomEditorPage() {
   };
 
   const ROOM_TABS: Array<{ id: RoomTab; label: string }> = [
-    { id: 'wall',    label: '🧱 Стена' },
-    { id: 'floor',   label: '🏠 Пол' },
-    { id: 'accent',  label: '✨ Акцент' },
-    { id: 'theme',   label: '🌌 Тема' },
-    { id: 'presets', label: '💾 Пресеты' },
+    { id: 'wall',     label: '🧱 Стена'  },
+    { id: 'floor',    label: '🏠 Пол'    },
+    { id: 'accent',   label: '✨ Акцент' },
+    { id: 'lighting', label: '💡 Свет'   },
+    { id: 'theme',    label: '🌌 Тема'   },
+    { id: 'presets',  label: '💾 Пресеты'},
   ];
 
   const itemsInCategory = getFurnitureByCategory(furnitureCategory);
@@ -975,7 +1108,7 @@ export function RoomEditorPage() {
         {panelTab === 'room' && (
           <>
             {/* Room sub-tabs */}
-            <div className="grid grid-cols-5 gap-1 px-3 pb-2 shrink-0">
+            <div className="grid grid-cols-3 gap-1 px-3 pb-2 shrink-0">
               {ROOM_TABS.map(t => (
                 <button
                   key={t.id}
@@ -993,14 +1126,15 @@ export function RoomEditorPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 pb-3">
-              {roomTab === 'wall'    && <WallPanel   c={roomCustomization} set={setRoomCustomization} />}
-              {roomTab === 'floor'   && <FloorPanel  c={roomCustomization} set={setRoomCustomization} />}
-              {roomTab === 'accent'  && <AccentPanel c={roomCustomization} set={setRoomCustomization} />}
-              {roomTab === 'theme'   && <ThemePanel />}
-              {roomTab === 'presets' && <PresetsPanel />}
+              {roomTab === 'wall'     && <WallPanel     c={roomCustomization} set={setRoomCustomization} />}
+              {roomTab === 'floor'    && <FloorPanel    c={roomCustomization} set={setRoomCustomization} />}
+              {roomTab === 'accent'   && <AccentPanel   c={roomCustomization} set={setRoomCustomization} />}
+              {roomTab === 'lighting' && <LightingPanel />}
+              {roomTab === 'theme'    && <ThemePanel />}
+              {roomTab === 'presets'  && <PresetsPanel />}
 
               {/* Reset button */}
-              {roomTab !== 'theme' && roomTab !== 'presets' && (
+              {roomTab !== 'theme' && roomTab !== 'presets' && roomTab !== 'lighting' && (
                 <div className="mt-4 pt-3 border-t border-white/10">
                   <button
                     onClick={resetRoomCustomization}
@@ -1110,12 +1244,12 @@ export function RoomEditorPage() {
                     {selectedItem.imageUrl ? (
                       <>
                         <img
-                          src={selectedItem.imageUrl}
+                          src={selectedPaintingUrl ?? ''}
                           style={{ width: 40, height: 32, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(201,162,39,0.6)', flexShrink: 0 }}
                         />
                         <span className="text-xs flex-1 truncate" style={{ color: 'rgba(255,255,255,0.5)' }}>Своя фотография</span>
                         <button
-                          onClick={() => updateRoomFurniture(selectedItem.uid, { imageUrl: undefined })}
+                          onClick={() => { deleteImage(selectedItem.imageUrl); updateRoomFurniture(selectedItem.uid, { imageUrl: undefined }); }}
                           className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all shrink-0"
                           style={{ background: 'rgba(239,68,68,0.2)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.3)' }}
                         >✕ Убрать</button>
@@ -1133,9 +1267,12 @@ export function RoomEditorPage() {
                             const file = e.target.files?.[0];
                             if (!file) return;
                             const reader = new FileReader();
-                            reader.onload = ev => updateRoomFurniture(selectedItem.uid, { imageUrl: ev.target?.result as string });
+                            reader.onload = async ev => {
+                              const ref = await saveImage(ev.target?.result as string);
+                              updateRoomFurniture(selectedItem.uid, { imageUrl: ref });
+                              e.target.value = '';
+                            };
                             reader.readAsDataURL(file);
-                            e.target.value = '';
                           }}
                         />
                         <span style={{ fontSize: 16 }}>🖼️</span>
