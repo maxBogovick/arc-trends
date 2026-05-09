@@ -1,7 +1,7 @@
+import { useState, useEffect } from 'react';
 import { usePetStore } from '../../store/petStore';
 import { getFurniture } from '../../data/roomFurniture';
 
-// Colour and size each furniture lamp casts onto the room
 const LAMP_COLORS: Record<string, string> = {
   candle:     '#FF8020',
   torch:      '#FFE890',
@@ -26,10 +26,50 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+interface SunLight {
+  id: string;
+  x: number;
+  y: number;
+  color: string;
+  intensity: number;
+  size: number;
+}
+
+function getSunLight(now: Date): SunLight | null {
+  const h = now.getHours() + now.getMinutes() / 60;
+  const sunriseH = 6;
+  const sunsetH = 20;
+
+  if (h < sunriseH || h > sunsetH) return null;
+
+  const progress = (h - sunriseH) / (sunsetH - sunriseH); // 0..1 across the day
+
+  // Sun moves left→right across the room, arcs high at noon
+  const x = 5 + progress * 90;
+  const y = 88 - 68 * Math.sin(Math.PI * progress); // 88% at edges, 20% at noon
+
+  // Color: orange at dawn/dusk, warm white at noon
+  let color: string;
+  if (h < 7.5 || h > 18.5)      color = '#FF6820'; // orange/red
+  else if (h < 9 || h > 17)     color = '#FFB040'; // amber
+  else if (h < 10.5 || h > 15)  color = '#FFD870'; // warm yellow
+  else                           color = '#FFF5D0'; // warm white
+
+  // Intensity: low at dawn/dusk, bright at noon
+  const intensity = 0.18 + 0.52 * Math.sin(Math.PI * progress);
+
+  return { id: 'sun', x, y, color, intensity, size: 160 };
+}
+
 export function LightingLayer() {
   const { roomCustomization: c, placedFurniture } = usePetStore();
 
-  // Merge room lights + active furniture lamps into one source list
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const sources = [
     ...c.roomLights.filter(l => l.isOn).map(l => ({
       id: l.id,
@@ -52,6 +92,7 @@ export function LightingLayer() {
         intensity: 0.38,
         size: (LAMP_SIZES[p.itemId] ?? 42) * p.scale,
       })),
+    ...(c.hasSun ? [getSunLight(now)].filter(Boolean) as SunLight[] : []),
   ];
 
   if (sources.length === 0) return null;
@@ -61,7 +102,7 @@ export function LightingLayer() {
       style={{
         position: 'absolute', inset: 0,
         mixBlendMode: 'screen',
-        zIndex: 3,
+        zIndex: 4,
         pointerEvents: 'none',
         overflow: 'hidden',
       }}

@@ -52,6 +52,9 @@ export interface RoomCustomization {
   floorImage: string | null;
   // Light sources
   roomLights: RoomLight[];
+  // Ambient lighting
+  ambientDarkness: number;  // 0 = fully lit, 1 = pitch black
+  hasSun: boolean;           // sun moves with real time of day
   // Effects
   accentColor: string;
 }
@@ -77,6 +80,8 @@ export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
   floorStyle: 'grid',
   floorImage: null,
   roomLights: DEFAULT_ROOM_LIGHTS,
+  ambientDarkness: 0,
+  hasSun: false,
   accentColor: '#A855F7',
 };
 

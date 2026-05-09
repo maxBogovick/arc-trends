@@ -172,8 +172,8 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 | Current Step | Sprint 1 — Cleanup before refactor |
 | Why This Step | Нельзя безопасно выносить правила в data registry, пока в engine есть noop-код, устаревшие комментарии и неподтвержденные specialRules |
 | Current Vector | Правильный: уменьшаем хаос перед архитектурной миграцией |
-| Next Step | Убрать `anxiousMult` noop |
-| Why Next | Это самый низкорисковый cleanup, который сразу убирает ложный сигнал в `applyDecay()` |
+| Next Step | Решить `perfect_balance` mismatch |
+| Why Next | После удаления noop-кода следующий ложный сигнал — комментарий о passive bonus, которого фактически нет |
 | Required Verification | `npm test`, `npm run build`, targeted `rg` checks when relevant |
 
 ---
@@ -182,42 +182,38 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Усилен процесс контроля personality engine:
-
-- создан `docs/personality_engine_progress.md`;
-- создан `docs/personality_engine_coding_rules.md`;
-- создан `docs/personality_engine_v5_gap_analysis.md`;
-- создан `docs/personality_engine_decisions.md`;
-- `docs/personality_engine_next_steps.md` связан с progress/coding/gap documents.
+Удален melancholic XP noop из `src/personality/PersonalityEngine.ts`.
 
 ### Why
 
-Нужно было создать управляемый процесс, потому что один roadmap не отвечает на вопросы:
+В `applyActionModifiers()` был блок:
 
-- почему этот шаг был нужен;
-- чем он помог конечной цели;
-- что проверено;
-- почему следующий шаг именно такой.
+```ts
+if (personality.specialRules?.xpEveryOtherAction) {
+  result.xp = result.xp;
+}
+```
+
+Он не менял поведение, но создавал ложное впечатление, что `xpEveryOtherAction` обрабатывается в `PersonalityEngine`. Фактически это поведение пока живет в `mockApi` и должно быть перенесено позже в command/gameplay outcome.
 
 ### Impact
 
-Теперь каждая задача должна проходить через явный цикл:
-
-> read -> vector check -> plan -> implement -> verify -> update progress -> final report.
-
-Это снижает риск добавлять код без архитектурной пользы.
+В `PersonalityEngine` стало меньше мертвого кода и меньше ложных ownership-сигналов. Это помогает будущему P3: command result должен владеть gameplay outcome, включая melancholic XP rule.
 
 ### Verification
 
-Документационные файлы созданы и связаны. Code/test verification не запускалась, потому что изменения были только в docs.
+- `rg "result\\.xp = result\\.xp|xpEveryOtherAction" src/personality/PersonalityEngine.ts` — no matches.
+- `npm test` — passed.
+- `npm run build` — passed.
+- Vite chunk size warning remains non-blocking.
 
 ### Next
 
-Начать Sprint 1 cleanup: убрать `anxiousMult` noop.
+Решить `perfect_balance` mismatch.
 
 ### Why Next
 
-Это первый маленький технический шаг, который очищает `PersonalityEngine` перед data-driven migration и не меняет игровую механику.
+Это следующий cleanup пункт: сейчас `perfect_balance` имеет XP multiplier, но комментарии говорят про passive stat bonus, которого нет. Нужно выбрать фактическую семантику и привести код/документы к одному смыслу.
 
 ---
 
@@ -309,8 +305,8 @@ Goal:
 
 Concrete tasks:
 
-1. Remove `anxiousMult` noop.
-2. Remove melancholic XP noop or move semantics into command/gameplay outcome.
+1. Remove `anxiousMult` noop. Done.
+2. Remove melancholic XP noop or move semantics into command/gameplay outcome. Done: noop removed; real semantic move remains part of P3 command outcome.
 3. Resolve `perfect_balance` mismatch.
 4. Decide/handle `chaos_surge`.
 5. Add validator for unsupported `specialRules`.
@@ -319,13 +315,13 @@ Concrete tasks:
 
 Start with:
 
-> Remove `anxiousMult` noop and update/comment tests if needed.
+> Resolve `perfect_balance` mismatch.
 
 Why first:
 
-- it is low-risk;
-- it removes misleading logic;
-- it prepares `PersonalityEngine` for data-driven migration.
+- it is the next misleading code/comment mismatch;
+- it clarifies whether `perfect_balance` is XP-only or also a stat passive;
+- it prevents migrating a non-existent passive into the future data registry.
 
 ---
 
@@ -340,8 +336,18 @@ npm run build
 
 Status:
 
-- passed after CRIT-1 closure;
+- passed after removing melancholic XP noop;
 - Vite chunk size warning remains non-blocking.
+
+Latest cleanup check:
+
+```bash
+rg "result\\.xp = result\\.xp|xpEveryOtherAction" src/personality/PersonalityEngine.ts
+```
+
+Status:
+
+- no matches.
 
 Latest domain-internal check:
 

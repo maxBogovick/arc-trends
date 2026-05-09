@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePetStore, type RoomCustomization, type FloorStyle, type RoomPreset, type PlacedFurnitureItem, type RoomLight } from '../store/petStore';
 import { saveImage, deleteImage, useImageUrl } from '../utils/imageStore';
@@ -496,15 +496,100 @@ function LightCard({ light, onUpdate, onRemove }: {
   );
 }
 
+function SunStatus() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const h = now.getHours() + now.getMinutes() / 60;
+  const sunriseH = 6, sunsetH = 20;
+  const isUp = h >= sunriseH && h <= sunsetH;
+  const progress = isUp ? (h - sunriseH) / (sunsetH - sunriseH) : 0;
+  const phase =
+    !isUp        ? 'Ночь 🌙' :
+    h < 7.5      ? 'Рассвет 🌅' :
+    h < 10       ? 'Утро ☀️' :
+    h < 14       ? 'Полдень ☀️' :
+    h < 17       ? 'День 🌤' :
+    h < 18.5     ? 'Вечер 🌇' :
+                   'Закат 🌆';
+
+  return (
+    <div className="flex items-center gap-2 text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+      <span>{phase}</span>
+      {isUp && (
+        <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
+          <div style={{ width: `${progress * 100}%`, height: '100%', background: 'linear-gradient(to right, #FF8040, #FFEE80)', borderRadius: 999 }} />
+        </div>
+      )}
+      <span>{now.getHours().toString().padStart(2,'0')}:{now.getMinutes().toString().padStart(2,'0')}</span>
+    </div>
+  );
+}
+
 function LightingPanel() {
-  const { roomCustomization: c, addRoomLight, updateRoomLight, removeRoomLight } = usePetStore();
+  const { roomCustomization: c, setRoomCustomization, addRoomLight, updateRoomLight, removeRoomLight } = usePetStore();
   const [showPresets, setShowPresets] = useState(false);
 
   return (
     <div className="space-y-3">
+
+      {/* ── Ambient darkness ─────────────────────────────── */}
+      <div className="p-3 rounded-xl space-y-2" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <SectionLabel>Фоновая темнота</SectionLabel>
+        <div className="flex items-center gap-2">
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>☀️</span>
+          <input
+            type="range" min={0} max={1} step={0.01}
+            value={c.ambientDarkness}
+            onChange={e => setRoomCustomization({ ambientDarkness: parseFloat(e.target.value) })}
+            className="flex-1 accent-purple-500"
+          />
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>🌑</span>
+          <span className="text-[10px] w-7 text-right" style={{ color: 'rgba(255,255,255,0.4)' }}>{Math.round(c.ambientDarkness * 100)}%</span>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {([['День', 0], ['Сумерки', 0.45], ['Ночь', 0.82], ['Кромешная тьма', 0.96]] as [string, number][]).map(([label, val]) => (
+            <button
+              key={label}
+              onClick={() => setRoomCustomization({ ambientDarkness: val })}
+              className="px-2 py-0.5 rounded-full text-[9px] font-semibold transition-all"
+              style={{
+                background: Math.abs(c.ambientDarkness - val) < 0.05 ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.07)',
+                color: 'rgba(255,255,255,0.7)',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
+            >{label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Sun ──────────────────────────────────────────── */}
+      <div className="p-3 rounded-xl space-y-2" style={{ background: 'rgba(255,180,40,0.06)', border: '1px solid rgba(255,180,40,0.15)' }}>
+        <div className="flex items-center justify-between">
+          <SectionLabel>Солнечный свет</SectionLabel>
+          <button
+            onClick={() => setRoomCustomization({ hasSun: !c.hasSun })}
+            className="px-3 py-1 rounded-lg text-[10px] font-bold transition-all"
+            style={{
+              background: c.hasSun ? 'rgba(255,180,40,0.35)' : 'rgba(255,255,255,0.08)',
+              color: c.hasSun ? '#FFD060' : 'rgba(255,255,255,0.4)',
+              border: c.hasSun ? '1px solid rgba(255,180,40,0.5)' : '1px solid rgba(255,255,255,0.1)',
+            }}
+          >{c.hasSun ? '☀️ Включено' : '☀️ Выключено'}</button>
+        </div>
+        {c.hasSun && <SunStatus />}
+        <p className="text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+          Позиция и цвет меняются автоматически в зависимости от времени суток. Поднимите темноту для контраста.
+        </p>
+      </div>
+
+      {/* ── Manual light sources ──────────────────────────── */}
       <div className="flex items-center justify-between">
         <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
-          Источники света смешиваются через screen — как настоящий свет
+          Ручные источники света
         </p>
         <button
           onClick={() => setShowPresets(s => !s)}
@@ -513,7 +598,6 @@ function LightingPanel() {
         >+ Добавить</button>
       </div>
 
-      {/* Preset picker */}
       {showPresets && (
         <div className="grid grid-cols-2 gap-1.5 p-2 rounded-xl" style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)' }}>
           {LIGHT_PRESETS.map(preset => (
@@ -530,7 +614,6 @@ function LightingPanel() {
         </div>
       )}
 
-      {/* Light list */}
       {c.roomLights.length === 0 ? (
         <p className="text-center text-xs py-4" style={{ color: 'rgba(255,255,255,0.25)' }}>Нет источников света</p>
       ) : (

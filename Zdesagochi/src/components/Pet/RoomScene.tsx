@@ -272,17 +272,30 @@ export function RoomScene({
         <SceneEffects effects={bg.effects} />
       </div>
 
-      {/* Light sources — mix-blend-mode: screen layer */}
-      <LightingLayer />
+      {/* Ambient darkness — multiply layer that dims the whole room.
+          Light sources (screen, zIndex 4) then punch through it. */}
+      {c.ambientDarkness > 0 && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: `rgba(0, 5, 20, ${c.ambientDarkness})`,
+            mixBlendMode: 'multiply',
+            zIndex: 2,
+          }}
+        />
+      )}
 
       {/* Ceiling/top darkening */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
           background: 'linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, transparent 28%)',
-          zIndex: 2,
+          zIndex: 3,
         }}
       />
+
+      {/* Light sources — mix-blend-mode: screen layer */}
+      <LightingLayer />
 
       {/* Theme decorations */}
       {(bg.decorations ?? []).map((d, i) => (

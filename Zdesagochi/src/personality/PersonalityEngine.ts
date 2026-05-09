@@ -104,9 +104,6 @@ export function applyDecay(
     // Эмпат: при низком bond весь decay ×1.3
     const empathDecayMult = (personality.id === 'empath' && currentStats.bond < 30) ? 1.3 : 1.0;
 
-    // Нервный: пиковое состояние снимает штраф decay
-    const anxiousMult = (personality.id === 'anxious') ? 1.0 : 1.0; // базовый — уже в decayRates
-
     // Дикий: ночью energy не падает
     const feralNightMult = (
       personality.id === 'feral' &&
@@ -116,7 +113,7 @@ export function applyDecay(
     ) ? 0.0 : 1.0;
 
     const totalMult = clamp(
-      multiplyAll([persDecay, chaosMult, empathDecayMult, anxiousMult, feralNightMult]),
+      multiplyAll([persDecay, chaosMult, empathDecayMult, feralNightMult]),
       MODIFIER_CAPS.DECAY_MULT_MIN,
       MODIFIER_CAPS.DECAY_MULT_MAX,
     );
@@ -247,12 +244,6 @@ export function applyActionModifiers(
       // пиковый бонус будет применён в computeNaturalPassives — здесь только mult
     }
     result.xp = Math.round(xpBase * clamp(multiplyAll(xpMults), MODIFIER_CAPS.XP_MIN, MODIFIER_CAPS.XP_MAX));
-  }
-
-  // Меланхолик: XP только на чётных действиях (счётчик в store)
-  // Признак обрабатывается снаружи (mockApi), здесь только флаг
-  if (personality.specialRules?.xpEveryOtherAction) {
-    result.xp = result.xp; // mockApi пропускает каждое второе
   }
 
   // ── 7. Coin мультипликаторы ───────────────────────────────────────────────
