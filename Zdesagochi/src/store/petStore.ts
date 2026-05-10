@@ -30,12 +30,20 @@ export interface RoomLight {
   isOn: boolean;
 }
 
+export type BackdropType = 'wall' | 'window' | 'panorama';
+export type BackdropScene = 'garden' | 'ocean' | 'mountains' | 'space' | 'city' | 'sakura' | 'desert' | 'winter';
+export type WindowStyle = 'classic' | 'arch' | 'panoramic';
+
 export interface RoomCustomization {
   // Back wall
   wallColor: string;
   wallColor2: string;
   wallStyle: 'solid' | 'v_gradient' | 'r_gradient';
   wallImage: string | null;
+  // Backdrop (replaces or overlays back wall)
+  backdropType: BackdropType;
+  backdropScene: BackdropScene;
+  windowStyle: WindowStyle;
   // Side walls (left + right, always in sync)
   sideWallColor: string;
   sideWallColor2: string;
@@ -69,6 +77,9 @@ export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
   wallColor2: '#050010',
   wallStyle: 'v_gradient',
   wallImage: null,
+  backdropType: 'wall',
+  backdropScene: 'garden',
+  windowStyle: 'classic',
   sideWallColor: '#070014',
   sideWallColor2: '#030008',
   sideWallStyle: 'v_gradient',

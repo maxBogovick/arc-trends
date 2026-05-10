@@ -587,7 +587,7 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
       >
         <svg viewBox="0 0 200 200" width={size} height={size}
           data-pet-export="true"
-          style={{ filter: `drop-shadow(0 0 28px ${glowColor}99) drop-shadow(0 4px 14px ${glowColor}55)`, overflow: 'visible' }}>
+          style={{ filter: equippedSkinId === 'default' ? 'none' : `drop-shadow(0 0 28px ${glowColor}99) drop-shadow(0 4px 14px ${glowColor}55)`, overflow: 'visible' }}>
           <defs>
             {gradientDirection === 'radial' ? (
               <radialGradient id={gradId} cx="76" cy="60" r="130" gradientUnits="userSpaceOnUse">

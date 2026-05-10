@@ -5,6 +5,7 @@ import { usePetStore, type RoomCustomization, type FloorStyle } from '../../stor
 import { getBackground } from '../../data/backgrounds';
 import { SceneEffects } from './SceneEffects';
 import { LightingLayer } from './LightingLayer';
+import { BackdropScene } from './BackdropScene';
 
 // ── Darkness context ──────────────────────────────────────────────────────────
 // RoomScene computes effectiveDarkness once per minute and shares it via context
@@ -200,6 +201,9 @@ export function RoomScene({
   const backWallStyle = buildBackWallStyle(c);
   const sideWallStyle = buildSideWallStyle(c);
   const ceilingStyle = buildCeilingStyle(c);
+  const backdropType    = c.backdropType  ?? 'wall';
+  const backdropScene   = c.backdropScene ?? 'garden';
+  const windowStyle     = c.windowStyle   ?? 'classic';
 
 
   return (
@@ -235,9 +239,21 @@ export function RoomScene({
           style={{
             position: 'absolute', inset: 0,
             transform: `translateZ(-${DEPTH}px)`,
-            ...backWallStyle,
+            ...(backdropType === 'wall' ? backWallStyle : { background: 'transparent' }),
           }}
-        />
+        >
+          {/* Backdrop (window or panorama) rendered inside back wall plane */}
+          <BackdropScene
+            backdropType={backdropType}
+            backdropScene={backdropScene}
+            windowStyle={windowStyle}
+            hasSun={c.hasSun}
+            sunPreviewHour={c.sunPreviewHour}
+            width={700}
+            height={460}
+            backWallCssStyle={backWallStyle}
+          />
+        </div>
 
         {/* Left wall */}
         <div

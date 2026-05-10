@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { usePetStore, type RoomCustomization, type FloorStyle, type RoomPreset, type PlacedFurnitureItem, type RoomLight } from '../store/petStore';
+import { usePetStore, type RoomCustomization, type FloorStyle, type RoomPreset, type PlacedFurnitureItem, type RoomLight, type BackdropType, type BackdropScene, type WindowStyle } from '../store/petStore';
 import { saveImage, deleteImage, useImageUrl } from '../utils/imageStore';
 import { FurnitureItemVisual } from '../components/Pet/FurnitureItemVisual';
 import { getFurniture, getFurnitureByCategory } from '../data/roomFurniture';
@@ -262,12 +262,121 @@ function WallSubSection({
   );
 }
 
+// ── Backdrop (window / panorama) panel ───────────────────────────────────────
+
+const BACKDROP_SCENES: Array<{ id: BackdropScene; emoji: string; label: string }> = [
+  { id: 'garden',    emoji: '🌿', label: 'Сад' },
+  { id: 'ocean',     emoji: '🌊', label: 'Океан' },
+  { id: 'mountains', emoji: '🏔️', label: 'Горы' },
+  { id: 'space',     emoji: '🌌', label: 'Космос' },
+  { id: 'city',      emoji: '🌆', label: 'Город' },
+  { id: 'sakura',    emoji: '🌸', label: 'Сакура' },
+  { id: 'desert',    emoji: '🏜️', label: 'Пустыня' },
+  { id: 'winter',    emoji: '❄️', label: 'Зима' },
+];
+
+const WINDOW_STYLES: Array<{ id: WindowStyle; label: string }> = [
+  { id: 'classic',   label: 'Классическое' },
+  { id: 'arch',      label: 'Арочное' },
+  { id: 'panoramic', label: 'Панорамное' },
+];
+
+function BackdropPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCustomization>) => void }) {
+  const backdropType  = c.backdropType  ?? 'wall';
+  const backdropScene = c.backdropScene ?? 'garden';
+  const windowStyle   = c.windowStyle   ?? 'classic';
+
+  const MODES: Array<{ id: BackdropType; emoji: string; label: string }> = [
+    { id: 'wall',     emoji: '🧱', label: 'Стена' },
+    { id: 'window',   emoji: '🪟', label: 'Окно' },
+    { id: 'panorama', emoji: '🏞️', label: 'Панорама' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Mode selector */}
+      <div>
+        <p className="text-[11px] font-bold text-white/50 uppercase tracking-wider mb-2">Режим задней стены</p>
+        <div className="grid grid-cols-3 gap-2">
+          {MODES.map(m => (
+            <button key={m.id}
+              onClick={() => set({ backdropType: m.id })}
+              className="flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl text-xs font-semibold transition-all"
+              style={{
+                background: backdropType === m.id ? 'rgba(168,85,247,0.35)' : 'rgba(255,255,255,0.07)',
+                border: backdropType === m.id ? '1.5px solid rgba(168,85,247,0.7)' : '1.5px solid rgba(255,255,255,0.1)',
+                color: backdropType === m.id ? '#E9D5FF' : 'rgba(255,255,255,0.55)',
+              }}
+            >
+              <span className="text-xl">{m.emoji}</span>
+              <span>{m.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Scene picker — shown for window and panorama */}
+      {backdropType !== 'wall' && (
+        <div>
+          <p className="text-[11px] font-bold text-white/50 uppercase tracking-wider mb-2">Пейзаж</p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {BACKDROP_SCENES.map(s => (
+              <button key={s.id}
+                onClick={() => set({ backdropScene: s.id })}
+                className="flex flex-col items-center gap-1 py-2 rounded-xl text-[10px] font-semibold transition-all"
+                style={{
+                  background: backdropScene === s.id ? 'rgba(168,85,247,0.3)' : 'rgba(255,255,255,0.06)',
+                  border: backdropScene === s.id ? '1.5px solid rgba(168,85,247,0.6)' : '1.5px solid rgba(255,255,255,0.08)',
+                  color: backdropScene === s.id ? '#E9D5FF' : 'rgba(255,255,255,0.5)',
+                }}
+              >
+                <span className="text-lg">{s.emoji}</span>
+                <span>{s.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Window style — only for window mode */}
+      {backdropType === 'window' && (
+        <div>
+          <p className="text-[11px] font-bold text-white/50 uppercase tracking-wider mb-2">Стиль рамы</p>
+          <div className="grid grid-cols-3 gap-2">
+            {WINDOW_STYLES.map(ws => (
+              <button key={ws.id}
+                onClick={() => set({ windowStyle: ws.id })}
+                className="py-2 rounded-xl text-xs font-semibold transition-all"
+                style={{
+                  background: windowStyle === ws.id ? 'rgba(168,85,247,0.3)' : 'rgba(255,255,255,0.06)',
+                  border: windowStyle === ws.id ? '1.5px solid rgba(168,85,247,0.6)' : '1.5px solid rgba(255,255,255,0.08)',
+                  color: windowStyle === ws.id ? '#E9D5FF' : 'rgba(255,255,255,0.5)',
+                }}
+              >
+                {ws.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-white/30 mt-2">Солнце/луна через окно — включите «Солнце» в настройках освещения</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Wall panel ────────────────────────────────────────────────────────────────
+
 function WallPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCustomization>) => void }) {
   return (
     <div className="space-y-4">
 
-      {/* Back wall */}
-      <WallSubSection
+      {/* Backdrop section at the top */}
+      <BackdropPanel c={c} set={set} />
+
+      <div className="border-t border-white/10 pt-4" />
+
+      {/* Back wall — only shown when backdrop=wall */}
+      {(c.backdropType ?? 'wall') === 'wall' && <WallSubSection
         title="🖼 Задняя стена"
         image={c.wallImage}
         onImageChange={v => set({ wallImage: v })}
@@ -282,7 +391,7 @@ function WallPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCust
           { id: 'v_gradient', label: 'Градиент ↓' },
           { id: 'r_gradient', label: 'Радиальный' },
         ]}
-      />
+      />}
 
       {/* Side walls */}
       <WallSubSection
