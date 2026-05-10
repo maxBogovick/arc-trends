@@ -5,6 +5,7 @@ export type LimbsId     = 'none' | 'small_paws' | 'long_arms' | 'fins' | 'wings'
 export type ArmsId      = 'none' | 'small_paws' | 'long_arms' | 'fins' | 'wings' | 'stubby' | 'tentacles' | 'claws';
 export type LegsId      = 'none' | 'paws' | 'stubby_legs' | 'hooves' | 'claw_feet' | 'flippers';
 export type PartColorKey = 'head' | 'ears' | 'body' | 'arms' | 'legs' | 'tail';
+export type OutfitId = 'none' | 'tshirt' | 'hoodie' | 'armor' | 'robe' | 'dress' | 'jacket' | 'uniform' | 'sporty';
 export type TailId      = 'none' | 'fluffy' | 'long' | 'fan' | 'spiral' | 'curly' | 'lightning' | 'bow';
 export type NoseId      = 'none' | 'button' | 'cat' | 'led' | 'star' | 'heart';
 export type MouthStyleId = 'auto' | 'smile' | 'blush' | 'fangs' | 'pixel' | 'zigzag' | 'dot';
@@ -192,6 +193,18 @@ export const MOUTH_STYLES: PartMeta[] = [
 ];
 
 export const HEAD_OPTIONS: PartMeta[] = HEADS.map(h => ({ id: h.id, name: h.name, emoji: h.emoji }));
+
+export const OUTFIT_OPTIONS: PartMeta[] = [
+  { id: 'none',    name: 'Без одежды', emoji: '✖️' },
+  { id: 'tshirt',  name: 'Футболка',   emoji: '👕' },
+  { id: 'hoodie',  name: 'Худи',       emoji: '🧥' },
+  { id: 'armor',   name: 'Доспехи',    emoji: '🛡️' },
+  { id: 'robe',    name: 'Мантия',     emoji: '🪄' },
+  { id: 'dress',   name: 'Платье',     emoji: '👗' },
+  { id: 'jacket',  name: 'Пиджак',     emoji: '🤵' },
+  { id: 'uniform', name: 'Форма',      emoji: '👮' },
+  { id: 'sporty',  name: 'Спорт',      emoji: '🏋️' },
+];
 
 export const getHead = (id: HeadId): HeadDefinition =>
   HEADS.find(h => h.id === id) ?? HEADS[0];

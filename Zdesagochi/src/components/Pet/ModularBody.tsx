@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import type { HeadId, EarsId, BodyPartId, ArmsId, LegsId, TailId, NoseId, MouthStyleId } from '../../data/petParts';
+import type { HeadId, EarsId, BodyPartId, ArmsId, LegsId, TailId, NoseId, MouthStyleId, OutfitId } from '../../data/petParts';
 
 interface PartColors {
   body1: string;
@@ -155,72 +155,29 @@ export function BodyShape({ id, gradId, overrideFill }: PartProps & { id: BodyPa
   const f = overrideFill ?? `url(#${gradId})`;
   switch (id) {
     case 'slim':
-      return (
-        <>
-          <path
-            d="M 76 108 C 58 112, 48 130, 50 156 C 52 176, 70 192, 100 192 C 130 192, 148 176, 150 156 C 152 130, 142 112, 124 108 Z"
-            fill={f}
-          />
-          {/* Belly shine */}
-          <ellipse cx="100" cy="145" rx="18" ry="26" fill="white" opacity={0.08} />
-        </>
-      );
+      return <path d="M 76 108 C 58 112, 48 130, 50 156 C 52 176, 70 192, 100 192 C 130 192, 148 176, 150 156 C 152 130, 142 112, 124 108 Z" fill={f} />;
     case 'blocky':
-      return (
-        <>
-          <path
-            d="M 50 108 L 150 108 C 168 108, 180 120, 180 138 L 180 170 C 180 184, 168 194, 150 194 L 50 194 C 32 194, 20 184, 20 170 L 20 138 C 20 120, 32 108, 50 108 Z"
-            fill={f}
-          />
-          {/* Corner highlights */}
-          <rect x="52" y="110" width="18" height="10" rx="4" fill="white" opacity={0.1} />
-        </>
-      );
+      return <path d="M 50 108 L 150 108 C 168 108, 180 120, 180 138 L 180 170 C 180 184, 168 194, 150 194 L 50 194 C 32 194, 20 184, 20 170 L 20 138 C 20 120, 32 108, 50 108 Z" fill={f} />;
     case 'bubble':
-      return (
-        <>
-          <circle cx="100" cy="152" r="50" fill={f} />
-          {/* Specular highlight */}
-          <ellipse cx="82" cy="134" rx="16" ry="11" fill="white" opacity={0.13} transform="rotate(-20 82 134)" />
-        </>
-      );
+      return <circle cx="100" cy="152" r="50" fill={f} />;
     case 'pear':
-      return (
-        <>
-          <ellipse cx="100" cy="164" rx="56" ry="38" fill={f} />
-          <ellipse cx="100" cy="164" rx="36" ry="28" fill="white" opacity={0.06} />
-        </>
-      );
+      return <ellipse cx="100" cy="164" rx="56" ry="38" fill={f} />;
     case 'tank':
       return (
         <>
-          {/* Blocky robot torso */}
-          <path
-            d="M 46 108 L 154 108 L 162 114 L 168 128 L 168 180 L 162 190 L 38 190 L 32 180 L 32 128 L 38 114 Z"
-            fill={f}
-          />
-          {/* Panel lines */}
-          <line x1="46" y1="120" x2="154" y2="120" stroke="rgba(255,255,255,0.1)" strokeWidth="1.5" />
-          <line x1="100" y1="108" x2="100" y2="190" stroke="rgba(255,255,255,0.07)" strokeWidth="1.5" />
-          {/* Vent slots */}
-          {[130, 142, 154, 166].map(y => (
-            <rect key={y} x="70" y={y} width="16" height="4" rx="2" fill="rgba(0,0,0,0.25)" />
+          <path d="M 46 108 L 154 108 L 162 114 L 168 128 L 168 180 L 162 190 L 38 190 L 32 180 L 32 128 L 38 114 Z" fill={f} />
+          <line x1="46" y1="120" x2="154" y2="120" stroke="rgba(255,255,255,0.08)" strokeWidth="1.5" />
+          <line x1="100" y1="108" x2="100" y2="190" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
+          {[132, 144, 156, 168].map(y => (
+            <rect key={y} x="70" y={y} width="14" height="3" rx="1.5" fill="rgba(0,0,0,0.2)" />
           ))}
-          {[130, 142, 154, 166].map(y => (
-            <rect key={y + 'r'} x="114" y={y} width="16" height="4" rx="2" fill="rgba(0,0,0,0.25)" />
+          {[132, 144, 156, 168].map(y => (
+            <rect key={y + 'r'} x="116" y={y} width="14" height="3" rx="1.5" fill="rgba(0,0,0,0.2)" />
           ))}
         </>
       );
     default: // chubby
-      return (
-        <>
-          <path
-            d="M 50 108 C 28 112, 16 132, 18 158 C 20 180, 46 196, 100 196 C 154 196, 180 180, 182 158 C 184 132, 172 112, 150 108 Z"
-            fill={f}
-          />
-          <ellipse cx="100" cy="155" rx="24" ry="32" fill="white" opacity={0.08} />
-        </>
-      );
+      return <path d="M 50 108 C 28 112, 16 132, 18 158 C 20 180, 46 196, 100 196 C 154 196, 180 180, 182 158 C 184 132, 172 112, 150 108 Z" fill={f} />;
   }
 }
 
@@ -615,6 +572,147 @@ export function TailShape({ id, gradId, c, overrideFill }: PartProps & { id: Tai
         </g>
       );
     }
+    default: // none
+      return null;
+  }
+}
+
+// ─── OUTFIT ───────────────────────────────────────────────────────────────────
+
+export function OutfitShape({ id, primary, secondary }: { id: OutfitId; primary: string; secondary: string }) {
+  const p = primary;
+  const s = secondary;
+
+  switch (id) {
+    case 'tshirt':
+      return (
+        <g>
+          <path d="M 58 114 C 40 118, 32 134, 34 158 C 36 178, 52 190, 100 192 C 148 190, 164 178, 166 158 C 168 134, 160 118, 142 114 Z" fill={p} opacity={0.93} />
+          <path d="M 58 114 L 34 120 L 38 142 L 60 134 Z" fill={p} opacity={0.93} />
+          <path d="M 142 114 L 166 120 L 162 142 L 140 134 Z" fill={p} opacity={0.93} />
+          <line x1="38" y1="142" x2="60" y2="134" stroke={s} strokeWidth="2" strokeLinecap="round" />
+          <line x1="162" y1="142" x2="140" y2="134" stroke={s} strokeWidth="2" strokeLinecap="round" />
+          <path d="M 86 114 Q 100 130, 114 114" stroke={s} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+        </g>
+      );
+
+    case 'hoodie':
+      return (
+        <g>
+          <path d="M 54 114 C 34 118, 24 136, 26 160 C 28 180, 46 194, 100 196 C 154 194, 172 180, 174 160 C 176 136, 166 118, 146 114 Z" fill={p} opacity={0.93} />
+          <path d="M 54 114 L 30 120 L 34 144 L 58 136 Z" fill={p} opacity={0.93} />
+          <path d="M 146 114 L 170 120 L 166 144 L 142 136 Z" fill={p} opacity={0.93} />
+          <line x1="34" y1="144" x2="58" y2="136" stroke={s} strokeWidth="2.5" strokeLinecap="round" />
+          <line x1="166" y1="144" x2="142" y2="136" stroke={s} strokeWidth="2.5" strokeLinecap="round" />
+          <line x1="100" y1="114" x2="100" y2="166" stroke={s} strokeWidth="2" strokeDasharray="4,3" opacity={0.7} />
+          <path d="M 76 166 L 76 182 L 124 182 L 124 166 C 124 162, 120 160, 116 162 L 100 164 L 84 162 C 80 160, 76 162, 76 166 Z" fill={s} opacity={0.6} />
+        </g>
+      );
+
+    case 'armor':
+      return (
+        <g>
+          <path d="M 60 114 L 140 114 L 150 128 L 154 158 L 150 182 L 100 188 L 50 182 L 46 158 L 50 128 Z" fill={p} opacity={0.95} />
+          <path d="M 60 114 L 36 110 L 30 130 L 52 132 L 58 122 Z" fill={p} opacity={0.95} />
+          <path d="M 140 114 L 164 110 L 170 130 L 148 132 L 142 122 Z" fill={p} opacity={0.95} />
+          <line x1="100" y1="114" x2="100" y2="188" stroke={s} strokeWidth="2.5" opacity={0.5} />
+          <path d="M 50 128 L 150 128" stroke={s} strokeWidth="2" opacity={0.4} />
+          <circle cx="70" cy="124" r="5" fill={s} opacity={0.85} />
+          <circle cx="130" cy="124" r="5" fill={s} opacity={0.85} />
+          <circle cx="70" cy="170" r="5" fill={s} opacity={0.85} />
+          <circle cx="130" cy="170" r="5" fill={s} opacity={0.85} />
+          <path d="M 80 136 L 120 136 L 118 158 L 100 164 L 82 158 Z" fill={s} opacity={0.25} />
+          <path d="M 62 116 L 138 116 L 148 128 L 150 142" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" fill="none" />
+        </g>
+      );
+
+    case 'robe':
+      return (
+        <g>
+          <path d="M 54 114 C 24 120, 12 148, 14 176 C 16 200, 40 210, 100 210 C 160 210, 184 200, 186 176 C 188 148, 176 120, 146 114 Z" fill={p} opacity={0.88} />
+          <path d="M 86 114 L 100 142 L 114 114" stroke={s} strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d="M 28 162 L 172 162 L 172 172 L 28 172 Z" fill={s} opacity={0.65} />
+          <rect x="94" y="163" width="12" height="8" rx="2" fill={p} opacity={0.8} />
+          <circle cx="100" cy="167" r="3" fill={s} opacity={0.8} />
+          <path d="M 16 190 Q 100 206, 184 190" stroke={s} strokeWidth="2" fill="none" opacity={0.4} />
+          <circle cx="100" cy="132" r="4" fill={s} opacity={0.75} />
+          <circle cx="100" cy="148" r="4" fill={s} opacity={0.75} />
+        </g>
+      );
+
+    case 'dress':
+      return (
+        <g>
+          <path d="M 72 114 L 128 114 L 136 146 L 64 146 Z" fill={p} opacity={0.93} />
+          <path d="M 64 146 C 34 152, 12 168, 14 186 C 16 202, 42 210, 100 210 C 158 210, 184 202, 186 186 C 188 168, 166 152, 136 146 Z" fill={p} opacity={0.93} />
+          <path d="M 80 114 L 76 104 L 88 104 L 88 114" fill={s} opacity={0.9} />
+          <path d="M 120 114 L 124 104 L 112 104 L 112 114" fill={s} opacity={0.9} />
+          <path d="M 62 142 L 138 142 L 136 150 L 64 150 Z" fill={s} opacity={0.65} />
+          <circle cx="100" cy="126" r="5" fill={s} opacity={0.7} />
+          <path d="M 64 150 C 38 166, 22 180, 24 194" stroke="rgba(255,255,255,0.2)" strokeWidth="2" fill="none" />
+          <path d="M 100 150 L 100 208" stroke="rgba(255,255,255,0.15)" strokeWidth="2" fill="none" />
+          <path d="M 136 150 C 162 166, 178 180, 176 194" stroke="rgba(255,255,255,0.2)" strokeWidth="2" fill="none" />
+        </g>
+      );
+
+    case 'jacket':
+      return (
+        <g>
+          <path d="M 60 114 C 40 116, 30 134, 32 160 C 34 180, 52 194, 100 196 C 148 194, 166 180, 168 160 C 170 134, 160 116, 140 114 Z" fill={p} opacity={0.93} />
+          <path d="M 60 114 L 34 120 L 38 144 L 62 136 Z" fill={p} opacity={0.93} />
+          <path d="M 140 114 L 166 120 L 162 144 L 138 136 Z" fill={p} opacity={0.93} />
+          <path d="M 100 130 L 82 114 L 66 114 L 56 124 Z" fill={s} opacity={0.8} />
+          <path d="M 100 130 L 118 114 L 134 114 L 144 124 Z" fill={s} opacity={0.8} />
+          <path d="M 70 114 L 100 132 L 130 114" stroke={p} strokeWidth="2" fill="none" />
+          <circle cx="100" cy="156" r="4.5" fill={s} opacity={0.9} />
+          <circle cx="100" cy="168" r="4.5" fill={s} opacity={0.9} />
+          <circle cx="100" cy="180" r="4.5" fill={s} opacity={0.9} />
+          <rect x="120" y="148" width="16" height="12" rx="2" fill={s} opacity={0.55} />
+          <line x1="38" y1="144" x2="62" y2="136" stroke={s} strokeWidth="2.5" strokeLinecap="round" />
+          <line x1="162" y1="144" x2="138" y2="136" stroke={s} strokeWidth="2.5" strokeLinecap="round" />
+        </g>
+      );
+
+    case 'uniform':
+      return (
+        <g>
+          <path d="M 58 114 C 38 118, 28 136, 30 160 C 32 182, 50 196, 100 198 C 150 196, 168 182, 170 160 C 172 136, 162 118, 142 114 Z" fill={p} opacity={0.93} />
+          <path d="M 58 114 L 34 120 L 38 144 L 60 136 Z" fill={p} opacity={0.93} />
+          <path d="M 142 114 L 166 120 L 162 144 L 140 136 Z" fill={p} opacity={0.93} />
+          <path d="M 84 114 L 88 108 L 112 108 L 116 114" fill={s} opacity={0.9} />
+          <path d="M 32 162 L 168 162 L 168 172 L 32 172 Z" fill={s} opacity={0.8} />
+          <rect x="93" y="163" width="14" height="8" rx="2" fill="#FFD700" opacity={0.9} />
+          <circle cx="100" cy="130" r="3.5" fill={s} opacity={0.9} />
+          <circle cx="100" cy="142" r="3.5" fill={s} opacity={0.9} />
+          <circle cx="100" cy="154" r="3.5" fill={s} opacity={0.9} />
+          <path d="M 58 114 L 38 110 L 36 122 L 54 124 Z" fill={s} opacity={0.9} />
+          <path d="M 142 114 L 162 110 L 164 122 L 146 124 Z" fill={s} opacity={0.9} />
+          <rect x="114" y="128" width="16" height="11" rx="2" fill={s} opacity={0.75} />
+          <rect x="115" y="129" width="14" height="9" rx="1.5" fill="#FFD700" opacity={0.65} />
+          <line x1="38" y1="140" x2="60" y2="134" stroke={s} strokeWidth="3" strokeLinecap="round" />
+          <line x1="162" y1="140" x2="140" y2="134" stroke={s} strokeWidth="3" strokeLinecap="round" />
+          <line x1="38" y1="148" x2="60" y2="142" stroke={s} strokeWidth="3" strokeLinecap="round" />
+          <line x1="162" y1="148" x2="140" y2="142" stroke={s} strokeWidth="3" strokeLinecap="round" />
+        </g>
+      );
+
+    case 'sporty':
+      return (
+        <g>
+          <path d="M 60 114 C 40 118, 32 136, 34 160 C 36 180, 54 192, 100 194 C 146 192, 164 180, 166 160 C 168 136, 160 118, 140 114 Z" fill={p} opacity={0.93} />
+          <path d="M 60 114 L 36 120 L 40 142 L 62 134 Z" fill={p} opacity={0.93} />
+          <path d="M 140 114 L 164 120 L 160 142 L 138 134 Z" fill={p} opacity={0.93} />
+          <path d="M 80 114 L 100 194 L 120 114" fill={s} opacity={0.3} />
+          <path d="M 34 136 C 40 130, 60 130, 68 136" stroke={s} strokeWidth="3" fill="none" strokeLinecap="round" opacity={0.8} />
+          <path d="M 166 136 C 160 130, 140 130, 132 136" stroke={s} strokeWidth="3" fill="none" strokeLinecap="round" opacity={0.8} />
+          <path d="M 40 150 C 46 144, 62 142, 68 148" stroke={s} strokeWidth="2.5" fill="none" strokeLinecap="round" opacity={0.6} />
+          <path d="M 160 150 C 154 144, 138 142, 132 148" stroke={s} strokeWidth="2.5" fill="none" strokeLinecap="round" opacity={0.6} />
+          <path d="M 86 114 Q 100 124, 114 114" stroke={s} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+          <line x1="40" y1="142" x2="62" y2="134" stroke={s} strokeWidth="2.5" strokeLinecap="round" />
+          <line x1="160" y1="142" x2="138" y2="134" stroke={s} strokeWidth="2.5" strokeLinecap="round" />
+        </g>
+      );
+
     default: // none
       return null;
   }

@@ -2,8 +2,8 @@ import { motion } from 'framer-motion';
 import { usePetStore } from '../../../store/petStore';
 import { getSkin } from '../../../data/skins';
 import {
-  HEAD_OPTIONS, EARS_OPTIONS, BODY_PARTS, ARMS_OPTIONS, LEGS_OPTIONS, TAILS_OPTIONS, NOSE_OPTIONS, MOUTH_STYLES,
-  type HeadId, type EarsId, type BodyPartId, type ArmsId, type LegsId, type TailId, type NoseId, type MouthStyleId,
+  HEAD_OPTIONS, EARS_OPTIONS, BODY_PARTS, ARMS_OPTIONS, LEGS_OPTIONS, TAILS_OPTIONS, NOSE_OPTIONS, MOUTH_STYLES, OUTFIT_OPTIONS,
+  type HeadId, type EarsId, type BodyPartId, type ArmsId, type LegsId, type TailId, type NoseId, type MouthStyleId, type OutfitId,
 } from '../../../data/petParts';
 import { GLASS, ACTIVE_GLOW } from '../constants';
 import { SectionLabel } from '../Shared';
@@ -61,6 +61,9 @@ export function PartsPanel() {
     equippedTailId,
     equippedNoseId,
     equippedMouthStyleId,
+    equippedOutfitId,
+    outfitColor,
+    outfitColor2,
     equipHead,
     equipEars,
     equipBodyPart,
@@ -69,6 +72,9 @@ export function PartsPanel() {
     equipTail,
     equipNose,
     equipMouthStyle,
+    equipOutfit,
+    setOutfitColor,
+    setOutfitColor2,
   } = usePetStore();
 
   const glow = getSkin(equippedSkinId).colors.glow;
@@ -140,6 +146,46 @@ export function PartsPanel() {
         glow={glow}
         onSelect={equipMouthStyle}
       />
+
+      <PartSection<OutfitId>
+        label="👕 Одежда"
+        options={OUTFIT_OPTIONS}
+        active={equippedOutfitId}
+        glow={glow}
+        onSelect={equipOutfit}
+      />
+
+      {equippedOutfitId !== 'none' && (
+        <div className="p-3 rounded-2xl space-y-3" style={{ background: 'white', border: '1px solid #E5E7EB', borderRadius: 16 }}>
+          <p className="text-xs font-semibold text-lumio-muted">🎨 Цвет одежды</p>
+          <div className="flex gap-4">
+            <div className="flex items-center gap-2">
+              <label className="relative cursor-pointer group">
+                <div className="w-10 h-10 rounded-xl border-2 border-slate-200 shadow-sm transition-transform group-hover:scale-110"
+                  style={{ background: outfitColor, boxShadow: `0 0 10px ${outfitColor}66` }} />
+                <input type="color" value={outfitColor} onChange={e => setOutfitColor(e.target.value)}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+              </label>
+              <div>
+                <p className="text-xs font-bold text-lumio-text">Основной</p>
+                <p className="text-[9px] font-mono text-lumio-muted">{outfitColor}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="relative cursor-pointer group">
+                <div className="w-10 h-10 rounded-xl border-2 border-slate-200 shadow-sm transition-transform group-hover:scale-110"
+                  style={{ background: outfitColor2, boxShadow: `0 0 10px ${outfitColor2}66` }} />
+                <input type="color" value={outfitColor2} onChange={e => setOutfitColor2(e.target.value)}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+              </label>
+              <div>
+                <p className="text-xs font-bold text-lumio-text">Детали</p>
+                <p className="text-[9px] font-mono text-lumio-muted">{outfitColor2}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

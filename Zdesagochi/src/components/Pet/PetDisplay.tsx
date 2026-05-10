@@ -8,7 +8,7 @@ import { getAccessory } from '../../data/accessories';
 import { getAura } from '../../data/auras';
 import { usePetStore } from '../../store/petStore';
 import { PetAura } from './PetAura';
-import { HeadShape, EarsShape, BodyShape, ArmsShape, LegsShape, TailShape, NoseShape, MouthShape } from './ModularBody';
+import { HeadShape, EarsShape, BodyShape, ArmsShape, LegsShape, TailShape, NoseShape, MouthShape, OutfitShape } from './ModularBody';
 
 interface Props {
   pet: Pet;
@@ -29,6 +29,9 @@ interface Props {
     equippedTailId?: TailId;
     partColors?: Record<PartColorKey, string | null>;
     gradientEnabled?: boolean;
+    equippedOutfitId?: string;
+    outfitColor?: string;
+    outfitColor2?: string;
     petColorOverride?: any;
     petMorph?: any;
     equippedAuraId?: string;
@@ -454,6 +457,9 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   const equippedTailId      = overrideState?.equippedTailId      ?? store.equippedTailId;
   const partColors          = overrideState?.partColors          ?? store.partColors;
   const gradientEnabled     = overrideState?.gradientEnabled     ?? store.gradientEnabled;
+  const equippedOutfitId    = (overrideState?.equippedOutfitId   ?? store.equippedOutfitId) as import('../../data/petParts').OutfitId;
+  const outfitColor         = overrideState?.outfitColor         ?? store.outfitColor;
+  const outfitColor2        = overrideState?.outfitColor2        ?? store.outfitColor2;
   const petColorOverride    = overrideState?.petColorOverride    ?? store.petColorOverride;
   const petMorph            = overrideState?.petMorph           ?? store.petMorph;
   const equippedAuraId      = overrideState?.equippedAuraId      ?? store.equippedAuraId;
@@ -523,7 +529,6 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   }, [skin.animStyle]);
 
   const effectiveMood = moodOverride ?? pet?.mood ?? 'happy';
-  const showCheeks = ['ecstatic', 'happy', 'content'].includes(effectiveMood);
   const baseGlow  = skin.animStyle === 'rainbow' ? `hsl(${hue},90%,60%)` : skin.colors.glow;
   const baseBody1 = skin.animStyle === 'rainbow' ? `hsl(${hue},65%,72%)` : skin.colors.body1;
   const baseBody2 = skin.animStyle === 'rainbow' ? `hsl(${(hue + 120) % 360},65%,50%)` : skin.colors.body2;
@@ -629,20 +634,12 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
           <g transform={`translate(100,152) scale(${squishSc},1) translate(-100,-152)`}>
             <BodyShape  id={equippedBodyPartId} gradId={gradId} c={colors} overrideFill={getFill('body')} />
           </g>
+          <OutfitShape id={equippedOutfitId} primary={outfitColor} secondary={outfitColor2} />
+
           <g transform={`translate(100,80) scale(${headSc}) translate(-100,-80)`}>
             <HeadShape  id={equippedHeadId}  gradId={gradId} c={colors} overrideFill={getFill('head')} />
           </g>
           <Overlay skin={skin} />
-
-          {/* Cheeks */}
-          <AnimatePresence>
-            {showCheeks && (
-              <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <ellipse cx={head.cheekLeft.cx}  cy={head.cheekLeft.cy}  rx={head.cheekLeft.rx}  ry={head.cheekLeft.ry}  fill={skin.colors.cheek} opacity={0.55} />
-                <ellipse cx={head.cheekRight.cx} cy={head.cheekRight.cy} rx={head.cheekRight.rx} ry={head.cheekRight.ry} fill={skin.colors.cheek} opacity={0.55} />
-              </motion.g>
-            )}
-          </AnimatePresence>
 
           {/* Nose */}
           {equippedNoseId !== 'none' && (
