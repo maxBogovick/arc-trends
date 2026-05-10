@@ -52,15 +52,15 @@ UI action -> applyPersonalityCommand() -> полный результат
 
 Задачи:
 
-| ID | Задача | Done when |
-|---|---|---|
-| MVP-1.1 | Расширить `PetCommandResult` | Есть `statDeltas`, `xpDelta`, `coinDelta`, `blockedAction`, `appliedModifiers`, `events`, `pet` |
-| MVP-1.2 | Перенести `play` outcome из `mockApi` | `playWithPet()` не считает stats/XP/coins сам |
-| MVP-1.3 | Перенести `feed` outcome из `mockApi` | `feedPet()` не считает stats/XP/coins сам |
-| MVP-1.4 | Перенести `bathe/heal/bond` outcome | Эти методы используют command result |
-| MVP-1.5 | Перенести `sleep/wake` outcome | blocked sleep и wake effects считаются command layer |
-| MVP-1.6 | Перенести `use_item` outcome | item result проходит через command result |
-| MVP-1.7 | Replay full outcome | replay команды дает тот же core result, что обычный command path |
+| ID | Задача | Статус | Done when |
+|---|---|---|---|
+| MVP-1.1 | Расширить `PetCommandResult` | Done | Есть `statDeltas`, `xpDelta`, `coinDelta`, `blockedAction`, `appliedModifiers`, `events`, `pet` |
+| MVP-1.2 | Перенести `play` outcome из `mockApi` | Done | `playWithPet()` не считает stats/XP/coins сам |
+| MVP-1.3 | Перенести `feed` outcome из `mockApi` | Done | `feedPet()` не считает stats/XP/coins сам |
+| MVP-1.4 | Перенести `bathe/heal/bond` outcome | Done | Эти методы используют command result |
+| MVP-1.5 | Перенести `sleep/wake` outcome | Done | blocked sleep и wake effects считаются command layer |
+| MVP-1.6 | Перенести `use_item` outcome | Done | item result проходит через command result |
+| MVP-1.7 | Replay full outcome | Done | replay команды дает тот же core result, что обычный command path |
 
 Что не делать в MVP-1:
 
@@ -313,7 +313,7 @@ MVP-1 is done only when:
 
 **Цель:** заменить роль `mockApi` как псевдо-сервера на простые offline слои.
 
-После MVP-1 уже можно делать:
+MVP-1 закрыт. Теперь можно делать:
 
 ```text
 PetService
@@ -446,12 +446,10 @@ MVP считается готовым, когда выполнено:
 
 Делать именно это:
 
-1. `MVP-1.1` — расширить `PetCommandResult`.
-2. `MVP-1.2` — перенести `play` outcome из `mockApi`.
-3. Проверить tests/build.
-4. Повторить для `feed`.
-5. Потом `bathe/heal/bond`.
-6. Потом `sleep/wake`.
-7. Потом `use_item`.
+1. `MVP-2.1` — создать `PetService`, который вызывает `applyPersonalityCommand()` и возвращает command result.
+2. `MVP-2.2` — выделить `LocalSave` для pet/account/inventory без gameplay logic.
+3. `MVP-2.3` — выделить `SyncQueue` для pending commands.
+4. `MVP-2.4` — описать `ServerApi` contract: клиент отправляет commands, не вручную измененный snapshot.
+5. `MVP-2.5` — свести `mockApi` к compatibility wrapper или заменить его service calls.
 
-Не начинать `data-driven states`, пока `mockApi` продолжает считать stats/XP/coins.
+Не начинать `data-driven states`, пока UI/action flow не переведен на offline-first service layers.

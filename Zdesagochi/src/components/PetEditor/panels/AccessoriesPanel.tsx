@@ -6,17 +6,32 @@ import type { AccessorySlot } from '../../../data/accessories';
 import { RARITY_COLOR, GLASS, ACTIVE_GLOW } from '../constants';
 import { SectionLabel } from '../Shared';
 
+type RarityFilter = 'all' | 'common' | 'rare' | 'epic' | 'legendary';
+
+const RARITY_FILTERS: { id: RarityFilter; label: string }[] = [
+  { id: 'all',       label: 'Все'    },
+  { id: 'common',    label: 'C'      },
+  { id: 'rare',      label: 'R'      },
+  { id: 'epic',      label: 'E'      },
+  { id: 'legendary', label: 'L'      },
+];
+
 export function AccessoriesPanel() {
   const [slot, setSlot] = useState<AccessorySlot>('head');
+  const [rarityFilter, setRarityFilter] = useState<RarityFilter>('all');
   const { equippedAccessories, setAccessory, accessoryConfigs, setAccessoryConfig, ownedAccessoriesList, buyAccessory, coins } = usePetStore();
 
   const SLOT_TABS: { id: AccessorySlot; emoji: string; label: string }[] = [
-    { id: 'head', emoji: '👒', label: 'Голова' },
-    { id: 'face', emoji: '😎', label: 'Лицо' },
-    { id: 'back', emoji: '🎒', label: 'Спина' },
+    { id: 'head',     emoji: '👒', label: 'Голова' },
+    { id: 'face',     emoji: '😎', label: 'Лицо' },
+    { id: 'neck',     emoji: '📿', label: 'Шея' },
+    { id: 'clothing', emoji: '👕', label: 'Одежда' },
+    { id: 'back',     emoji: '🎒', label: 'Спина' },
   ];
 
-  const items = getAccessoriesBySlot(slot);
+  const items = getAccessoriesBySlot(slot).filter(a =>
+    rarityFilter === 'all' || a.id.startsWith('none') || a.rarity === rarityFilter
+  );
   const equipped = equippedAccessories[slot];
   const config = accessoryConfigs[slot];
 
@@ -38,6 +53,20 @@ export function AccessoriesPanel() {
               color: slot === t.id ? '#1E1147' : '#6B7280',
             }}>
             {t.emoji} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Rarity filter */}
+      <div className="flex gap-1">
+        {RARITY_FILTERS.map(f => (
+          <button key={f.id} onClick={() => setRarityFilter(f.id)}
+            className="flex-1 py-1 rounded-lg text-[10px] font-bold transition-all"
+            style={{
+              background: rarityFilter === f.id ? '#818CF8' : '#F3F4F6',
+              color: rarityFilter === f.id ? 'white' : '#6B7280',
+            }}>
+            {f.label}
           </button>
         ))}
       </div>

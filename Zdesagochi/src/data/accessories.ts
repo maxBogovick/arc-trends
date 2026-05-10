@@ -1,4 +1,4 @@
-export type AccessorySlot = 'head' | 'face' | 'back';
+export type AccessorySlot = 'head' | 'face' | 'back' | 'neck' | 'clothing';
 export type AccessoryRarity = 'common' | 'rare' | 'epic' | 'legendary';
 
 export interface AccessoryDef {
@@ -14,6 +14,8 @@ export interface AccessoryDef {
 const h = (id: string, name: string, emoji: string, r: AccessoryRarity, p: number): AccessoryDef => ({ id, name, emoji, slot: 'head', rarity: r, price: p });
 const f = (id: string, name: string, emoji: string, r: AccessoryRarity, p: number): AccessoryDef => ({ id, name, emoji, slot: 'face', rarity: r, price: p });
 const b = (id: string, name: string, emoji: string, r: AccessoryRarity, p: number, behind = false): AccessoryDef => ({ id, name, emoji, slot: 'back', rarity: r, price: p, behindBody: behind });
+const n = (id: string, name: string, emoji: string, r: AccessoryRarity, p: number): AccessoryDef => ({ id, name, emoji, slot: 'neck', rarity: r, price: p });
+const cl = (id: string, name: string, emoji: string, r: AccessoryRarity, p: number): AccessoryDef => ({ id, name, emoji, slot: 'clothing', rarity: r, price: p });
 
 export const ACCESSORIES: AccessoryDef[] = [
   h('none_head',   'Пусто',            '—',  'common',    0  ),
@@ -41,6 +43,26 @@ export const ACCESSORIES: AccessoryDef[] = [
   b('wings',       'Крылья',           '🦋', 'epic',      380, true),
   b('jetpack',     'Джетпак',          '🚀', 'epic',      420, true),
   b('angel_wings', 'Ангел',            '👼', 'legendary', 650, true),
+
+  n('none_neck',   'Пусто',            '—',  'common',    0   ),
+  n('collar',      'Ошейник',          '🔵', 'common',    60  ),
+  n('scarf',       'Шарф',             '🧣', 'common',    80  ),
+  n('tie',         'Галстук',          '👔', 'common',    70  ),
+  n('necklace',    'Ожерелье',         '📿', 'rare',      160 ),
+  n('choker',      'Чокер',            '🖤', 'rare',      180 ),
+  n('bow_tie',     'Бабочка',          '🎀', 'rare',      150 ),
+  n('chain',       'Цепь',             '⛓️', 'epic',      280 ),
+  n('amulet',      'Амулет',           '🔮', 'epic',      320 ),
+
+  cl('none_clothing', 'Пусто',         '—',  'common',    0   ),
+  cl('hoodie',        'Худи',          '👕', 'common',    90  ),
+  cl('vest',          'Жилет',         '🦺', 'common',    80  ),
+  cl('armor',         'Доспехи',       '🛡️', 'rare',      240 ),
+  cl('coat',          'Пальто',        '🧥', 'rare',      200 ),
+  cl('robe',          'Мантия',        '🪄', 'epic',      350 ),
+  cl('uniform',       'Форма',         '👮', 'epic',      320 ),
+  cl('dress',         'Платье',        '👗', 'rare',      220 ),
+  cl('suit',          'Костюм',        '🤵', 'legendary', 500 ),
 ];
 
 export const getAccessoriesBySlot = (slot: AccessorySlot): AccessoryDef[] =>

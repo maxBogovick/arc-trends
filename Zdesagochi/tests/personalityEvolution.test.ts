@@ -201,8 +201,9 @@ test('personality specialRules validator exposes deferred and adapter-owned rule
 
   assert.deepEqual(errors, []);
   assert.ok(warningKeys.has('playful:playThirstEnabled:deferred'));
-  assert.ok(warningKeys.has('bold:rejectSleepWhenEnergized:adapter_owned'));
-  assert.ok(warningKeys.has('melancholic:xpEveryOtherAction:adapter_owned'));
+  assert.equal(warningKeys.has('bold:rejectSleepWhenEnergized:adapter_owned'), false);
+  assert.equal(warningKeys.has('anxious:peakPerformanceThreshold:adapter_owned'), false);
+  assert.equal(warningKeys.has('melancholic:xpEveryOtherAction:adapter_owned'), false);
   assert.ok(warningKeys.has('stoic:stoicPeakOnceOnly:deferred'));
   assert.ok(warningKeys.has('adventurer:newRoomBonusEnabled:deferred'));
   assert.ok(warningKeys.has('paranoid:trustThresholdBonds:deferred'));
@@ -782,6 +783,195 @@ await testAsync('personality command feed applies exact trait deltas without mut
   assert.equal(result.registryVersion, STATIC_REGISTRY_VERSION);
 });
 
+await testAsync('personality command play returns full gameplay outcome', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    personality: 'playful',
+    stats: { hunger: 70, happiness: 50, energy: 80, health: 80, cleanliness: 80, bond: 40 },
+  });
+  const result = await applyPersonalityCommand(pet, {
+    type: 'play',
+    scoreSeed: '100',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-play-outcome',
+  });
+
+  assert.deepEqual(result.statDeltas, { happiness: 40, energy: -20, bond: 8 });
+  assert.equal(result.xpDelta, 80);
+  assert.equal(result.coinDelta, 17);
+  assert.equal(result.blockedAction, null);
+  assert.equal(result.meta?.score, 100);
+  assert.equal(result.pet.stats.happiness, 90);
+  assert.equal(result.pet.stats.energy, 60);
+  assert.equal(result.pet.stats.bond, 48);
+  assert.equal(result.pet.xp, 80);
+  assert.equal(result.events.some(event => event.type === 'gameplay_outcome_applied'), true);
+});
+
+await testAsync('personality command replay preserves full gameplay outcome', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    personality: 'playful',
+    stats: { hunger: 70, happiness: 50, energy: 80, health: 80, cleanliness: 80, bond: 40 },
+  });
+  const command: PetCommand = {
+    type: 'play',
+    scoreSeed: '100',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-play-replay-outcome',
+  };
+
+  const direct = await applyPersonalityCommand(pet, command);
+  const replayed = await replayPersonalityCommands(pet, [command]);
+  const replayResult = replayed.commandResults[0];
+
+  assert.deepEqual(replayResult.statDeltas, direct.statDeltas);
+  assert.equal(replayResult.xpDelta, direct.xpDelta);
+  assert.equal(replayResult.coinDelta, direct.coinDelta);
+  assert.equal(replayed.pet.stats.happiness, direct.pet.stats.happiness);
+  assert.equal(replayed.pet.xp, direct.pet.xp);
+});
+
+await testAsync('personality command MVP actions expose integrated gameplay outcomes', async () => {
+  let pet = makePet({
+    formationComplete: true,
+    personality: 'playful',
+    stats: { hunger: 45, happiness: 45, energy: 70, health: 45, cleanliness: 45, bond: 35 },
+  });
+
+  const feed = await applyPersonalityCommand(pet, {
+    type: 'feed',
+    foodId: 'apple',
+    foodEffect: { hungerRestore: 20, happinessBonus: 5, healthBonus: 10 },
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-mvp-feed',
+  });
+  assert.deepEqual(feed.statDeltas, { hunger: 20, happiness: 5, health: 10 });
+  assert.equal(feed.xpDelta, 6);
+  assert.equal(feed.blockedAction, null);
+  pet = feed.pet;
+
+  const play = await applyPersonalityCommand(pet, {
+    type: 'play',
+    scoreSeed: '120',
+    at: '2026-05-04T01:05:00.000Z',
+    commandId: 'cmd-mvp-play',
+  });
+  assert.equal(play.xpDelta, 96);
+  assert.equal(play.coinDelta, 30);
+  assert.equal(play.pet.level, 2);
+  assert.equal(play.pet.xp, 2);
+  pet = play.pet;
+
+  const bathe = await applyPersonalityCommand(pet, {
+    type: 'bathe',
+    at: '2026-05-04T01:10:00.000Z',
+    commandId: 'cmd-mvp-bathe',
+  });
+  assert.deepEqual(bathe.statDeltas, { cleanliness: 40, happiness: 5, health: 5 });
+  assert.equal(bathe.xpDelta, 12);
+  pet = bathe.pet;
+
+  const heal = await applyPersonalityCommand(pet, {
+    type: 'heal',
+    at: '2026-05-04T01:15:00.000Z',
+    commandId: 'cmd-mvp-heal',
+  });
+  assert.deepEqual(heal.statDeltas, { health: 35, happiness: -5 });
+  assert.equal(heal.xpDelta, 18);
+  pet = heal.pet;
+
+  const bond = await applyPersonalityCommand(pet, {
+    type: 'bond',
+    at: '2026-05-04T01:20:00.000Z',
+    commandId: 'cmd-mvp-bond',
+  });
+  assert.deepEqual(bond.statDeltas, { happiness: 20, bond: 20 });
+  assert.equal(bond.xpDelta, 6);
+  pet = bond.pet;
+
+  const item = await applyPersonalityCommand(pet, {
+    type: 'use_item',
+    itemId: 'test-item',
+    itemEffect: { energy: 15, happiness: 5, xp: 7, coins: 3 },
+    at: '2026-05-04T01:25:00.000Z',
+    commandId: 'cmd-mvp-item',
+  });
+  assert.deepEqual(item.statDeltas, {
+    hunger: undefined,
+    happiness: 5,
+    energy: 15,
+    health: undefined,
+    cleanliness: undefined,
+    bond: undefined,
+  });
+  assert.equal(item.xpDelta, 7);
+  assert.equal(item.coinDelta, 3);
+  pet = item.pet;
+
+  const sleep = await applyPersonalityCommand(pet, {
+    type: 'sleep',
+    at: '2026-05-04T01:30:00.000Z',
+    commandId: 'cmd-mvp-sleep',
+  });
+  assert.equal(sleep.blockedAction, null);
+  assert.equal(sleep.pet.isAsleep, true);
+  assert.equal(sleep.appliedModifiers.some(modifier => modifier.id === 'sleep:start'), true);
+  pet = sleep.pet;
+
+  const wake = await applyPersonalityCommand(pet, {
+    type: 'wake',
+    at: '2026-05-04T06:30:00.000Z',
+    commandId: 'cmd-mvp-wake',
+  });
+  assert.equal(wake.blockedAction, null);
+  assert.equal(wake.pet.isAsleep, false);
+  assert.equal(wake.meta?.sleptHours, 5);
+  assert.equal(wake.meta?.naturalWake, true);
+
+  for (const result of [feed, play, bathe, heal, bond, item, sleep, wake]) {
+    assert.equal(result.events.some(event => event.type === 'gameplay_outcome_applied'), true);
+  }
+});
+
+await testAsync('personality command owns MVP action blockers', async () => {
+  const cases: Array<{ name: string; pet: Pet; command: PetCommand; reason: string }> = [
+    {
+      name: 'feed full',
+      pet: makePet({ stats: { hunger: 95, happiness: 50, energy: 50, health: 50, cleanliness: 50, bond: 50 } }),
+      command: { type: 'feed', foodId: 'apple', at: '2026-05-04T01:00:00.000Z', commandId: 'cmd-block-feed' },
+      reason: 'Питомец и так сыт!',
+    },
+    {
+      name: 'wake awake',
+      pet: makePet({ isAsleep: false }),
+      command: { type: 'wake', at: '2026-05-04T01:00:00.000Z', commandId: 'cmd-block-wake' },
+      reason: 'Питомец и так не спит!',
+    },
+    {
+      name: 'bathe clean',
+      pet: makePet({ stats: { hunger: 50, happiness: 50, energy: 50, health: 50, cleanliness: 95, bond: 50 } }),
+      command: { type: 'bathe', at: '2026-05-04T01:00:00.000Z', commandId: 'cmd-block-bathe' },
+      reason: 'Питомец уже чистый!',
+    },
+    {
+      name: 'heal healthy',
+      pet: makePet({ stats: { hunger: 50, happiness: 50, energy: 50, health: 95, cleanliness: 50, bond: 50 } }),
+      command: { type: 'heal', at: '2026-05-04T01:00:00.000Z', commandId: 'cmd-block-heal' },
+      reason: 'Питомец уже здоров!',
+    },
+  ];
+
+  for (const blockedCase of cases) {
+    const result = await applyPersonalityCommand(blockedCase.pet, blockedCase.command);
+    assert.equal(result.blockedAction?.reason, blockedCase.reason, blockedCase.name);
+    assert.deepEqual(result.statDeltas, {});
+    assert.equal(result.xpDelta, 0);
+    assert.equal(result.coinDelta, 0);
+    assert.equal(result.events.some(event => event.type === 'gameplay_outcome_applied' && event.blockedAction?.reason === blockedCase.reason), true);
+  }
+});
+
 await testAsync('personality command use_item food falls back to feed influence when item influence is missing', async () => {
   const pet = makePet({ formationComplete: true });
   const result = await applyPersonalityCommand(pet, {
@@ -903,7 +1093,7 @@ await testAsync('personality command handler owns gameplay counters without infl
   const pet = makePet({
     formationComplete: true,
     personality: 'foodie',
-    stats: { hunger: 80, happiness: 95, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    stats: { hunger: 20, happiness: 95, energy: 80, health: 80, cleanliness: 80, bond: 80 },
   });
   const commands: PetCommand[] = [
     { type: 'feed', foodId: 'apple', at: '2026-05-04T01:00:00.000Z', commandId: 'cmd-gameplay-feed-1' },
@@ -998,6 +1188,7 @@ await testAsync('personality command forced sleep records sleep start and exact 
 await testAsync('personality command natural wake resets confused only after four hours', async () => {
   const pet = makePet({
     formationComplete: true,
+    isAsleep: true,
     sleepStartedAt: '2026-05-04T02:00:00.000Z',
     dailyVectorVariance: 30,
     confusedState: true,
@@ -1024,6 +1215,7 @@ await testAsync('personality command natural wake resets confused only after fou
 await testAsync('personality command early wake keeps confused variance and applies wake trauma', async () => {
   const pet = makePet({
     formationComplete: true,
+    isAsleep: true,
     sleepStartedAt: '2026-05-04T02:00:00.000Z',
     dailyVectorVariance: 30,
     confusedState: true,

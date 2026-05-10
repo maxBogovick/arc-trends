@@ -46,9 +46,9 @@ Data-driven states важны, но они не заменяют `mockApi`. Их
 | Trait evolution core | 70% | Движение по 6D trait vector, formation, proposal, accept/reject, regression работают и покрыты тестами |
 | Gameplay emergent states | 55% | Состояния есть и часть хорошо протестирована, но условия активации еще hardcoded в `PersonalityEngine` |
 | Data-driven rules | 30% | Influence registry и pattern rules есть, но gameplay conditions/passives/actions еще не вынесены в registry |
-| Command pipeline | 45% | `applyPersonalityCommand()` уже запускает personality-side pipeline, но не владеет полным stats/XP/coins outcome |
-| Mock/backend parity | 35% | `mockApi` тоньше, чем раньше, но все еще считает экономику и часть gameplay результата |
-| Events/explainability | 45% | Core Memories есть, domain events есть частично, но важные gameplay changes еще не полностью объяснимы через события |
+| Command pipeline | 75% | `applyPersonalityCommand()` возвращает full command outcome для основных pet actions: stats/XP/coins/blocked/modifiers/meta/events |
+| Mock/backend parity | 55% | `mockApi` больше не считает gameplay outcome основных действий, но еще остается compatibility shell вместо нормальных PetService/LocalSave/SyncQueue/ServerApi |
+| Events/explainability | 55% | Есть `gameplay_outcome_applied` events и outcome fields, но еще нет сохраненной explainability history для UI/debug |
 | Balance/simulation proof | 10% | Тесты есть, но simulation reports по скорости и балансу почти отсутствуют |
 | Documentation/code alignment | 55% | Главные расхождения описаны, часть закрыта, но `PERSONALITY_EVOLUTION_SYSTEM.md` еще не полностью совпадает с кодом |
 
@@ -71,17 +71,17 @@ Data-driven states важны, но они не заменяют `mockApi`. Их
 | Core Memories | Partial | `addCoreMemory()`, threshold crossing tests, memory generator | Есть память, но explainability не покрывает все gameplay changes |
 | Memory text generation | Partial | `memoryTextGenerator.ts`, templates, sanitizer | AI/device mode не проверен как product feature |
 | Weekly drift | Partial | `checkWeeklyDrift()`; тест `weekly drift requires seven snapshots and uses directional cooldown` | Не ясно, насколько это видно игроку и правильно сбалансировано |
-| Sleep lifecycle | Ready/Partial | `onStartSleep()`, `onWakeFromSleep()`, `checkVarianceHardReset()`; тесты `sleep lifecycle resets confused only after natural 4h sleep`, `variance hard reset requires last full sleep timestamp` | Sleep gameplay outcome все еще не полностью command-owned |
+| Sleep lifecycle | Ready/Partial | `onStartSleep()`, `onWakeFromSleep()`, `checkVarianceHardReset()`; тесты `sleep lifecycle resets confused only after natural 4h sleep`, `variance hard reset requires last full sleep timestamp`, MVP outcome integration test | Sleep/wake command outcome есть; product UX/debug explainability еще минимальные |
 | Offline save | Ready | `createOfflinePetSave()`, `save/load/deleteOfflinePetSave()`; тесты offline storage | Это storage layer, не полный gameplay replay |
-| Offline command log | Ready/Partial | `appendOfflineCommand()`, `getUnsyncedCommands()`, `markCommandsSynced()`; тесты idempotency/sync window/compaction | Журнал команд работает, но replay пока не восстанавливает полный stats/XP/coins outcome |
-| Personality command replay | Partial | `replayPersonalityCommands()`; тест `personality replay advances sync buckets and preserves cooldown math` | Replay personality-side работает, полный gameplay/economy replay еще нет |
-| `applyPersonalityCommand()` entrypoint | Partial | `commandHandlers.ts`; тесты feed/use_item/sync/replay | Главный недочет: result не содержит полный stat/xp/coin/blocked/appliedModifiers outcome |
+| Offline command log | Ready/Partial | `appendOfflineCommand()`, `getUnsyncedCommands()`, `markCommandsSynced()`; тесты idempotency/sync window/compaction | Журнал команд работает; нужен отдельный SyncQueue service для product offline-first |
+| Personality command replay | Ready/Partial | `replayPersonalityCommands()`; тесты replay sync math и `personality command replay preserves full gameplay outcome` | Replay core outcome есть; нужна интеграция с будущим sync queue/server confirm |
+| `applyPersonalityCommand()` entrypoint | Ready/Partial | `commandHandlers.ts`; тесты feed/use_item/sync/replay/MVP action integration | Владеет основным command outcome; дальше нужно вынести оставшиеся hardcoded gameplay rules в registry |
 | Influence cooldowns in commands | Ready | `canApplyInfluenceAtSync()`, command handler cooldown tests | Нет крупного риска |
 | Food item fallback | Ready | `use_item` command with `itemKind`; тесты food fallback и item precedence | Нет крупного риска |
-| `mockApi` as adapter | Risk | Прямые influence internals убраны; `MockApi.getPet does not mutate...` | `mockApi` все еще считает base stats/XP/coins и часть special cases |
-| Base stat deltas for actions | Risk | Сейчас в `mockApi` action methods | Должно перейти в command/gameplay layer |
-| XP/coins outcome | Risk | `mockApi` и `applyActionModifiers()` вместе считают результат | Должно стать частью `PetCommandResult` |
-| Action modifiers | Partial | `applyActionModifiers()`; тесты active layers, `perfect_balance` XP-only | Часть personality-specific logic hardcoded; часть economy остается в `mockApi` |
+| `mockApi` as adapter | Partial | Основные actions вызывают `applyPersonalityCommand()`; targeted `rg` не находит старые outcome calculators | Нужно заменить compatibility shell на PetService/LocalSave/SyncQueue/ServerApi |
+| Base stat deltas for actions | Ready/Partial | `getBaseActionResult()` в command handler; MVP integration test | Дальше нужно сделать data-driven registry, но это не блокирует MVP-2 |
+| XP/coins outcome | Ready/Partial | `PetCommandResult.xpDelta/coinDelta`, level-up coin bonus, MVP integration test | Нужно сохранить explainability history и server contract |
+| Action modifiers | Partial | `applyActionModifiers()`; tests active layers, `perfect_balance` XP-only, MVP outcome test | Модификаторы применяются в command outcome; часть personality-specific logic hardcoded и позже уйдет в registry |
 | Decay | Partial | `applyDecay()`; command sync вызывает decay | Есть hardcoded personality branches; нужно вынести в decay rules registry |
 | Natural passives | Partial | `computeNaturalPassives()`; foodie/pristine/empath/natural regen | Passive effects hardcoded; нужен registry |
 | Mood calculation | Partial | `calcMoodWithBias()`; command sync updates mood | Работает, но mood rules не data-driven |
@@ -169,13 +169,13 @@ Data-driven states важны, но они не заменяют `mockApi`. Их
 
 Лучший ответ:
 
-> Ближайший конец — M1: command outcome. Done означает: `applyPersonalityCommand()` возвращает stats/XP/coins/blocked/appliedModifiers, а `mockApi` для основных действий использует этот результат вместо собственных расчетов.
+> M1 закрыт: command outcome есть. Ближайший конец теперь — M2: offline shell. Done означает: UI/action flow идет через PetService, данные сохраняются в LocalSave, pending commands лежат в SyncQueue, а `mockApi` можно удалить или оставить только как dev compatibility wrapper.
 
 ### Вопрос 9. Нужно сначала дорабатывать движок или разбирать `mockApi`?
 
 Лучший ответ:
 
-> Сначала дорабатывать движок, но не весь сразу: именно command outcome. Разбирать `mockApi` раньше нельзя, потому что пока нечем заменить расчет результата действия. После command outcome `mockApi` можно безопасно разрезать на LocalSave, SyncQueue, ServerApi и PetService.
+> Command outcome уже сделан. Теперь нужно разбирать `mockApi`, потому что он больше не нужен как место расчета результата действия. Следующий правильный шаг — PetService + LocalSave + SyncQueue + ServerApi contract.
 
 ---
 

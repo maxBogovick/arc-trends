@@ -1,4 +1,5 @@
-import type { HeadId, EarsId, BodyPartId, LimbsId, TailId } from '../../data/petParts';
+import { motion } from 'framer-motion';
+import type { HeadId, EarsId, BodyPartId, LimbsId, TailId, NoseId, MouthStyleId } from '../../data/petParts';
 
 interface PartColors {
   body1: string;
@@ -22,10 +23,40 @@ export function HeadShape({ id, gradId }: PartProps & { id: HeadId }) {
     case 'square':
       return <rect x="50" y="26" width="100" height="96" rx="22" fill={f} />;
     case 'egg':
-      // Wide puffy cheeks, narrower at top
       return (
         <path
           d="M 100 26 C 142 22, 168 50, 164 82 C 160 114, 138 132, 100 134 C 62 132, 40 114, 36 82 C 32 50, 58 22, 100 26 Z"
+          fill={f}
+        />
+      );
+    case 'heart':
+      return (
+        <path
+          d="M 100 130 C 60 110, 26 90, 32 62 C 36 42, 56 30, 76 36 C 88 40, 96 50, 100 58 C 104 50, 112 40, 124 36 C 144 30, 164 42, 168 62 C 174 90, 140 110, 100 130 Z"
+          fill={f}
+        />
+      );
+    case 'star': {
+      let d = '';
+      const pts = 5;
+      for (let i = 0; i < pts * 2; i++) {
+        const r = i % 2 === 0 ? 54 : 26;
+        const a = (i * Math.PI) / pts - Math.PI / 2;
+        d += `${i === 0 ? 'M' : 'L'} ${100 + r * Math.cos(a)} ${80 + r * Math.sin(a)} `;
+      }
+      return <path d={d + 'Z'} fill={f} />;
+    }
+    case 'blob':
+      return (
+        <path
+          d="M 100 28 C 130 24, 160 42, 158 70 C 156 90, 168 108, 154 122 C 140 136, 120 138, 100 136 C 80 138, 60 136, 46 122 C 32 108, 44 90, 42 70 C 40 42, 70 24, 100 28 Z"
+          fill={f}
+        />
+      );
+    case 'diamond':
+      return (
+        <path
+          d="M 100 22 L 148 70 L 128 126 L 72 126 L 52 70 Z"
           fill={f}
         />
       );
@@ -90,6 +121,28 @@ export function EarsShape({ id, gradId, c }: PartProps & { id: EarsId }) {
           <circle cx="136" cy="6" r="3.5" fill="white" opacity={0.65} />
         </g>
       );
+    case 'bat':
+      return (
+        <g>
+          {/* Bat wing ear left */}
+          <path d="M 58 54 C 30 20, 18 0, 46 14 C 54 18, 60 28, 58 54 Z" fill={f} />
+          <path d="M 52 50 C 36 22, 28 10, 48 18 C 54 22, 56 30, 52 50 Z" fill={c.cheek} opacity={0.3} />
+          {/* Right */}
+          <path d="M 142 54 C 170 20, 182 0, 154 14 C 146 18, 140 28, 142 54 Z" fill={f} />
+          <path d="M 148 50 C 164 22, 172 10, 152 18 C 146 22, 144 30, 148 50 Z" fill={c.cheek} opacity={0.3} />
+        </g>
+      );
+    case 'elf':
+      return (
+        <g>
+          {/* Long pointy elf ear left */}
+          <path d="M 52 70 L 20 48 L 60 60 Z" fill={f} />
+          <path d="M 54 68 L 26 50 L 58 62 Z" fill={c.cheek} opacity={0.4} />
+          {/* Right */}
+          <path d="M 148 70 L 180 48 L 140 60 Z" fill={f} />
+          <path d="M 146 68 L 174 50 L 142 62 Z" fill={c.cheek} opacity={0.4} />
+        </g>
+      );
     default: // none
       return null;
   }
@@ -130,6 +183,33 @@ export function BodyShape({ id, gradId }: PartProps & { id: BodyPartId }) {
           <ellipse cx="82" cy="134" rx="16" ry="11" fill="white" opacity={0.13} transform="rotate(-20 82 134)" />
         </>
       );
+    case 'pear':
+      return (
+        <>
+          <ellipse cx="100" cy="164" rx="56" ry="38" fill={f} />
+          <ellipse cx="100" cy="164" rx="36" ry="28" fill="white" opacity={0.06} />
+        </>
+      );
+    case 'tank':
+      return (
+        <>
+          {/* Blocky robot torso */}
+          <path
+            d="M 46 108 L 154 108 L 162 114 L 168 128 L 168 180 L 162 190 L 38 190 L 32 180 L 32 128 L 38 114 Z"
+            fill={f}
+          />
+          {/* Panel lines */}
+          <line x1="46" y1="120" x2="154" y2="120" stroke="rgba(255,255,255,0.1)" strokeWidth="1.5" />
+          <line x1="100" y1="108" x2="100" y2="190" stroke="rgba(255,255,255,0.07)" strokeWidth="1.5" />
+          {/* Vent slots */}
+          {[130, 142, 154, 166].map(y => (
+            <rect key={y} x="70" y={y} width="16" height="4" rx="2" fill="rgba(0,0,0,0.25)" />
+          ))}
+          {[130, 142, 154, 166].map(y => (
+            <rect key={y + 'r'} x="114" y={y} width="16" height="4" rx="2" fill="rgba(0,0,0,0.25)" />
+          ))}
+        </>
+      );
     default: // chubby
       return (
         <>
@@ -137,7 +217,6 @@ export function BodyShape({ id, gradId }: PartProps & { id: BodyPartId }) {
             d="M 50 108 C 28 112, 16 132, 18 158 C 20 180, 46 196, 100 196 C 154 196, 180 180, 182 158 C 184 132, 172 112, 150 108 Z"
             fill={f}
           />
-          {/* Belly shine */}
           <ellipse cx="100" cy="155" rx="24" ry="32" fill="white" opacity={0.08} />
         </>
       );
@@ -205,12 +284,45 @@ export function LimbsShape({ id, gradId, c }: PartProps & { id: LimbsId }) {
     case 'stubby':
       return (
         <g>
-          {/* Short rounded arms */}
           <path d="M 42 118 C 20 122, 14 144, 26 160 C 34 170, 50 166, 54 150 L 56 120 Z" fill={f} />
           <path d="M 158 118 C 180 122, 186 144, 174 160 C 166 170, 150 166, 146 150 L 144 120 Z" fill={f} />
-          {/* Knuckle */}
           <circle cx="30" cy="158" r="6" fill={c.body2} opacity={0.75} />
           <circle cx="170" cy="158" r="6" fill={c.body2} opacity={0.75} />
+        </g>
+      );
+    case 'tentacles':
+      return (
+        <g>
+          {/* Three tentacles each side */}
+          {[[-30, 8], [-18, 20], [-6, 28]].map(([dx, dy], i) => (
+            <path key={i}
+              d={`M ${46 + i * 4} 134 C ${20 + dx} ${140 + dy}, ${10 + dx} ${168 + dy}, ${22 + dx} ${180 + dy}`}
+              stroke={c.body2} strokeWidth="9" fill="none" strokeLinecap="round" />
+          ))}
+          {[[-30, 8], [-18, 20], [-6, 28]].map(([dx, dy], i) => (
+            <path key={i + 'r'}
+              d={`M ${154 - i * 4} 134 C ${180 - dx} ${140 + dy}, ${190 - dx} ${168 + dy}, ${178 - dx} ${180 + dy}`}
+              stroke={c.body2} strokeWidth="9" fill="none" strokeLinecap="round" />
+          ))}
+          {/* sucker dots */}
+          {[0,1,2].map(i => <circle key={i} cx={20 - 30 + i * 4} cy={168 + 8 + i * 8} r={3.5} fill={c.glow} opacity={0.6} />)}
+          {[0,1,2].map(i => <circle key={i + 'r'} cx={180 + 30 - i * 4} cy={168 + 8 + i * 8} r={3.5} fill={c.glow} opacity={0.6} />)}
+        </g>
+      );
+    case 'claws':
+      return (
+        <g>
+          {/* Arm with 3 claws */}
+          <path d="M 46 122 C 24 128, 16 148, 28 164 L 54 136 Z" fill={f} />
+          <path d="M 154 122 C 176 128, 184 148, 172 164 L 146 136 Z" fill={f} />
+          {/* Claws left */}
+          <path d="M 28 164 L 12 178" stroke={c.glow} strokeWidth="5" strokeLinecap="round" />
+          <path d="M 32 168 L 20 186" stroke={c.glow} strokeWidth="5" strokeLinecap="round" />
+          <path d="M 38 170 L 30 190" stroke={c.glow} strokeWidth="5" strokeLinecap="round" />
+          {/* Claws right */}
+          <path d="M 172 164 L 188 178" stroke={c.glow} strokeWidth="5" strokeLinecap="round" />
+          <path d="M 168 168 L 180 186" stroke={c.glow} strokeWidth="5" strokeLinecap="round" />
+          <path d="M 162 170 L 170 190" stroke={c.glow} strokeWidth="5" strokeLinecap="round" />
         </g>
       );
     default: // none
@@ -219,6 +331,113 @@ export function LimbsShape({ id, gradId, c }: PartProps & { id: LimbsId }) {
 }
 
 // ─── TAIL ─────────────────────────────────────────────────────────────────────
+
+// ─── NOSE ──────────────────────────────────────────────────────────────────────
+
+export function NoseShape({ id, cy, color }: { id: NoseId; cy: number; color: string }) {
+  const cx = 100;
+  switch (id) {
+    case 'button':
+      return <circle cx={cx} cy={cy} r={4.5} fill={color} opacity={0.75} />;
+    case 'cat':
+      return (
+        <path
+          d={`M ${cx - 5} ${cy - 2} L ${cx} ${cy + 4} L ${cx + 5} ${cy - 2} Z`}
+          fill={color} opacity={0.8}
+        />
+      );
+    case 'led':
+      return (
+        <motion.circle cx={cx} cy={cy} r={4} fill={color}
+          animate={{ opacity: [0.9, 0.3, 0.9], r: [4, 5, 4] }}
+          transition={{ duration: 1.4, repeat: Infinity }}>
+          <animate attributeName="r" values="4;5;4" dur="1.4s" repeatCount="indefinite" />
+        </motion.circle>
+      );
+    case 'star': {
+      let d = '';
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? 5 : 2.2;
+        const a = (i * Math.PI) / 5 - Math.PI / 2;
+        d += `${i === 0 ? 'M' : 'L'} ${cx + r * Math.cos(a)} ${cy + r * Math.sin(a)} `;
+      }
+      return <path d={d + 'Z'} fill={color} opacity={0.85} />;
+    }
+    case 'heart':
+      return (
+        <path
+          d={`M ${cx} ${cy + 3.5} C ${cx - 6} ${cy - 2}, ${cx - 10} ${cy - 6}, ${cx} ${cy - 2} C ${cx + 10} ${cy - 6}, ${cx + 6} ${cy - 2}, ${cx} ${cy + 3.5} Z`}
+          fill={color} opacity={0.82}
+        />
+      );
+    default:
+      return null;
+  }
+}
+
+// ─── MOUTH STYLE ───────────────────────────────────────────────────────────────
+
+export function MouthShape({ id, cy, hw, strokeColor }: { id: MouthStyleId; cy: number; hw: number; strokeColor: string }) {
+  const cx = 100;
+  if (id === 'auto') return null;
+
+  switch (id) {
+    case 'smile':
+      return (
+        <path d={`M ${cx - hw + 2} ${cy} Q ${cx} ${cy + 20} ${cx + hw - 2} ${cy}`}
+          stroke={strokeColor} strokeWidth="3.5" fill="none" strokeLinecap="round" />
+      );
+    case 'blush':
+      return (
+        <g>
+          <path d={`M ${cx - hw + 6} ${cy + 4} Q ${cx} ${cy + 14} ${cx + hw - 6} ${cy + 4}`}
+            stroke={strokeColor} strokeWidth="3" fill="none" strokeLinecap="round" />
+          <circle cx={cx - hw + 2} cy={cy + 4} r={2.5} fill={strokeColor} opacity={0.5} />
+          <circle cx={cx + hw - 2} cy={cy + 4} r={2.5} fill={strokeColor} opacity={0.5} />
+        </g>
+      );
+    case 'fangs':
+      return (
+        <g>
+          <path d={`M ${cx - hw + 4} ${cy} Q ${cx} ${cy + 16} ${cx + hw - 4} ${cy}`}
+            stroke={strokeColor} strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d={`M ${cx - 8} ${cy} L ${cx - 4} ${cy + 10}`}
+            stroke={strokeColor} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+          <path d={`M ${cx + 8} ${cy} L ${cx + 4} ${cy + 10}`}
+            stroke={strokeColor} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+        </g>
+      );
+    case 'pixel': {
+      const blocks = [-8, -4, 0, 4, 8];
+      return (
+        <g>
+          {blocks.map((dx, i) => (
+            <rect key={i} x={cx + dx - 2} y={cy + (i % 2 === 0 ? 4 : 0)} width={4} height={4}
+              fill={strokeColor} rx={0.5} />
+          ))}
+        </g>
+      );
+    }
+    case 'zigzag': {
+      const w = hw - 4;
+      const pts = Array.from({ length: 7 }, (_, i) => {
+        const x = cx - w + (i * w * 2) / 6;
+        const y = cy + (i % 2 === 0 ? 0 : 10);
+        return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+      }).join(' ');
+      return <path d={pts} stroke={strokeColor} strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />;
+    }
+    case 'dot':
+      return (
+        <g>
+          <circle cx={cx} cy={cy + 6} r={6} fill={strokeColor} opacity={0.8} />
+          <circle cx={cx} cy={cy + 6} r={4} fill="rgba(0,0,0,0.25)" />
+        </g>
+      );
+    default:
+      return null;
+  }
+}
 
 export function TailShape({ id, gradId, c }: PartProps & { id: TailId }) {
   const f = `url(#${gradId})`;
@@ -295,6 +514,35 @@ export function TailShape({ id, gradId, c }: PartProps & { id: TailId }) {
           />
         </g>
       );
+    case 'lightning':
+      return (
+        <g>
+          {/* Zigzag lightning bolt tail */}
+          <path d="M 158 148 L 190 120 L 174 118 L 204 82 L 186 82 L 210 52"
+            stroke={c.glow} strokeWidth="10" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M 158 148 L 190 120 L 174 118 L 204 82 L 186 82 L 210 52"
+            stroke="white" strokeWidth="4" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.3} />
+        </g>
+      );
+    case 'bow': {
+      const bx = 176, by = 148;
+      return (
+        <g>
+          {/* Ribbon/bow shape */}
+          <path d={`M ${bx} ${by} C ${bx - 18} ${by - 22}, ${bx - 30} ${by - 6}, ${bx} ${by} C ${bx - 30} ${by + 6}, ${bx - 18} ${by + 22}, ${bx} ${by} Z`}
+            fill={c.glow} opacity={0.9} />
+          <path d={`M ${bx} ${by} C ${bx + 18} ${by - 22}, ${bx + 30} ${by - 6}, ${bx} ${by} C ${bx + 30} ${by + 6}, ${bx + 18} ${by + 22}, ${bx} ${by} Z`}
+            fill={c.glow} opacity={0.9} />
+          <circle cx={bx} cy={by} r={7} fill={c.body1} />
+          <circle cx={bx} cy={by} r={4} fill={c.glow} opacity={0.7} />
+          {/* Ribbon tails */}
+          <path d={`M ${bx - 4} ${by + 4} C ${bx - 12} ${by + 16}, ${bx - 24} ${by + 20}, ${bx - 22} ${by + 30}`}
+            stroke={c.glow} strokeWidth="4" fill="none" strokeLinecap="round" opacity={0.8} />
+          <path d={`M ${bx + 4} ${by + 4} C ${bx + 12} ${by + 16}, ${bx + 24} ${by + 20}, ${bx + 22} ${by + 30}`}
+            stroke={c.glow} strokeWidth="4" fill="none" strokeLinecap="round" opacity={0.8} />
+        </g>
+      );
+    }
     default: // none
       return null;
   }

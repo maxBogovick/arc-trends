@@ -34,6 +34,7 @@ const INITIAL_COUNTERS: BehavioralCounters = {
   dailyFoodLog: {}, recentFeedTimestamps: [],
   lastDayReset: new Date().toISOString().slice(0, 10),
   stoicPeakUsed: false, enlightenmentActive: false,
+  melancholicActionCount: 0,
 };
 
 const STAT_KEYS: StatKey[] = ['hunger', 'happiness', 'energy', 'health', 'cleanliness', 'bond'];

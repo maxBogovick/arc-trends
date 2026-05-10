@@ -121,7 +121,7 @@
 
 ---
 
-### P2. Command result owns full gameplay outcome
+### P2. Command result owns full gameplay outcome — DONE
 
 Цель: сделать `applyPersonalityCommand()` единым доменным source of truth для результата действия.
 
@@ -131,7 +131,9 @@
 - offline replay не может восстановить полный gameplay/economy outcome;
 - будущий backend должен принимать тот же command outcome, а не копировать mock logic.
 
-Задачи:
+Статус на 2026-05-10: выполнено.
+
+Закрыто:
 
 1. Расширить `PetCommandResult`.
    - `statDeltas`
@@ -149,11 +151,14 @@
    - persistence;
    - UI events.
 
-Критерий готовности:
+Доказательства:
 
-- backend/mock/replay используют один command outcome;
-- `mockApi` не содержит personality/gameplay calculators для care/play actions;
-- offline command log может replay full gameplay outcome.
+- `personality command MVP actions expose integrated gameplay outcomes`;
+- `personality command replay preserves full gameplay outcome`;
+- targeted `rg` по `src/api/mockApi.ts` не находит старые gameplay outcome calculators;
+- `npm test` и `npm run build` проходят.
+
+Следующий шаг: MVP-2/P4 — разрезать `mockApi` на PetService, LocalSave, SyncQueue и ServerApi contract.
 
 ---
 
@@ -400,16 +405,17 @@ Reports:
 
 - Это самая рискованная часть. Нужен incremental migration.
 
-### Sprint 3 — Command outcome and system influences
+### Sprint 3 — Offline shell and system influences
 
-1. Расширить `PetCommandResult` gameplay outcome.
-2. Перенести base action result calculation из `mockApi`.
-3. Реализовать `applyEligibleSystemInfluences()`.
-4. Реализовать generic `onApply` lifecycle hooks.
+1. Создать PetService поверх command outcome.
+2. Создать LocalSave без gameplay logic.
+3. Создать SyncQueue для pending commands.
+4. Описать ServerApi command contract.
+5. После offline shell вернуться к `applyEligibleSystemInfluences()` и generic `onApply` lifecycle hooks.
 
 Почему здесь:
 
-- После data-driven conditions command layer должен стать единым source of truth.
+- Command layer уже стал source of truth для MVP actions; теперь нужно убрать `mockApi` как псевдо-server, иначе offline/online архитектура останется временной.
 
 ### Sprint 4 — Learning foundation
 

@@ -3,18 +3,21 @@ import { useState, useEffect } from 'react';
 import type { Pet, PetMood } from '../../api';
 import { getSkin, type SkinDefinition, type EyeStyle, type OverlayStyle } from '../../data/skins';
 import { type BodyShapeId } from '../../data/bodyShapes';
-import { getHead, type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId } from '../../data/petParts';
+import { getHead, type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId, type NoseId, type MouthStyleId } from '../../data/petParts';
 import { getAccessory } from '../../data/accessories';
 import { getAura } from '../../data/auras';
 import { usePetStore } from '../../store/petStore';
 import { PetAura } from './PetAura';
-import { HeadShape, EarsShape, BodyShape, LimbsShape, TailShape } from './ModularBody';
+import { HeadShape, EarsShape, BodyShape, LimbsShape, TailShape, NoseShape, MouthShape } from './ModularBody';
 
 interface Props {
   pet: Pet;
   moodOverride?: PetMood;
   size?: number;
   overrideState?: {
+    gradientDirection?: 'radial' | 'vertical' | 'horizontal' | 'diagonal' | 'diagonal_reverse';
+    equippedNoseId?: NoseId;
+    equippedMouthStyleId?: MouthStyleId;
     equippedSkinId?: string;
     equippedBodyId?: BodyShapeId;
     equippedHeadId?: HeadId;
@@ -28,6 +31,7 @@ interface Props {
     equippedAccessories?: any;
     accessoryConfigs?: any;
     eyeStyleOverride?: string | null;
+    eyeColorOverride?: string | null;
     overlayOverride?: string | null;
   } | null;
 }
@@ -196,16 +200,91 @@ function EyeHologram({ cx, cy, color }: EyeProps) {
   );
 }
 
-function Eyes({ skin, head, mood }: { skin: SkinDefinition; head: ReturnType<typeof getHead>; mood: PetMood }) {
+function EyeCute({ cx, cy, color, mood }: EyeProps) {
+  const off = cx < 100 ? 3 : -3;
+  if (mood === 'sleeping')
+    return <path d={`M ${cx - 13} ${cy} Q ${cx} ${cy - 8} ${cx + 13} ${cy}`} stroke="white" strokeWidth="4" fill="none" strokeLinecap="round" />;
+  if (mood === 'sick')
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={14} fill="white" />
+        <line x1={cx - 7} y1={cy - 6} x2={cx + 7} y2={cy + 6} stroke={color} strokeWidth="3.5" strokeLinecap="round" />
+        <line x1={cx + 7} y1={cy - 6} x2={cx - 7} y2={cy + 6} stroke={color} strokeWidth="3.5" strokeLinecap="round" />
+      </g>
+    );
+  return (
+    <g>
+      <motion.circle cx={cx} cy={cy} r={14} fill="white"
+        animate={{ scaleY: [1, 1, 1, 0.07, 1] }} transition={{ duration: 3.5, repeat: Infinity, repeatDelay: 1.5 }}
+        style={{ transformOrigin: `${cx}px ${cy}px` }} />
+      <circle cx={cx + off * 0.3} cy={cy + 2} r={9} fill={color} />
+      <circle cx={cx + off * 0.3 - 2} cy={cy - 3} r={3} fill="white" />
+      <circle cx={cx + off * 0.3 + 3} cy={cy + 3} r={1.5} fill="white" opacity={0.7} />
+      {/* Star shine */}
+      <motion.g animate={{ opacity: [0.6, 1, 0.6] }} transition={{ duration: 1.8, repeat: Infinity }}>
+        <line x1={cx + off * 0.3 - 5} y1={cy - 8} x2={cx + off * 0.3 + 5} y2={cy - 8} stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1={cx + off * 0.3} y1={cy - 13} x2={cx + off * 0.3} y2={cy - 3} stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+      </motion.g>
+    </g>
+  );
+}
+
+function EyePixel({ cx, cy, color }: EyeProps) {
+  const px = 4;
+  return (
+    <g>
+      {/* 3×3 pixel grid eye */}
+      {[[-1,0],[0,-1],[1,0],[0,1],[0,0],[-1,-1],[1,-1],[-1,1],[1,1]].map(([dx, dy], i) => (
+        <rect key={i}
+          x={cx + dx * px - px / 2} y={cy + dy * px - px / 2}
+          width={px} height={px}
+          fill={i === 4 ? color : i < 4 ? color : 'rgba(255,255,255,0.15)'}
+          opacity={i === 4 ? 1 : i < 4 ? 0.9 : 0.3}
+        />
+      ))}
+      {/* pupil highlight */}
+      <rect x={cx - 1} y={cy - 3} width={2} height={2} fill="white" opacity={0.8} />
+    </g>
+  );
+}
+
+function EyeClosed({ cx, cy, color }: EyeProps) {
+  const off = cx < 100 ? -1 : 1;
+  return (
+    <g>
+      <path d={`M ${cx - 13} ${cy} Q ${cx + off * 3} ${cy - 10} ${cx + 13} ${cy}`}
+        stroke={color} strokeWidth="3.5" fill="none" strokeLinecap="round" />
+      <path d={`M ${cx - 10} ${cy + 2} Q ${cx + off * 2} ${cy - 5} ${cx + 10} ${cy + 2}`}
+        stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" opacity={0.4} />
+    </g>
+  );
+}
+
+function EyeWink({ cx, cy, color, mood }: EyeProps) {
+  const isLeft = cx < 100;
+  if (isLeft) {
+    // Left eye = closed wink
+    return (
+      <g>
+        <path d={`M ${cx - 12} ${cy} Q ${cx} ${cy - 9} ${cx + 12} ${cy}`}
+          stroke={color} strokeWidth="3.5" fill="none" strokeLinecap="round" />
+      </g>
+    );
+  }
+  // Right eye = cute open
+  return <EyeCute cx={cx} cy={cy} color={color} mood={mood} />;
+}
+
+function Eyes({ eyeStyle, eyeColor, head, mood }: { eyeStyle: EyeStyle; eyeColor: string; head: ReturnType<typeof getHead>; mood: PetMood }) {
   const positions: EyeProps[] = [
-    { ...head.eyeLeft,  color: skin.eyeColor, mood },
-    { ...head.eyeRight, color: skin.eyeColor, mood },
+    { ...head.eyeLeft,  color: eyeColor, mood },
+    { ...head.eyeRight, color: eyeColor, mood },
   ];
   return (
     <>
       {positions.map((p, i) => {
         const k = i;
-        switch (skin.eyeStyle) {
+        switch (eyeStyle) {
           case 'led':      return <EyeLED      key={k} {...p} />;
           case 'spiral':   return <EyeSpiral   key={k} {...p} />;
           case 'slit':     return <EyeSlit     key={k} {...p} />;
@@ -215,6 +294,10 @@ function Eyes({ skin, head, mood }: { skin: SkinDefinition; head: ReturnType<typ
           case 'star':     return <EyeStar     key={k} {...p} />;
           case 'lens':     return <EyeLens     key={k} {...p} />;
           case 'hologram': return <EyeHologram key={k} {...p} />;
+          case 'cute':     return <EyeCute     key={k} {...p} />;
+          case 'pixel':    return <EyePixel    key={k} {...p} />;
+          case 'closed':   return <EyeClosed   key={k} {...p} />;
+          case 'wink':     return <EyeWink     key={k} {...p} />;
           default:         return <EyeNormal   key={k} {...p} />;
         }
       })}
@@ -352,7 +435,10 @@ function useGlitch(enabled: boolean) {
 
 export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Props) {
   const store = usePetStore();
-  
+
+  const gradientDirection   = overrideState?.gradientDirection   ?? store.gradientDirection;
+  const equippedNoseId      = (overrideState?.equippedNoseId      ?? store.equippedNoseId)      as NoseId;
+  const equippedMouthStyleId = (overrideState?.equippedMouthStyleId ?? store.equippedMouthStyleId) as MouthStyleId;
   const equippedSkinId      = overrideState?.equippedSkinId      ?? store.equippedSkinId;
   const equippedBodyId      = overrideState?.equippedBodyId      ?? store.equippedBodyId;
   const equippedHeadId      = overrideState?.equippedHeadId      ?? store.equippedHeadId;
@@ -366,21 +452,24 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   const equippedAccessories = overrideState?.equippedAccessories ?? store.equippedAccessories;
   const accessoryConfigs    = overrideState?.accessoryConfigs   ?? store.accessoryConfigs;
   const eyeStyleOverride    = overrideState?.eyeStyleOverride   ?? store.eyeStyleOverride;
+  const eyeColorOverride    = overrideState?.eyeColorOverride   ?? store.eyeColorOverride;
   const overlayOverride     = overrideState?.overlayOverride    ?? store.overlayOverride;
   
   const setAccessoryConfig  = store.setAccessoryConfig;
   const recordHistory       = store.recordHistory;
   const isEditor            = store.activeTab === 'editor';
 
-  const renderAccessory = (slot: 'head' | 'face' | 'back', behind: boolean) => {
+  const renderAccessory = (slot: 'head' | 'face' | 'back' | 'neck' | 'clothing', behind: boolean) => {
     const id = equippedAccessories[slot];
     const acc = getAccessory(id);
     const config = accessoryConfigs[slot];
     if (!acc || id.startsWith('none') || config.behind !== behind) return null;
 
     let bx = 100, by = 0, bs = 26;
-    if (slot === 'head') { by = 14; bs = 26; }
-    if (slot === 'face') { by = 86; bs = 30; }
+    if (slot === 'head')     { by = 14;  bs = 26; }
+    if (slot === 'face')     { by = 86;  bs = 30; }
+    if (slot === 'neck')     { by = 126; bs = 22; }
+    if (slot === 'clothing') { by = 152; bs = 48; }
     if (slot === 'back') {
       if (behind) { bx = 100; by = 130; bs = 52; }
       else        { bx = 162; by = 112; bs = 28; }
@@ -408,6 +497,7 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   const skin: SkinDefinition = {
     ...baseSkin,
     eyeStyle: (eyeStyleOverride as EyeStyle) ?? baseSkin.eyeStyle,
+    eyeColor: eyeColorOverride ?? baseSkin.eyeColor,
     overlay:  (overlayOverride  as OverlayStyle) ?? baseSkin.overlay,
   };
   const head  = getHead(equippedHeadId);
@@ -462,6 +552,10 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   const morphStyle: React.CSSProperties = (petMorph.scale !== 1 || petMorph.width !== 1 || petMorph.height !== 1)
     ? { transform: `scale(${petMorph.scale}) scaleX(${petMorph.width}) scaleY(${petMorph.height})` }
     : {};
+  const headSc   = petMorph.headScale  ?? 1;
+  const earsSc   = petMorph.earsScale  ?? 1;
+  const limbsSc  = petMorph.limbsScale ?? 1;
+  const squishSc = petMorph.squish     ?? 1;
 
   return (
     <div className="relative" style={{ ...morphStyle, isolation: 'isolate' }}>
@@ -472,12 +566,25 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
         animate={floatAnim}
       >
         <svg viewBox="0 0 200 200" width={size} height={size}
+          data-pet-export="true"
           style={{ filter: `drop-shadow(0 0 28px ${glowColor}99) drop-shadow(0 4px 14px ${glowColor}55)`, overflow: 'visible' }}>
           <defs>
-            <radialGradient id={gradId} cx="76" cy="60" r="130" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor={body1} />
-              <stop offset="100%" stopColor={body2} />
-            </radialGradient>
+            {gradientDirection === 'radial' ? (
+              <radialGradient id={gradId} cx="76" cy="60" r="130" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor={body1} />
+                <stop offset="100%" stopColor={body2} />
+              </radialGradient>
+            ) : (
+              <linearGradient id={gradId}
+                x1={gradientDirection === 'horizontal' ? '0%' : gradientDirection === 'diagonal' ? '0%' : gradientDirection === 'diagonal_reverse' ? '100%' : '0%'}
+                y1={gradientDirection === 'vertical' ? '0%' : gradientDirection === 'diagonal' ? '0%' : gradientDirection === 'diagonal_reverse' ? '0%' : '0%'}
+                x2={gradientDirection === 'horizontal' ? '100%' : gradientDirection === 'diagonal' ? '100%' : gradientDirection === 'diagonal_reverse' ? '0%' : '0%'}
+                y2={gradientDirection === 'vertical' ? '100%' : gradientDirection === 'diagonal' ? '100%' : gradientDirection === 'diagonal_reverse' ? '100%' : '100%'}
+              >
+                <stop offset="0%" stopColor={body1} />
+                <stop offset="100%" stopColor={body2} />
+              </linearGradient>
+            )}
             <linearGradient id="rainbow_grad" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%"   stopColor="#FF0080" />
               <stop offset="33%"  stopColor="#00FF80" />
@@ -492,11 +599,21 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
           {renderAccessory('face', true)}
 
           {/* Modular pet body — layers from back to front */}
-          <TailShape  id={equippedTailId}     gradId={gradId} c={colors} />
-          <LimbsShape id={equippedLimbsId}    gradId={gradId} c={colors} />
-          <EarsShape  id={equippedEarsId}     gradId={gradId} c={colors} />
-          <BodyShape  id={equippedBodyPartId} gradId={gradId} c={colors} />
-          <HeadShape  id={equippedHeadId}     gradId={gradId} c={colors} />
+          <g transform={`translate(175,150) scale(${limbsSc}) translate(-175,-150)`}>
+            <TailShape  id={equippedTailId}  gradId={gradId} c={colors} />
+          </g>
+          <g transform={`translate(100,150) scale(${limbsSc},${squishSc}) translate(-100,-150)`}>
+            <LimbsShape id={equippedLimbsId} gradId={gradId} c={colors} />
+          </g>
+          <g transform={`translate(100,45) scale(${earsSc}) translate(-100,-45)`}>
+            <EarsShape  id={equippedEarsId}  gradId={gradId} c={colors} />
+          </g>
+          <g transform={`translate(100,152) scale(${squishSc},1) translate(-100,-152)`}>
+            <BodyShape  id={equippedBodyPartId} gradId={gradId} c={colors} />
+          </g>
+          <g transform={`translate(100,80) scale(${headSc}) translate(-100,-80)`}>
+            <HeadShape  id={equippedHeadId}  gradId={gradId} c={colors} />
+          </g>
           <Overlay skin={skin} />
 
           {/* Cheeks */}
@@ -509,21 +626,40 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
             )}
           </AnimatePresence>
 
-          <Eyes skin={skin} head={head} mood={effectiveMood} />
+          {/* Nose */}
+          {equippedNoseId !== 'none' && (
+            <NoseShape id={equippedNoseId} cy={head.mouthCy - 14} color={skin.eyeColor} />
+          )}
+
+          <Eyes eyeStyle={skin.eyeStyle} eyeColor={skin.eyeColor} head={head} mood={effectiveMood} />
 
           {/* Mouth */}
-          {mouthPath && (
-            <motion.path
-              d={mouthPath}
-              stroke={['led','hologram'].includes(skin.eyeStyle) ? skin.eyeColor : 'white'}
-              strokeWidth="3.5" fill="none" strokeLinecap="round"
-              animate={{ d: mouthPath }} transition={{ duration: 0.4 }}
+          {equippedMouthStyleId === 'auto' ? (
+            mouthPath && (
+              <motion.path
+                d={mouthPath}
+                stroke={['led','hologram'].includes(skin.eyeStyle) ? skin.eyeColor : 'white'}
+                strokeWidth="3.5" fill="none" strokeLinecap="round"
+                animate={{ d: mouthPath }} transition={{ duration: 0.4 }}
+              />
+            )
+          ) : (
+            <MouthShape
+              id={equippedMouthStyleId}
+              cy={head.mouthCy}
+              hw={head.mouthHW}
+              strokeColor={['led','hologram'].includes(skin.eyeStyle) ? skin.eyeColor : 'white'}
             />
           )}
 
           <LevelAccessory level={pet.level} />
 
+          {/* Clothing (behind body) */}
+          {renderAccessory('clothing', true)}
+
           {/* Layer: Topmost Accessories (In front of everything) */}
+          {renderAccessory('clothing', false)}
+          {renderAccessory('neck', false)}
           {renderAccessory('back', false)}
           {renderAccessory('head', false)}
           {renderAccessory('face', false)}

@@ -1,23 +1,26 @@
 import type { Pet } from '../api/types';
 import type {
+  ActionType,
+  BlockedAction,
   CoreMemory,
   EmergentStateType,
   EvolutionProposal,
   EvolutionRecord,
   PersonalityId,
+  StatKey,
   TraitVector,
 } from './types';
 import { PERSONALITY_ENGINE_VERSION, STATIC_REGISTRY_VERSION } from './engineVersion';
 
 export type PetCommand =
-  | { type: 'feed'; foodId: string; at: string; commandId: string }
+  | { type: 'feed'; foodId: string; foodEffect?: { hungerRestore: number; happinessBonus: number; healthBonus: number }; at: string; commandId: string }
   | { type: 'play'; scoreSeed: string; at: string; commandId: string }
   | { type: 'sleep'; at: string; commandId: string }
   | { type: 'wake'; at: string; commandId: string }
   | { type: 'bathe'; at: string; commandId: string }
   | { type: 'heal'; at: string; commandId: string }
   | { type: 'bond'; at: string; commandId: string }
-  | { type: 'use_item'; itemId: string; itemKind?: 'food' | 'toy' | 'medicine' | 'decoration'; at: string; commandId: string }
+  | { type: 'use_item'; itemId: string; itemKind?: 'food' | 'toy' | 'medicine' | 'decoration'; itemEffect?: Partial<Record<StatKey | 'xp' | 'coins', number>>; at: string; commandId: string }
   | { type: 'equip_room'; roomId: string; at: string; commandId: string }
   | { type: 'npc_visit'; npcPersonalityId: PersonalityId; at: string; commandId: string }
   | { type: 'accept_evolution'; proposalId?: string; at: string; commandId: string }
@@ -26,6 +29,7 @@ export type PetCommand =
 
 export type DomainEvent =
   | { type: 'trait_vector_changed'; at: string; commandId: string; prevVector: TraitVector; nextVector: TraitVector }
+  | { type: 'gameplay_outcome_applied'; at: string; commandId: string; actionType: ActionType; statDeltas: Partial<Record<StatKey, number>>; xpDelta: number; coinDelta: number; blockedAction: BlockedAction | null }
   | { type: 'core_memory_added'; at: string; commandId: string; memory: CoreMemory }
   | { type: 'evolution_proposed'; at: string; commandId: string; proposal: EvolutionProposal }
   | { type: 'evolution_recorded'; at: string; commandId: string; record: EvolutionRecord }
@@ -44,11 +48,23 @@ export interface EngineContext {
   registryVersion: string;
 }
 
+export interface AppliedModifier {
+  source: 'personality' | 'flag' | 'state' | 'special_rule' | 'base';
+  id: string;
+  description: string;
+}
+
 export interface PetCommandResult {
   pet: Pet;
   events: DomainEvent[];
   command: PetCommand;
   influenceCooldowns: InfluenceCooldownState;
+  statDeltas: Partial<Record<StatKey, number>>;
+  xpDelta: number;
+  coinDelta: number;
+  blockedAction: BlockedAction | null;
+  appliedModifiers: AppliedModifier[];
+  meta?: Record<string, unknown>;
   engineVersion: string;
   registryVersion: string;
 }

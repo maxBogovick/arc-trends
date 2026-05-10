@@ -2,8 +2,8 @@ import { motion } from 'framer-motion';
 import { usePetStore } from '../../../store/petStore';
 import { getSkin } from '../../../data/skins';
 import {
-  HEADS, EARS_OPTIONS, BODY_PARTS, LIMBS_OPTIONS, TAILS_OPTIONS,
-  type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId,
+  HEAD_OPTIONS, EARS_OPTIONS, BODY_PARTS, LIMBS_OPTIONS, TAILS_OPTIONS, NOSE_OPTIONS, MOUTH_STYLES,
+  type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId, type NoseId, type MouthStyleId,
 } from '../../../data/petParts';
 import { GLASS, ACTIVE_GLOW } from '../constants';
 import { SectionLabel } from '../Shared';
@@ -58,11 +58,15 @@ export function PartsPanel() {
     equippedBodyPartId,
     equippedLimbsId,
     equippedTailId,
+    equippedNoseId,
+    equippedMouthStyleId,
     equipHead,
     equipEars,
     equipBodyPart,
     equipLimbs,
     equipTail,
+    equipNose,
+    equipMouthStyle,
   } = usePetStore();
 
   const glow = getSkin(equippedSkinId).colors.glow;
@@ -73,7 +77,7 @@ export function PartsPanel() {
 
       <PartSection<HeadId>
         label="🐺 Голова"
-        options={HEADS}
+        options={HEAD_OPTIONS}
         active={equippedHeadId}
         glow={glow}
         onSelect={equipHead}
@@ -109,6 +113,22 @@ export function PartsPanel() {
         active={equippedTailId}
         glow={glow}
         onSelect={equipTail}
+      />
+
+      <PartSection<NoseId>
+        label="👃 Нос"
+        options={NOSE_OPTIONS}
+        active={equippedNoseId}
+        glow={glow}
+        onSelect={equipNose}
+      />
+
+      <PartSection<MouthStyleId>
+        label="👄 Рот / Выражение"
+        options={MOUTH_STYLES}
+        active={equippedMouthStyleId}
+        glow={glow}
+        onSelect={equipMouthStyle}
       />
     </div>
   );

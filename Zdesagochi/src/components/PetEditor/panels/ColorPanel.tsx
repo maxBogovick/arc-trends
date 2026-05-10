@@ -7,8 +7,18 @@ import type { PetColors } from '../../../data/palettes';
 import { GLASS, ACTIVE_GLOW } from '../constants';
 import { SectionLabel } from '../Shared';
 
+type GradientDirection = 'radial' | 'vertical' | 'horizontal' | 'diagonal' | 'diagonal_reverse';
+
+const GRADIENT_OPTIONS: { id: GradientDirection; emoji: string; label: string }[] = [
+  { id: 'radial',           emoji: '⭕', label: 'Радиальный' },
+  { id: 'vertical',         emoji: '⬇️', label: 'Вертикаль' },
+  { id: 'horizontal',       emoji: '➡️', label: 'Горизонталь' },
+  { id: 'diagonal',         emoji: '↘️', label: 'Диагональ ↘' },
+  { id: 'diagonal_reverse', emoji: '↙️', label: 'Диагональ ↙' },
+];
+
 export function ColorPanel() {
-  const { petColorOverride, setPetColorOverride, equippedSkinId } = usePetStore();
+  const { petColorOverride, setPetColorOverride, equippedSkinId, gradientDirection, setGradientDirection } = usePetStore();
   const skin = getSkin(equippedSkinId);
   const base = petColorOverride ?? skin.colors;
   const [custom, setCustom] = useState<PetColors>({ body1: base.body1, body2: base.body2, glow: base.glow, cheek: base.cheek });
@@ -55,6 +65,29 @@ export function ColorPanel() {
             </motion.button>
           );
         })}
+      </div>
+
+      {/* Gradient direction */}
+      <div className="p-4 rounded-2xl space-y-3" style={GLASS}>
+        <p className="text-xs font-semibold text-lumio-muted">↕️ Направление градиента</p>
+        <div className="grid grid-cols-5 gap-1">
+          {GRADIENT_OPTIONS.map(opt => {
+            const active = gradientDirection === opt.id;
+            return (
+              <motion.button
+                key={opt.id}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => setGradientDirection(opt.id)}
+                className="flex flex-col items-center gap-1 p-1.5 rounded-xl"
+                style={active ? ACTIVE_GLOW('#818CF8') : { background: '#F3F4F6', borderRadius: 12 }}
+              >
+                <span className="text-base">{opt.emoji}</span>
+                <span className="text-[7px] text-lumio-muted text-center leading-tight">{opt.label.split(' ')[0]}</span>
+              </motion.button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Custom pickers */}

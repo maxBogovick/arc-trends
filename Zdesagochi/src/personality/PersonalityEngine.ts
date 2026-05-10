@@ -835,6 +835,7 @@ export function createDefaultCounters(context: PersonalityRuntimeContext = {}): 
     enlightenmentActive: false,
     chaosDailySeed: getContextRng(context)(),
     chaosSeedDate: now.slice(0, 10),
+    melancholicActionCount: 0,
     rollingWindows: { dailyBuckets: [] },
   };
 }

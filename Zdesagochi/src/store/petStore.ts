@@ -9,7 +9,7 @@ import {
 } from '../api';
 import { getSkin, SKINS } from '../data/skins';
 import { type BodyShapeId } from '../data/bodyShapes';
-import { type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId } from '../data/petParts';
+import { type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId, type NoseId, type MouthStyleId } from '../data/petParts';
 import { getBackground, BACKGROUNDS } from '../data/backgrounds';
 import { getAura } from '../data/auras';
 import { getAccessoriesBySlot } from '../data/accessories';
@@ -145,10 +145,13 @@ interface PetStore {
   equippedBodyPartId: BodyPartId;
   equippedLimbsId: LimbsId;
   equippedTailId: TailId;
+  equippedNoseId: NoseId;
+  equippedMouthStyleId: MouthStyleId;
   equippedBgId: string;
   ownedBgs: string[];
   petColorOverride: { body1: string; body2: string; glow: string; cheek: string } | null;
-  petMorph: { scale: number; width: number; height: number };
+  gradientDirection: 'radial' | 'vertical' | 'horizontal' | 'diagonal' | 'diagonal_reverse';
+  petMorph: { scale: number; width: number; height: number; headScale: number; earsScale: number; limbsScale: number; squish: number };
   equippedAuraId: string;
   ownedAuras: string[];
   ownedAccessoriesList: string[];
@@ -162,13 +165,16 @@ interface PetStore {
   updateRoomFurniture(uid: string, changes: Partial<PlacedFurnitureItem>): void;
   buyRoomFurniture(itemId: string): void;
   clearRoomFurniture(): void;
-  equippedAccessories: { head: string; face: string; back: string };
+  equippedAccessories: { head: string; face: string; back: string; neck: string; clothing: string };
   accessoryConfigs: {
     head: { scale: number; x: number; y: number; rotation: number; behind: boolean };
     face: { scale: number; x: number; y: number; rotation: number; behind: boolean };
     back: { scale: number; x: number; y: number; rotation: number; behind: boolean };
+    neck: { scale: number; x: number; y: number; rotation: number; behind: boolean };
+    clothing: { scale: number; x: number; y: number; rotation: number; behind: boolean };
   };
   eyeStyleOverride: string | null;
+  eyeColorOverride: string | null;
   overlayOverride: string | null;
   roomCustomization: RoomCustomization;
   roomPresets: RoomPreset[];
@@ -201,15 +207,19 @@ interface PetStore {
   equipBodyPart(id: BodyPartId): void;
   equipLimbs(id: LimbsId): void;
   equipTail(id: TailId): void;
+  equipNose(id: NoseId): void;
+  equipMouthStyle(id: MouthStyleId): void;
   buyBg(bgId: string): void;
   equipBg(bgId: string): void;
   setPetColorOverride(c: { body1: string; body2: string; glow: string; cheek: string } | null): void;
-  setPetMorph(m: { scale: number; width: number; height: number }): void;
+  setGradientDirection(d: 'radial' | 'vertical' | 'horizontal' | 'diagonal' | 'diagonal_reverse'): void;
+  setPetMorph(m: { scale: number; width: number; height: number; headScale: number; earsScale: number; limbsScale: number; squish: number }): void;
   buyAura(auraId: string): void;
   equipAura(auraId: string): void;
-  setAccessory(slot: 'head' | 'face' | 'back', id: string): void;
-  setAccessoryConfig(slot: 'head' | 'face' | 'back', config: { scale: number; x: number; y: number; rotation: number; behind: boolean }): void;
+  setAccessory(slot: 'head' | 'face' | 'back' | 'neck' | 'clothing', id: string): void;
+  setAccessoryConfig(slot: 'head' | 'face' | 'back' | 'neck' | 'clothing', config: { scale: number; x: number; y: number; rotation: number; behind: boolean }): void;
   setEyeStyleOverride(s: string | null): void;
+  setEyeColorOverride(c: string | null): void;
   setOverlayOverride(s: string | null): void;
   setRoomCustomization(partial: Partial<RoomCustomization>): void;
   resetRoomCustomization(): void;
@@ -353,22 +363,28 @@ export const usePetStore = create<PetStore>((set, get) => {
     equippedBodyPartId: 'chubby' as BodyPartId,
     equippedLimbsId: 'none' as LimbsId,
     equippedTailId: 'none' as TailId,
+    equippedNoseId: 'none' as NoseId,
+    equippedMouthStyleId: 'auto' as MouthStyleId,
     equippedBgId: 'void_dark',
     ownedBgs: BACKGROUNDS.filter(b => b.price === 0).map(b => b.id),
     ownedFurnitureIds: loadOwnedFurnitureIds(),
     placedFurniture: loadPlacedFurniture(),
     petColorOverride: null,
-    petMorph: { scale: 1, width: 1, height: 1 },
+    gradientDirection: 'radial',
+    petMorph: { scale: 1, width: 1, height: 1, headScale: 1, earsScale: 1, limbsScale: 1, squish: 1 },
     equippedAuraId: 'none',
     ownedAuras: ['none'],
-    equippedAccessories: { head: 'none_head', face: 'none_face', back: 'none_back' },
+    equippedAccessories: { head: 'none_head', face: 'none_face', back: 'none_back', neck: 'none_neck', clothing: 'none_clothing' },
     ownedAccessoriesList: [],
     accessoryConfigs: {
       head: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
       face: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
       back: { scale: 1, x: 0, y: 0, rotation: 0, behind: true },
+      neck: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
+      clothing: { scale: 1, x: 0, y: 0, rotation: 0, behind: true },
     },
     eyeStyleOverride: null,
+    eyeColorOverride: null,
     overlayOverride: null,
     roomCustomization: loadRoomCustomization(),
     roomPresets: JSON.parse(localStorage.getItem('roomPresets') || '[]'),
@@ -443,12 +459,23 @@ export const usePetStore = create<PetStore>((set, get) => {
       const preset = {
         equippedSkinId: state.equippedSkinId,
         equippedBodyId: state.equippedBodyId,
+        equippedHeadId: state.equippedHeadId,
+        equippedEarsId: state.equippedEarsId,
+        equippedBodyPartId: state.equippedBodyPartId,
+        equippedLimbsId: state.equippedLimbsId,
+        equippedTailId: state.equippedTailId,
         equippedBgId: state.equippedBgId,
         petColorOverride: state.petColorOverride,
         petMorph: state.petMorph,
         equippedAuraId: state.equippedAuraId,
         equippedAccessories: state.equippedAccessories,
         accessoryConfigs: state.accessoryConfigs,
+        eyeStyleOverride: state.eyeStyleOverride,
+        eyeColorOverride: state.eyeColorOverride,
+        overlayOverride: state.overlayOverride,
+        equippedNoseId: state.equippedNoseId,
+        equippedMouthStyleId: state.equippedMouthStyleId,
+        gradientDirection: state.gradientDirection,
       };
       const newPresets = { ...state.petPresets, [name]: preset };
       set({ petPresets: newPresets });
@@ -483,63 +510,84 @@ export const usePetStore = create<PetStore>((set, get) => {
         equippedSkinId: state.equippedSkinId,
         equippedBodyId: state.equippedBodyId,
         equippedBgId: state.equippedBgId,
+        equippedHeadId: state.equippedHeadId,
+        equippedEarsId: state.equippedEarsId,
+        equippedBodyPartId: state.equippedBodyPartId,
+        equippedLimbsId: state.equippedLimbsId,
+        equippedTailId: state.equippedTailId,
+        equippedNoseId: state.equippedNoseId,
+        equippedMouthStyleId: state.equippedMouthStyleId,
         petColorOverride: state.petColorOverride,
+        gradientDirection: state.gradientDirection,
         petMorph: state.petMorph,
         equippedAuraId: state.equippedAuraId,
         equippedAccessories: state.equippedAccessories,
         accessoryConfigs: state.accessoryConfigs,
+        eyeStyleOverride: state.eyeStyleOverride,
+        eyeColorOverride: state.eyeColorOverride,
+        overlayOverride: state.overlayOverride,
       };
-      set({ 
+      set({
         history: [snapshot, ...state.history].slice(0, 50),
-        future: [] 
+        future: []
       });
     },
 
     undo() {
-      const { history, future, recordHistory, ...currentState } = get();
-      if (history.length === 0) return;
-
-      const [prev, ...rest] = history;
+      const state = get();
+      if (state.history.length === 0) return;
+      const [prev, ...rest] = state.history;
       const currentSnapshot = {
-        equippedSkinId: currentState.equippedSkinId,
-        equippedBodyId: currentState.equippedBodyId,
-        equippedBgId: currentState.equippedBgId,
-        petColorOverride: currentState.petColorOverride,
-        petMorph: currentState.petMorph,
-        equippedAuraId: currentState.equippedAuraId,
-        equippedAccessories: currentState.equippedAccessories,
-        accessoryConfigs: currentState.accessoryConfigs,
+        equippedSkinId: state.equippedSkinId,
+        equippedBodyId: state.equippedBodyId,
+        equippedBgId: state.equippedBgId,
+        equippedHeadId: state.equippedHeadId,
+        equippedEarsId: state.equippedEarsId,
+        equippedBodyPartId: state.equippedBodyPartId,
+        equippedLimbsId: state.equippedLimbsId,
+        equippedTailId: state.equippedTailId,
+        equippedNoseId: state.equippedNoseId,
+        equippedMouthStyleId: state.equippedMouthStyleId,
+        petColorOverride: state.petColorOverride,
+        gradientDirection: state.gradientDirection,
+        petMorph: state.petMorph,
+        equippedAuraId: state.equippedAuraId,
+        equippedAccessories: state.equippedAccessories,
+        accessoryConfigs: state.accessoryConfigs,
+        eyeStyleOverride: state.eyeStyleOverride,
+        eyeColorOverride: state.eyeColorOverride,
+        overlayOverride: state.overlayOverride,
       };
-
-      set({
-        ...prev,
-        history: rest,
-        future: [currentSnapshot, ...future].slice(0, 50)
-      });
+      set({ ...prev, history: rest, future: [currentSnapshot, ...state.future].slice(0, 50) });
       get().notify('Действие отменено', 'info');
     },
 
     redo() {
-      const { history, future, recordHistory, ...currentState } = get();
-      if (future.length === 0) return;
-
-      const [next, ...rest] = future;
+      const state = get();
+      if (state.future.length === 0) return;
+      const [next, ...rest] = state.future;
       const currentSnapshot = {
-        equippedSkinId: currentState.equippedSkinId,
-        equippedBodyId: currentState.equippedBodyId,
-        equippedBgId: currentState.equippedBgId,
-        petColorOverride: currentState.petColorOverride,
-        petMorph: currentState.petMorph,
-        equippedAuraId: currentState.equippedAuraId,
-        equippedAccessories: currentState.equippedAccessories,
-        accessoryConfigs: currentState.accessoryConfigs,
+        equippedSkinId: state.equippedSkinId,
+        equippedBodyId: state.equippedBodyId,
+        equippedBgId: state.equippedBgId,
+        equippedHeadId: state.equippedHeadId,
+        equippedEarsId: state.equippedEarsId,
+        equippedBodyPartId: state.equippedBodyPartId,
+        equippedLimbsId: state.equippedLimbsId,
+        equippedTailId: state.equippedTailId,
+        equippedNoseId: state.equippedNoseId,
+        equippedMouthStyleId: state.equippedMouthStyleId,
+        petColorOverride: state.petColorOverride,
+        gradientDirection: state.gradientDirection,
+        petMorph: state.petMorph,
+        equippedAuraId: state.equippedAuraId,
+        equippedAccessories: state.equippedAccessories,
+        accessoryConfigs: state.accessoryConfigs,
+        eyeStyleOverride: state.eyeStyleOverride,
+        eyeColorOverride: state.eyeColorOverride,
+        overlayOverride: state.overlayOverride,
       };
-
-      set({
-        ...next,
-        future: rest,
-        history: [currentSnapshot, ...history].slice(0, 50)
-      });
+      set({ ...next, future: rest, history: [currentSnapshot, ...state.history].slice(0, 50) });
       get().notify('Действие возвращено', 'info');
     },
 
@@ -696,6 +744,8 @@ export const usePetStore = create<PetStore>((set, get) => {
         if (!owned.includes(equippedAccessories.head) && !equippedAccessories.head.startsWith('none')) equippedAccessories.head = 'none_head';
         if (!owned.includes(equippedAccessories.face) && !equippedAccessories.face.startsWith('none')) equippedAccessories.face = 'none_face';
         if (!owned.includes(equippedAccessories.back) && !equippedAccessories.back.startsWith('none')) equippedAccessories.back = 'none_back';
+        if (!owned.includes(equippedAccessories.neck) && !equippedAccessories.neck.startsWith('none')) equippedAccessories.neck = 'none_neck';
+        if (!owned.includes(equippedAccessories.clothing) && !equippedAccessories.clothing.startsWith('none')) equippedAccessories.clothing = 'none_clothing';
 
         const config = {
           equippedSkinId: s.equippedSkinId,
@@ -900,6 +950,8 @@ export const usePetStore = create<PetStore>((set, get) => {
     equipBodyPart(id) { get().recordHistory(); set({ equippedBodyPartId: id }); },
     equipLimbs(id) { get().recordHistory(); set({ equippedLimbsId: id }); },
     equipTail(id) { get().recordHistory(); set({ equippedTailId: id }); },
+    equipNose(id) { get().recordHistory(); set({ equippedNoseId: id }); },
+    equipMouthStyle(id) { get().recordHistory(); set({ equippedMouthStyleId: id }); },
 
     buyBg(bgId) {
       const bg = getBackground(bgId);
@@ -924,6 +976,11 @@ export const usePetStore = create<PetStore>((set, get) => {
     setPetColorOverride(c) {
       get().recordHistory();
       set({ petColorOverride: c });
+    },
+
+    setGradientDirection(d) {
+      get().recordHistory();
+      set({ gradientDirection: d });
     },
 
     setPetMorph(m) { set({ petMorph: m }); },
@@ -955,9 +1012,9 @@ export const usePetStore = create<PetStore>((set, get) => {
 
     buyAccessory(id) {
       const { coins, ownedAccessoriesList } = get();
-      const acc = getAccessoriesBySlot('head').find(a => a.id === id) 
-               || getAccessoriesBySlot('face').find(a => a.id === id)
-               || getAccessoriesBySlot('back').find(a => a.id === id);
+      const acc = (['head','face','back','neck','clothing'] as const)
+        .flatMap(s => getAccessoriesBySlot(s))
+        .find(a => a.id === id);
       
       if (!acc) return;
       if (ownedAccessoriesList.includes(id)) return;
@@ -970,8 +1027,9 @@ export const usePetStore = create<PetStore>((set, get) => {
       get().notify(`🕶️ «${acc.name}» куплен!`, 'coins');
     },
 
-    setEyeStyleOverride(s) { set({ eyeStyleOverride: s }); },
-    setOverlayOverride(s) { set({ overlayOverride: s }); },
+    setEyeStyleOverride(s) { get().recordHistory(); set({ eyeStyleOverride: s }); },
+    setEyeColorOverride(c) { set({ eyeColorOverride: c }); },
+    setOverlayOverride(s) { get().recordHistory(); set({ overlayOverride: s }); },
     setRoomCustomization(partial) {
       set(s => {
         const next = stripBase64FromCustomization({ ...s.roomCustomization, ...partial });

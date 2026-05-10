@@ -510,6 +510,7 @@ export interface BehavioralCounters {
   enlightenmentStart?:  string;      // ISO
   chaosDailySeed:       number;      // 0–1, перерандомизируется раз в 24ч
   chaosSeedDate:        string;      // ISO-дата последнего seed
+  melancholicActionCount: number;     // счетчик действий для xpEveryOtherAction
 
   // Rolling source of truth для 7d/30d counters.
   // Старые числовые поля выше остаются materialized summary для совместимости.

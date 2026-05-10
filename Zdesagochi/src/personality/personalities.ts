@@ -749,14 +749,14 @@ const SPECIAL_RULE_SUPPORT: Record<keyof PersonalitySpecialRules, {
     message: 'Supported by natural passive calculation.',
   },
   rejectSleepWhenEnergized: {
-    status: 'adapter_owned',
-    owner: 'mockApi sleep flow',
-    message: 'Implemented in mockApi; should move into command outcome in P3.',
+    status: 'engine',
+    owner: 'applyPersonalityCommand/applyActionOutcome',
+    message: 'Supported by command outcome blocker before sleep lifecycle starts.',
   },
   peakPerformanceThreshold: {
-    status: 'adapter_owned',
-    owner: 'mockApi action outcome via getPeakPerformanceMult',
-    message: 'Implemented through exported engine helper, but applied by mockApi economy flow.',
+    status: 'engine',
+    owner: 'applyPersonalityCommand/applyActionOutcome',
+    message: 'Supported by command outcome XP/coin multiplier.',
   },
   nighttimeHours: {
     status: 'engine',
@@ -769,9 +769,9 @@ const SPECIAL_RULE_SUPPORT: Record<keyof PersonalitySpecialRules, {
     message: 'Supported by night energy decay calculation.',
   },
   xpEveryOtherAction: {
-    status: 'adapter_owned',
-    owner: 'mockApi play economy flow',
-    message: 'Implemented in mockApi; should move into command outcome in P3.',
+    status: 'engine',
+    owner: 'applyPersonalityCommand/applyActionOutcome',
+    message: 'Supported by command outcome with persisted behavioral counter.',
   },
   randomizeDailySeed: {
     status: 'engine',

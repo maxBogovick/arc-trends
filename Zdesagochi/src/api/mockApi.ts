@@ -10,15 +10,11 @@ import type {
   PetEvent, PetMood, PetStage, NewLifeResult,
 } from './types';
 import type {
-  StatKey, BehavioralFlag, BehavioralCounters, MoodSnapshot,
+  BehavioralFlag, BehavioralCounters, MoodSnapshot,
   TraitVector,
 } from '../personality/types';
-import type { InfluenceCooldownState, OfflineKeyValueStorage, PetCommand } from '../personality';
-import {
-  applyActionModifiers, isActionBlocked,
-  calcMoodWithBias, getPeakPerformanceMult,
-  getParanoidRestoreMult, createDefaultCounters,
-} from '../personality/PersonalityEngine';
+import type { InfluenceCooldownState, OfflineKeyValueStorage, PetCommand, PetCommandResult } from '../personality';
+import { calcMoodWithBias, createDefaultCounters } from '../personality/PersonalityEngine';
 import {
   addCatharsisProgress,
   recordLegacy,
@@ -33,7 +29,6 @@ import { getPersonality, getPersonalityBySkin } from '../personality/personaliti
 import {
   createBrowserOfflineStorage,
   createOfflinePetSave,
-  getActiveEmergentStateTypes,
   loadOfflinePetSave,
   syncLayeredStatesFromLegacy,
   applyPersonalityCommand,
@@ -46,8 +41,6 @@ const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 const mockRng = () => Math.random();
 const rand = (min: number, max: number) => mockRng() * (max - min) + min;
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
-// Счётчик действий Меланхолика (чётные/нечётные)
-let melancholicActionCount = 0;
 let traitSyncCounter = 0;
 const influenceCooldowns = new Map<string, number>();
 let offlineCommandCounter = 0;
@@ -68,10 +61,6 @@ const NEUTRAL_TRAIT_VECTOR: TraitVector = {
   caution: 50,
   curiosity: 50,
 };
-
-function activeEmergentStates(): ReturnType<typeof getActiveEmergentStateTypes> {
-  return getActiveEmergentStateTypes(S.pet);
-}
 
 type OfflineCommandDraft = PetCommand extends infer Command
   ? Command extends PetCommand
@@ -456,7 +445,7 @@ function recordOfflineCommand(command: OfflineCommandDraft): void {
   trimOfflineCommandLog();
 }
 
-async function applyMockPersonalityCommand(command: OfflineCommandDraft): Promise<void> {
+async function applyMockPersonalityCommand(command: OfflineCommandDraft): Promise<PetCommandResult> {
   const fullCommand = {
     ...command,
     commandId: command.commandId ?? nextOfflineCommandId(command.type),
@@ -475,6 +464,16 @@ async function applyMockPersonalityCommand(command: OfflineCommandDraft): Promis
   restoreCooldowns(result.influenceCooldowns);
   offlineCommandLog.push(fullCommand);
   trimOfflineCommandLog();
+  return result;
+}
+
+async function applyMockCommandOrThrow(command: OfflineCommandDraft): Promise<PetCommandResult> {
+  const result = await applyMockPersonalityCommand(command);
+  if (result.blockedAction) {
+    throw new Error(result.blockedAction.reason);
+  }
+  S.coins += result.coinDelta;
+  return result;
 }
 
 function trimOfflineCommandLog(): void {
@@ -618,34 +617,17 @@ export class MockApiService implements ApiService {
     await delay(rand(280, 450));
     const food = FOODS.find(f => f.id === foodId);
     if (!food) throw new Error(`Еда "${foodId}" не найдена`);
-    if (S.pet.isAsleep) throw new Error('Питомец спит!');
-    if (S.pet.stats.hunger > 90) throw new Error('Питомец и так сыт!');
-
-    const personality = getPersonality(S.pet.personality);
     const now = mockNow();
-    const ctx = { foodId, clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng };
-
-    // Проверить блокировку эмерджентного состояния
-    const activeStates = activeEmergentStates();
-    const blocked = isActionBlocked('feed', activeStates);
-    if (blocked) throw new Error(blocked.reason);
-
-    // Базовый результат
-    const baseResult = { statDeltas: { hunger: food.hungerRestore, happiness: food.happinessBonus, health: food.healthBonus }, xp: 8, coins: 0 };
-
-    // Применить модификаторы характера
-    const modified = applyActionModifiers(baseResult, 'feed', personality, S.pet.behavioralFlags, activeStates, S.pet.behavioralCounters, ctx);
-
-    // Параноик: множитель restore
-    const paranoidMult = personality.id === 'paranoid' ? getParanoidRestoreMult(S.pet.behavioralCounters) : 1.0;
-
-    for (const [s, v] of Object.entries(modified.statDeltas)) {
-      const stat = s as StatKey;
-      (S.pet.stats as any)[stat] = clamp((S.pet.stats as any)[stat] + (v ?? 0) * (stat !== 'health' ? paranoidMult : 1.0));
-    }
-    gainXp(modified.xp);
-
-    await applyMockPersonalityCommand({ type: 'feed', foodId, at: now.toISOString() });
+    await applyMockCommandOrThrow({
+      type: 'feed',
+      foodId,
+      foodEffect: {
+        hungerRestore: food.hungerRestore,
+        happinessBonus: food.happinessBonus,
+        healthBonus: food.healthBonus,
+      },
+      at: now.toISOString(),
+    });
 
     S.feedCount++;
     S.foodsTried.add(foodId);
@@ -659,46 +641,11 @@ export class MockApiService implements ApiService {
 
   async playWithPet(): Promise<PlayResult> {
     await delay(rand(200, 380));
-    if (S.pet.isAsleep) throw new Error('Питомец спит!');
-    if (S.pet.stats.energy < 10) throw new Error('Питомец слишком устал для игр');
-
-    const personality = getPersonality(S.pet.personality);
     const now = mockNow();
-    const ctx = { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng };
-
-    const activeStates = activeEmergentStates();
-    const blocked = isActionBlocked('play', activeStates);
-    if (blocked) throw new Error(blocked.reason);
-
     const score = Math.floor(rand(40, 220));
-    const baseXp = Math.floor(score * 0.5);
-    const baseCoins = Math.floor(score * 0.1) + 2;
-
-    const baseResult = { statDeltas: { happiness: 20, energy: -15, bond: 8 }, xp: baseXp, coins: baseCoins };
-    const modified = applyActionModifiers(baseResult, 'play', personality, S.pet.behavioralFlags, activeStates, S.pet.behavioralCounters, ctx);
-
-    // Нервный пик-перфоманс
-    const peak = getPeakPerformanceMult(S.pet.stats as any, personality);
-
-    // Меланхолик: XP только на чётных действиях
-    let finalXp = modified.xp;
-    if (personality.specialRules?.xpEveryOtherAction) {
-      melancholicActionCount++;
-      if (melancholicActionCount % 2 !== 0) finalXp = 0;
-    }
-    finalXp = Math.round(finalXp * peak.xpMult);
-    const finalCoins = Math.round(modified.coins * peak.coinMult);
-
-    for (const [s, v] of Object.entries(modified.statDeltas)) {
-      if (s !== 'energy') (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
-    }
-    // energy отдельно — может быть отрицательным
-    S.pet.stats.energy = clamp(S.pet.stats.energy + (modified.statDeltas.energy ?? -15));
-
-    gainXp(finalXp);
-    S.coins += finalCoins;
-
-    await applyMockPersonalityCommand({ type: 'play', scoreSeed: String(score), at: now.toISOString() });
+    const result = await applyMockCommandOrThrow({ type: 'play', scoreSeed: String(score), at: now.toISOString() });
+    const finalXp = result.xpDelta;
+    const finalCoins = result.coinDelta;
 
     S.playCount++;
     if (score > S.maxStarScore) S.maxStarScore = score;
@@ -713,17 +660,8 @@ export class MockApiService implements ApiService {
 
   async sleepPet() {
     await delay(rand(200, 350));
-    if (S.pet.isAsleep) throw new Error('Уже спит!');
-    const blocked = isActionBlocked('sleep', activeEmergentStates());
-    if (blocked) throw new Error(blocked.reason);
-    // Дерзкий: не ляжет при energy > 30
-    const personality = getPersonality(S.pet.personality);
-    if (personality.specialRules?.rejectSleepWhenEnergized && S.pet.stats.energy > 30) {
-      throw new Error('Слишком бодрый чтобы спать!');
-    }
     const now = mockNow();
-    S.pet.isAsleep = true;
-    await applyMockPersonalityCommand({ type: 'sleep', at: now.toISOString() });
+    await applyMockCommandOrThrow({ type: 'sleep', at: now.toISOString() });
     S.sleepCount++;
     addEvent('sleep', 'Пошёл спать', '😴');
     checkAchievement('sweet_dreams', S.sleepCount);
@@ -732,38 +670,19 @@ export class MockApiService implements ApiService {
 
   async wakePet() {
     await delay(rand(200, 350));
-    if (!S.pet.isAsleep) throw new Error('Питомец и так не спит!');
     const now = mockNow();
-    S.pet.isAsleep = false;
-    await applyMockPersonalityCommand({ type: 'wake', at: now.toISOString() });
+    await applyMockCommandOrThrow({ type: 'wake', at: now.toISOString() });
     addEvent('wake', 'Проснулся', '☀️');
     return finalizePet();
   }
 
   async bathePet() {
     await delay(rand(350, 520));
-    if (S.pet.isAsleep) throw new Error('Питомец спит!');
-    if (S.pet.stats.cleanliness > 90) throw new Error('Питомец уже чистый!');
-
-    const personality = getPersonality(S.pet.personality);
     const now = mockNow();
-    const ctx = { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng };
-    const activeStates = activeEmergentStates();
-    const blocked = isActionBlocked('bathe', activeStates);
-    if (blocked) throw new Error(blocked.reason);
-
-    // Дикий: ненавидит купание
-    const isFeral = personality.id === 'feral';
-    const baseResult = { statDeltas: { cleanliness: 40, happiness: isFeral ? -20 : 5, health: 5 }, xp: 12, coins: 0 };
-    const modified = applyActionModifiers(baseResult, 'bathe', personality, S.pet.behavioralFlags, activeStates, S.pet.behavioralCounters, ctx);
-
-    for (const [s, v] of Object.entries(modified.statDeltas)) {
-      (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
-    }
-    gainXp(modified.xp);
-    await applyMockPersonalityCommand({ type: 'bathe', at: now.toISOString() });
+    const wasFeral = S.pet.personality === 'feral';
+    await applyMockCommandOrThrow({ type: 'bathe', at: now.toISOString() });
     S.batheCount++;
-    addEvent('bathe', isFeral ? 'Купался против воли 😤' : 'Принял ванну', '🛁');
+    addEvent('bathe', wasFeral ? 'Купался против воли 😤' : 'Принял ванну', '🛁');
     tickQuest('q_bathe');
     checkAchievement('clean_freak', S.batheCount);
     return finalizePet();
@@ -771,27 +690,8 @@ export class MockApiService implements ApiService {
 
   async healPet() {
     await delay(rand(300, 480));
-    const personality = getPersonality(S.pet.personality);
-    // Параноик: отказывается лечиться при health > 50
-    if (personality.id === 'paranoid' && S.pet.stats.health > 50) {
-      throw new Error('Не верит что болен!');
-    }
-    if (S.pet.stats.health >= 90) throw new Error('Питомец уже здоров!');
-
     const now = mockNow();
-    const ctx = { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng };
-    const activeStates = activeEmergentStates();
-    const blocked = isActionBlocked('heal', activeStates);
-    if (blocked) throw new Error(blocked.reason);
-
-    const baseResult = { statDeltas: { health: 35, happiness: -5 }, xp: 18, coins: 0 };
-    const modified = applyActionModifiers(baseResult, 'heal', personality, S.pet.behavioralFlags, activeStates, S.pet.behavioralCounters, ctx);
-
-    for (const [s, v] of Object.entries(modified.statDeltas)) {
-      (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
-    }
-    gainXp(modified.xp);
-    await applyMockPersonalityCommand({ type: 'heal', at: now.toISOString() });
+    await applyMockCommandOrThrow({ type: 'heal', at: now.toISOString() });
     addCatharsisProgress(S.pet, 20, { now: mockNow(), memoryTextGenerator });
     S.healCount++;
     addEvent('heal', 'Получил лечение', '💊');
@@ -802,24 +702,8 @@ export class MockApiService implements ApiService {
 
   async bondWithPet() {
     await delay(rand(180, 320));
-    if (S.pet.isAsleep) throw new Error('Питомец спит!');
-
-    const personality = getPersonality(S.pet.personality);
     const now = mockNow();
-    const ctx = { clientLocalHour: now.getHours(), coinBalance: S.coins, now, rng: mockRng };
-    const activeStates = activeEmergentStates();
-    const blocked = isActionBlocked('bond', activeStates);
-    if (blocked) throw new Error(blocked.reason);
-
-    // Для Эмпата bond восстанавливает все статы (+5 каждый)
-    const baseResult = { statDeltas: { happiness: 15, bond: 20 }, xp: 6, coins: 0 };
-    const modified = applyActionModifiers(baseResult, 'bond', personality, S.pet.behavioralFlags, activeStates, S.pet.behavioralCounters, ctx);
-
-    for (const [s, v] of Object.entries(modified.statDeltas)) {
-      (S.pet.stats as any)[s] = clamp((S.pet.stats as any)[s] + (v ?? 0));
-    }
-    gainXp(modified.xp);
-    await applyMockPersonalityCommand({ type: 'bond', at: now.toISOString() });
+    await applyMockCommandOrThrow({ type: 'bond', at: now.toISOString() });
     addCatharsisProgress(S.pet, 25, { now: mockNow(), memoryTextGenerator });
     S.bondCount++;
     addEvent('bond', 'Получил объятия', '🤗');
@@ -948,19 +832,11 @@ export class MockApiService implements ApiService {
     S.inventory.set(itemId, qty - 1);
     if (qty - 1 === 0) S.inventory.delete(itemId);
 
-    const { effect } = item;
-    if (effect.hunger) S.pet.stats.hunger = clamp(S.pet.stats.hunger + effect.hunger);
-    if (effect.happiness) S.pet.stats.happiness = clamp(S.pet.stats.happiness + effect.happiness);
-    if (effect.energy) S.pet.stats.energy = clamp(S.pet.stats.energy + effect.energy);
-    if (effect.health) S.pet.stats.health = clamp(S.pet.stats.health + effect.health);
-    if (effect.cleanliness) S.pet.stats.cleanliness = clamp(S.pet.stats.cleanliness + effect.cleanliness);
-    if (effect.bond) S.pet.stats.bond = clamp(S.pet.stats.bond + effect.bond);
-    if (effect.xp) gainXp(effect.xp);
-
-    await applyMockPersonalityCommand({
+    await applyMockCommandOrThrow({
       type: 'use_item',
       itemId,
       itemKind: item.type,
+      itemEffect: item.effect,
       at: mockNow().toISOString(),
     });
 
