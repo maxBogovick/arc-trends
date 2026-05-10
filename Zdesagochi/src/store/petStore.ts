@@ -9,7 +9,7 @@ import {
 } from '../api';
 import { getSkin, SKINS } from '../data/skins';
 import { type BodyShapeId } from '../data/bodyShapes';
-import { type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId, type NoseId, type MouthStyleId } from '../data/petParts';
+import { type HeadId, type EarsId, type BodyPartId, type LimbsId, type ArmsId, type LegsId, type TailId, type NoseId, type MouthStyleId, type PartColorKey } from '../data/petParts';
 import { getBackground, BACKGROUNDS } from '../data/backgrounds';
 import { getAura } from '../data/auras';
 import { getAccessoriesBySlot } from '../data/accessories';
@@ -144,7 +144,11 @@ interface PetStore {
   equippedEarsId: EarsId;
   equippedBodyPartId: BodyPartId;
   equippedLimbsId: LimbsId;
+  equippedArmsId: ArmsId;
+  equippedLegsId: LegsId;
   equippedTailId: TailId;
+  partColors: Record<PartColorKey, string | null>;
+  gradientEnabled: boolean;
   equippedNoseId: NoseId;
   equippedMouthStyleId: MouthStyleId;
   equippedBgId: string;
@@ -206,7 +210,11 @@ interface PetStore {
   equipEars(id: EarsId): void;
   equipBodyPart(id: BodyPartId): void;
   equipLimbs(id: LimbsId): void;
+  equipArms(id: ArmsId): void;
+  equipLegs(id: LegsId): void;
   equipTail(id: TailId): void;
+  setPartColor(part: PartColorKey, color: string | null): void;
+  setGradientEnabled(enabled: boolean): void;
   equipNose(id: NoseId): void;
   equipMouthStyle(id: MouthStyleId): void;
   buyBg(bgId: string): void;
@@ -362,7 +370,11 @@ export const usePetStore = create<PetStore>((set, get) => {
     equippedEarsId: 'none' as EarsId,
     equippedBodyPartId: 'chubby' as BodyPartId,
     equippedLimbsId: 'none' as LimbsId,
+    equippedArmsId: 'none' as ArmsId,
+    equippedLegsId: 'none' as LegsId,
     equippedTailId: 'none' as TailId,
+    partColors: { head: null, ears: null, body: null, arms: null, legs: null, tail: null } as Record<PartColorKey, string | null>,
+    gradientEnabled: true,
     equippedNoseId: 'none' as NoseId,
     equippedMouthStyleId: 'auto' as MouthStyleId,
     equippedBgId: 'void_dark',
@@ -514,11 +526,15 @@ export const usePetStore = create<PetStore>((set, get) => {
         equippedEarsId: state.equippedEarsId,
         equippedBodyPartId: state.equippedBodyPartId,
         equippedLimbsId: state.equippedLimbsId,
+        equippedArmsId: state.equippedArmsId,
+        equippedLegsId: state.equippedLegsId,
         equippedTailId: state.equippedTailId,
         equippedNoseId: state.equippedNoseId,
         equippedMouthStyleId: state.equippedMouthStyleId,
         petColorOverride: state.petColorOverride,
         gradientDirection: state.gradientDirection,
+        gradientEnabled: state.gradientEnabled,
+        partColors: state.partColors,
         petMorph: state.petMorph,
         equippedAuraId: state.equippedAuraId,
         equippedAccessories: state.equippedAccessories,
@@ -545,11 +561,15 @@ export const usePetStore = create<PetStore>((set, get) => {
         equippedEarsId: state.equippedEarsId,
         equippedBodyPartId: state.equippedBodyPartId,
         equippedLimbsId: state.equippedLimbsId,
+        equippedArmsId: state.equippedArmsId,
+        equippedLegsId: state.equippedLegsId,
         equippedTailId: state.equippedTailId,
         equippedNoseId: state.equippedNoseId,
         equippedMouthStyleId: state.equippedMouthStyleId,
         petColorOverride: state.petColorOverride,
         gradientDirection: state.gradientDirection,
+        gradientEnabled: state.gradientEnabled,
+        partColors: state.partColors,
         petMorph: state.petMorph,
         equippedAuraId: state.equippedAuraId,
         equippedAccessories: state.equippedAccessories,
@@ -574,11 +594,15 @@ export const usePetStore = create<PetStore>((set, get) => {
         equippedEarsId: state.equippedEarsId,
         equippedBodyPartId: state.equippedBodyPartId,
         equippedLimbsId: state.equippedLimbsId,
+        equippedArmsId: state.equippedArmsId,
+        equippedLegsId: state.equippedLegsId,
         equippedTailId: state.equippedTailId,
         equippedNoseId: state.equippedNoseId,
         equippedMouthStyleId: state.equippedMouthStyleId,
         petColorOverride: state.petColorOverride,
         gradientDirection: state.gradientDirection,
+        gradientEnabled: state.gradientEnabled,
+        partColors: state.partColors,
         petMorph: state.petMorph,
         equippedAuraId: state.equippedAuraId,
         equippedAccessories: state.equippedAccessories,
@@ -949,7 +973,11 @@ export const usePetStore = create<PetStore>((set, get) => {
     equipEars(id) { get().recordHistory(); set({ equippedEarsId: id }); },
     equipBodyPart(id) { get().recordHistory(); set({ equippedBodyPartId: id }); },
     equipLimbs(id) { get().recordHistory(); set({ equippedLimbsId: id }); },
+    equipArms(id) { get().recordHistory(); set({ equippedArmsId: id }); },
+    equipLegs(id) { get().recordHistory(); set({ equippedLegsId: id }); },
     equipTail(id) { get().recordHistory(); set({ equippedTailId: id }); },
+    setPartColor(part, color) { get().recordHistory(); set(s => ({ partColors: { ...s.partColors, [part]: color } })); },
+    setGradientEnabled(enabled) { get().recordHistory(); set({ gradientEnabled: enabled }); },
     equipNose(id) { get().recordHistory(); set({ equippedNoseId: id }); },
     equipMouthStyle(id) { get().recordHistory(); set({ equippedMouthStyleId: id }); },
 

@@ -3,12 +3,12 @@ import { useState, useEffect } from 'react';
 import type { Pet, PetMood } from '../../api';
 import { getSkin, type SkinDefinition, type EyeStyle, type OverlayStyle } from '../../data/skins';
 import { type BodyShapeId } from '../../data/bodyShapes';
-import { getHead, type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId, type NoseId, type MouthStyleId } from '../../data/petParts';
+import { getHead, type HeadId, type EarsId, type BodyPartId, type LimbsId, type ArmsId, type LegsId, type TailId, type NoseId, type MouthStyleId, type PartColorKey } from '../../data/petParts';
 import { getAccessory } from '../../data/accessories';
 import { getAura } from '../../data/auras';
 import { usePetStore } from '../../store/petStore';
 import { PetAura } from './PetAura';
-import { HeadShape, EarsShape, BodyShape, LimbsShape, TailShape, NoseShape, MouthShape } from './ModularBody';
+import { HeadShape, EarsShape, BodyShape, ArmsShape, LegsShape, TailShape, NoseShape, MouthShape } from './ModularBody';
 
 interface Props {
   pet: Pet;
@@ -24,7 +24,11 @@ interface Props {
     equippedEarsId?: EarsId;
     equippedBodyPartId?: BodyPartId;
     equippedLimbsId?: LimbsId;
+    equippedArmsId?: ArmsId;
+    equippedLegsId?: LegsId;
     equippedTailId?: TailId;
+    partColors?: Record<PartColorKey, string | null>;
+    gradientEnabled?: boolean;
     petColorOverride?: any;
     petMorph?: any;
     equippedAuraId?: string;
@@ -445,7 +449,11 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   const equippedEarsId      = overrideState?.equippedEarsId      ?? store.equippedEarsId;
   const equippedBodyPartId  = overrideState?.equippedBodyPartId  ?? store.equippedBodyPartId;
   const equippedLimbsId     = overrideState?.equippedLimbsId     ?? store.equippedLimbsId;
+  const equippedArmsId      = (overrideState?.equippedArmsId      ?? store.equippedArmsId)      as ArmsId;
+  const equippedLegsId      = (overrideState?.equippedLegsId      ?? store.equippedLegsId)      as LegsId;
   const equippedTailId      = overrideState?.equippedTailId      ?? store.equippedTailId;
+  const partColors          = overrideState?.partColors          ?? store.partColors;
+  const gradientEnabled     = overrideState?.gradientEnabled     ?? store.gradientEnabled;
   const petColorOverride    = overrideState?.petColorOverride    ?? store.petColorOverride;
   const petMorph            = overrideState?.petMorph           ?? store.petMorph;
   const equippedAuraId      = overrideState?.equippedAuraId      ?? store.equippedAuraId;
@@ -539,6 +547,13 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
   const gradId = `bg_${skin.id}`;
   const colors = { body1, body2, glow: glowColor, cheek: petColorOverride?.cheek ?? skin.colors.cheek };
 
+  const getFill = (part: PartColorKey): string | undefined => {
+    const override = partColors?.[part];
+    if (override) return override;
+    if (gradientEnabled === false) return body1;
+    return undefined; // use gradient url
+  };
+
   const mouthPath = getMouthPath(effectiveMood, head.mouthCy, head.mouthHW) || "";
 
   const [showSparkles, setShowSparkles] = useState(false);
@@ -547,7 +562,7 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
     setShowSparkles(true);
     const t = setTimeout(() => setShowSparkles(false), 800);
     return () => clearTimeout(t);
-  }, [equippedSkinId, equippedHeadId, equippedEarsId, equippedBodyPartId, equippedLimbsId, equippedTailId, JSON.stringify(equippedAccessories), petColorOverride]);
+  }, [equippedSkinId, equippedHeadId, equippedEarsId, equippedBodyPartId, equippedArmsId, equippedLegsId, equippedTailId, JSON.stringify(equippedAccessories), petColorOverride]);
 
   const morphStyle: React.CSSProperties = (petMorph.scale !== 1 || petMorph.width !== 1 || petMorph.height !== 1)
     ? { transform: `scale(${petMorph.scale}) scaleX(${petMorph.width}) scaleY(${petMorph.height})` }
@@ -600,19 +615,22 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
 
           {/* Modular pet body — layers from back to front */}
           <g transform={`translate(175,150) scale(${limbsSc}) translate(-175,-150)`}>
-            <TailShape  id={equippedTailId}  gradId={gradId} c={colors} />
+            <TailShape  id={equippedTailId}  gradId={gradId} c={colors} overrideFill={getFill('tail')} />
+          </g>
+          <g transform={`translate(100,190) scale(${limbsSc},${squishSc}) translate(-100,-190)`}>
+            <LegsShape id={equippedLegsId} gradId={gradId} c={colors} overrideFill={getFill('legs')} />
           </g>
           <g transform={`translate(100,150) scale(${limbsSc},${squishSc}) translate(-100,-150)`}>
-            <LimbsShape id={equippedLimbsId} gradId={gradId} c={colors} />
+            <ArmsShape id={equippedArmsId !== 'none' ? equippedArmsId : (equippedLimbsId as ArmsId)} gradId={gradId} c={colors} overrideFill={getFill('arms')} />
           </g>
           <g transform={`translate(100,45) scale(${earsSc}) translate(-100,-45)`}>
-            <EarsShape  id={equippedEarsId}  gradId={gradId} c={colors} />
+            <EarsShape  id={equippedEarsId}  gradId={gradId} c={colors} overrideFill={getFill('ears')} />
           </g>
           <g transform={`translate(100,152) scale(${squishSc},1) translate(-100,-152)`}>
-            <BodyShape  id={equippedBodyPartId} gradId={gradId} c={colors} />
+            <BodyShape  id={equippedBodyPartId} gradId={gradId} c={colors} overrideFill={getFill('body')} />
           </g>
           <g transform={`translate(100,80) scale(${headSc}) translate(-100,-80)`}>
-            <HeadShape  id={equippedHeadId}  gradId={gradId} c={colors} />
+            <HeadShape  id={equippedHeadId}  gradId={gradId} c={colors} overrideFill={getFill('head')} />
           </g>
           <Overlay skin={skin} />
 

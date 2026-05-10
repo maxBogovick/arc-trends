@@ -4,6 +4,7 @@ import { usePetStore } from '../../../store/petStore';
 import { getSkin } from '../../../data/skins';
 import { PALETTES } from '../../../data/palettes';
 import type { PetColors } from '../../../data/palettes';
+import type { PartColorKey } from '../../../data/petParts';
 import { GLASS, ACTIVE_GLOW } from '../constants';
 import { SectionLabel } from '../Shared';
 
@@ -17,8 +18,17 @@ const GRADIENT_OPTIONS: { id: GradientDirection; emoji: string; label: string }[
   { id: 'diagonal_reverse', emoji: '↙️', label: 'Диагональ ↙' },
 ];
 
+const PART_COLOR_DEFS: { key: PartColorKey; label: string; emoji: string }[] = [
+  { key: 'head',  label: 'Голова', emoji: '🐺' },
+  { key: 'ears',  label: 'Уши',    emoji: '👂' },
+  { key: 'body',  label: 'Тело',   emoji: '🫀' },
+  { key: 'arms',  label: 'Руки',   emoji: '🦾' },
+  { key: 'legs',  label: 'Ноги',   emoji: '🦵' },
+  { key: 'tail',  label: 'Хвост',  emoji: '🦊' },
+];
+
 export function ColorPanel() {
-  const { petColorOverride, setPetColorOverride, equippedSkinId, gradientDirection, setGradientDirection } = usePetStore();
+  const { petColorOverride, setPetColorOverride, equippedSkinId, gradientDirection, setGradientDirection, gradientEnabled, setGradientEnabled, partColors, setPartColor } = usePetStore();
   const skin = getSkin(equippedSkinId);
   const base = petColorOverride ?? skin.colors;
   const [custom, setCustom] = useState<PetColors>({ body1: base.body1, body2: base.body2, glow: base.glow, cheek: base.cheek });
@@ -65,6 +75,20 @@ export function ColorPanel() {
             </motion.button>
           );
         })}
+      </div>
+
+      {/* Gradient toggle */}
+      <div className="flex items-center justify-between p-3 rounded-2xl" style={GLASS}>
+        <div>
+          <p className="text-xs font-bold text-lumio-text">Градиент</p>
+          <p className="text-[9px] text-lumio-muted">Выкл = сплошной цвет</p>
+        </div>
+        <button
+          onClick={() => setGradientEnabled(!gradientEnabled)}
+          className={`w-11 h-6 rounded-full relative transition-colors ${gradientEnabled ? 'bg-indigo-500' : 'bg-gray-300'}`}
+        >
+          <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${gradientEnabled ? 'right-1' : 'left-1'}`} />
+        </button>
       </div>
 
       {/* Gradient direction */}
@@ -116,6 +140,46 @@ export function ColorPanel() {
             </div>
           ))}
         </div>
+      </div>
+      {/* Per-part color overrides */}
+      <div className="p-4 rounded-2xl space-y-3" style={GLASS}>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-lumio-muted">🎨 Цвет каждой части</p>
+          <button
+            onClick={() => PART_COLOR_DEFS.forEach(p => setPartColor(p.key, null))}
+            className="text-[10px] text-red-400 hover:text-red-300 font-bold px-2 py-0.5 rounded-lg"
+            style={{ background: 'rgba(239,68,68,0.08)' }}>
+            ↩ Сброс
+          </button>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {PART_COLOR_DEFS.map(({ key, label, emoji }) => {
+            const current = partColors?.[key];
+            return (
+              <div key={key} className="flex flex-col items-center gap-1">
+                <label className="relative cursor-pointer group">
+                  <div className="w-10 h-10 rounded-xl border-2 transition-transform group-hover:scale-110 flex items-center justify-center text-lg"
+                    style={{
+                      background: current ?? 'linear-gradient(135deg,#818CF8,#EC4899)',
+                      borderColor: current ? '#818CF8' : '#E5E7EB',
+                      boxShadow: current ? `0 0 10px ${current}66` : 'none',
+                    }}>
+                    {!current && <span className="text-sm opacity-60">{emoji}</span>}
+                  </div>
+                  <input type="color" value={current ?? '#818CF8'}
+                    onChange={e => setPartColor(key, e.target.value)}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                </label>
+                <span className="text-[9px] text-lumio-muted font-semibold">{label}</span>
+                {current && (
+                  <button onClick={() => setPartColor(key, null)}
+                    className="text-[8px] text-red-400 font-bold leading-none">✕ сброс</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[9px] text-lumio-muted">Нажми на часть чтобы выбрать цвет. Пустые — наследуют глобальную схему.</p>
       </div>
     </div>
   );

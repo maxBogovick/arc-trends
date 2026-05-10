@@ -6,8 +6,8 @@ import { usePetStore } from '../store/petStore';
 import { SKINS } from '../data/skins';
 import { PALETTES } from '../data/palettes';
 import { getAccessoriesBySlot } from '../data/accessories';
-import { HEADS, EARS_OPTIONS, BODY_PARTS, LIMBS_OPTIONS, TAILS_OPTIONS } from '../data/petParts';
-import type { HeadId, EarsId, BodyPartId, LimbsId, TailId } from '../data/petParts';
+import { HEADS, EARS_OPTIONS, BODY_PARTS, ARMS_OPTIONS, LEGS_OPTIONS, TAILS_OPTIONS } from '../data/petParts';
+import type { HeadId, EarsId, BodyPartId, ArmsId, LegsId, TailId } from '../data/petParts';
 import type { PetMood } from '../api';
 
 // Editor Components
@@ -31,7 +31,7 @@ export function PetEditorPage() {
   const {
     setActiveTab, equipBody, equipSkin, equipAura, equipBg, setPetColorOverride,
     setPetMorph, setAccessory, setAccessoryConfig,
-    equipHead, equipEars, equipBodyPart, equipLimbs, equipTail,
+    equipHead, equipEars, equipBodyPart, equipArms, equipLegs, equipTail,
     equipNose, equipMouthStyle,
     ownedSkins, ownedAuras, ownedBgs, coins, pet, savePetAppearance,
     setEyeStyleOverride, setEyeColorOverride,
@@ -159,7 +159,8 @@ export function PetEditorPage() {
     equipHead(pick(HEADS).id as HeadId);
     equipEars(pick(EARS_OPTIONS).id as EarsId);
     equipBodyPart(pick(BODY_PARTS).id as BodyPartId);
-    equipLimbs(pick(LIMBS_OPTIONS).id as LimbsId);
+    equipArms(pick(ARMS_OPTIONS).id as ArmsId);
+    equipLegs(pick(LEGS_OPTIONS).id as LegsId);
     equipTail(pick(TAILS_OPTIONS).id as TailId);
 
     const availSkins = SKINS.filter(s => ownedSkins.includes(s.id));
@@ -184,7 +185,7 @@ export function PetEditorPage() {
     setAccessoryConfig('head', { scale: 1, x: 0, y: 0, rotation: 0, behind: false });
     setAccessoryConfig('face', { scale: 1, x: 0, y: 0, rotation: 0, behind: false });
     setAccessoryConfig('back', { scale: 1, x: 0, y: 0, rotation: 0, behind: true });
-  }, [ownedSkins, ownedAuras, ownedBgs, equipHead, equipEars, equipBodyPart, equipLimbs, equipTail, equipSkin, equipAura, equipBg, setPetColorOverride, setPetMorph, setAccessory, setAccessoryConfig]);
+  }, [ownedSkins, ownedAuras, ownedBgs, equipHead, equipEars, equipBodyPart, equipArms, equipLegs, equipTail, equipSkin, equipAura, equipBg, setPetColorOverride, setPetMorph, setAccessory, setAccessoryConfig]);
 
   const resetAll = useCallback(() => {
     usePetStore.getState().recordHistory();
@@ -192,7 +193,8 @@ export function PetEditorPage() {
     equipHead('round');
     equipEars('none');
     equipBodyPart('chubby');
-    equipLimbs('none');
+    equipArms('none');
+    equipLegs('none');
     equipTail('none');
     setPetColorOverride(null);
     setPetMorph({ scale: 1, width: 1, height: 1, headScale: 1, earsScale: 1, limbsScale: 1, squish: 1 });
@@ -213,7 +215,7 @@ export function PetEditorPage() {
     setEyeColorOverride(null);
     equipNose('none');
     equipMouthStyle('auto');
-  }, [equipBody, equipHead, equipEars, equipBodyPart, equipLimbs, equipTail, setPetColorOverride, setPetMorph, equipSkin, equipAura, equipBg, setAccessory, setAccessoryConfig, setEyeStyleOverride, setEyeColorOverride, equipNose, equipMouthStyle]);
+  }, [equipBody, equipHead, equipEars, equipBodyPart, equipArms, equipLegs, equipTail, setPetColorOverride, setPetMorph, equipSkin, equipAura, equipBg, setAccessory, setAccessoryConfig, setEyeStyleOverride, setEyeColorOverride, equipNose, equipMouthStyle]);
 
   const PANEL_MAP: Record<CategoryId, React.ReactNode> = {
     body:        <PartsPanel />,

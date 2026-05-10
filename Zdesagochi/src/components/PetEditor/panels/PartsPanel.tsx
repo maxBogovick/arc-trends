@@ -2,8 +2,8 @@ import { motion } from 'framer-motion';
 import { usePetStore } from '../../../store/petStore';
 import { getSkin } from '../../../data/skins';
 import {
-  HEAD_OPTIONS, EARS_OPTIONS, BODY_PARTS, LIMBS_OPTIONS, TAILS_OPTIONS, NOSE_OPTIONS, MOUTH_STYLES,
-  type HeadId, type EarsId, type BodyPartId, type LimbsId, type TailId, type NoseId, type MouthStyleId,
+  HEAD_OPTIONS, EARS_OPTIONS, BODY_PARTS, ARMS_OPTIONS, LEGS_OPTIONS, TAILS_OPTIONS, NOSE_OPTIONS, MOUTH_STYLES,
+  type HeadId, type EarsId, type BodyPartId, type ArmsId, type LegsId, type TailId, type NoseId, type MouthStyleId,
 } from '../../../data/petParts';
 import { GLASS, ACTIVE_GLOW } from '../constants';
 import { SectionLabel } from '../Shared';
@@ -56,14 +56,16 @@ export function PartsPanel() {
     equippedHeadId,
     equippedEarsId,
     equippedBodyPartId,
-    equippedLimbsId,
+    equippedArmsId,
+    equippedLegsId,
     equippedTailId,
     equippedNoseId,
     equippedMouthStyleId,
     equipHead,
     equipEars,
     equipBodyPart,
-    equipLimbs,
+    equipArms,
+    equipLegs,
     equipTail,
     equipNose,
     equipMouthStyle,
@@ -99,12 +101,20 @@ export function PartsPanel() {
         onSelect={equipBodyPart}
       />
 
-      <PartSection<LimbsId>
-        label="🦾 Лапы"
-        options={LIMBS_OPTIONS}
-        active={equippedLimbsId}
+      <PartSection<ArmsId>
+        label="🦾 Руки / Верх. конечности"
+        options={ARMS_OPTIONS}
+        active={equippedArmsId}
         glow={glow}
-        onSelect={equipLimbs}
+        onSelect={equipArms}
+      />
+
+      <PartSection<LegsId>
+        label="🦵 Ноги / Ниж. конечности"
+        options={LEGS_OPTIONS}
+        active={equippedLegsId}
+        glow={glow}
+        onSelect={equipLegs}
       />
 
       <PartSection<TailId>

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import type { HeadId, EarsId, BodyPartId, LimbsId, TailId, NoseId, MouthStyleId } from '../../data/petParts';
+import type { HeadId, EarsId, BodyPartId, ArmsId, LegsId, TailId, NoseId, MouthStyleId } from '../../data/petParts';
 
 interface PartColors {
   body1: string;
@@ -11,12 +11,13 @@ interface PartColors {
 interface PartProps {
   gradId: string;
   c: PartColors;
+  overrideFill?: string | null;
 }
 
 // ─── HEAD ─────────────────────────────────────────────────────────────────────
 
-export function HeadShape({ id, gradId }: PartProps & { id: HeadId }) {
-  const f = `url(#${gradId})`;
+export function HeadShape({ id, gradId, overrideFill }: PartProps & { id: HeadId }) {
+  const f = overrideFill ?? `url(#${gradId})`;
   switch (id) {
     case 'oval':
       return <ellipse cx="100" cy="80" rx="44" ry="58" fill={f} />;
@@ -67,8 +68,8 @@ export function HeadShape({ id, gradId }: PartProps & { id: HeadId }) {
 
 // ─── EARS ─────────────────────────────────────────────────────────────────────
 
-export function EarsShape({ id, gradId, c }: PartProps & { id: EarsId }) {
-  const f = `url(#${gradId})`;
+export function EarsShape({ id, gradId, c, overrideFill }: PartProps & { id: EarsId }) {
+  const f = overrideFill ?? `url(#${gradId})`;
   switch (id) {
     case 'pointy':
       return (
@@ -150,8 +151,8 @@ export function EarsShape({ id, gradId, c }: PartProps & { id: EarsId }) {
 
 // ─── BODY ─────────────────────────────────────────────────────────────────────
 
-export function BodyShape({ id, gradId }: PartProps & { id: BodyPartId }) {
-  const f = `url(#${gradId})`;
+export function BodyShape({ id, gradId, overrideFill }: PartProps & { id: BodyPartId }) {
+  const f = overrideFill ?? `url(#${gradId})`;
   switch (id) {
     case 'slim':
       return (
@@ -223,24 +224,23 @@ export function BodyShape({ id, gradId }: PartProps & { id: BodyPartId }) {
   }
 }
 
-// ─── LIMBS ────────────────────────────────────────────────────────────────────
+// ─── ARMS ────────────────────────────────────────────────────────────────────
 
-export function LimbsShape({ id, gradId, c }: PartProps & { id: LimbsId }) {
-  const f = `url(#${gradId})`;
+export function ArmsShape({ id, gradId, c, overrideFill }: PartProps & { id: ArmsId }) {
+  const f = overrideFill ?? `url(#${gradId})`;
   switch (id) {
     case 'small_paws':
       return (
         <g>
-          {/* Two front paws at body bottom */}
-          <ellipse cx="70" cy="194" rx="20" ry="12" fill={c.body2} />
-          <ellipse cx="130" cy="194" rx="20" ry="12" fill={c.body2} />
-          {/* Toe lines */}
-          <line x1="63" y1="192" x2="63" y2="200" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
-          <line x1="70" y1="193" x2="70" y2="201" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
-          <line x1="77" y1="192" x2="77" y2="200" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
-          <line x1="123" y1="192" x2="123" y2="200" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
-          <line x1="130" y1="193" x2="130" y2="201" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
-          <line x1="137" y1="192" x2="137" y2="200" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          {/* Small paw at arm-level sides */}
+          <ellipse cx="30" cy="144" rx="18" ry="14" fill={f} />
+          <ellipse cx="170" cy="144" rx="18" ry="14" fill={f} />
+          <line x1="23" y1="142" x2="23" y2="151" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          <line x1="30" y1="143" x2="30" y2="152" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          <line x1="37" y1="142" x2="37" y2="151" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          <line x1="163" y1="142" x2="163" y2="151" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          <line x1="170" y1="143" x2="170" y2="152" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          <line x1="177" y1="142" x2="177" y2="151" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
         </g>
       );
     case 'long_arms':
@@ -323,6 +323,78 @@ export function LimbsShape({ id, gradId, c }: PartProps & { id: LimbsId }) {
           <path d="M 172 164 L 188 178" stroke={c.glow} strokeWidth="5" strokeLinecap="round" />
           <path d="M 168 168 L 180 186" stroke={c.glow} strokeWidth="5" strokeLinecap="round" />
           <path d="M 162 170 L 170 190" stroke={c.glow} strokeWidth="5" strokeLinecap="round" />
+        </g>
+      );
+    default: // none
+      return null;
+  }
+}
+
+// Keep old name as alias for backward compat with saved presets / overrideState
+export const LimbsShape = ArmsShape;
+
+// ─── LEGS ────────────────────────────────────────────────────────────────────
+
+export function LegsShape({ id, gradId, c, overrideFill }: PartProps & { id: LegsId }) {
+  const f = overrideFill ?? `url(#${gradId})`;
+  switch (id) {
+    case 'paws':
+      return (
+        <g>
+          <ellipse cx="70" cy="194" rx="20" ry="12" fill={f} />
+          <ellipse cx="130" cy="194" rx="20" ry="12" fill={f} />
+          <line x1="63" y1="192" x2="63" y2="200" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          <line x1="70" y1="193" x2="70" y2="201" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          <line x1="77" y1="192" x2="77" y2="200" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          <line x1="123" y1="192" x2="123" y2="200" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          <line x1="130" y1="193" x2="130" y2="201" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+          <line x1="137" y1="192" x2="137" y2="200" stroke={c.body1} strokeWidth="1.5" strokeLinecap="round" opacity={0.35} />
+        </g>
+      );
+    case 'stubby_legs':
+      return (
+        <g>
+          {/* Short round legs */}
+          <path d="M 70 182 C 58 182, 52 190, 56 198 C 60 206, 84 206, 84 198 C 84 190, 82 182, 70 182 Z" fill={f} />
+          <path d="M 130 182 C 118 182, 116 190, 116 198 C 116 206, 140 206, 144 198 C 148 190, 142 182, 130 182 Z" fill={f} />
+          <ellipse cx="70" cy="198" rx="14" ry="8" fill={c.body2} opacity={0.6} />
+          <ellipse cx="130" cy="198" rx="14" ry="8" fill={c.body2} opacity={0.6} />
+        </g>
+      );
+    case 'hooves':
+      return (
+        <g>
+          {/* Narrow leg + pointed hoof */}
+          <path d="M 78 180 L 68 180 L 62 198 L 78 198 Z" fill={f} />
+          <path d="M 122 180 L 132 180 L 138 198 L 122 198 Z" fill={f} />
+          <path d="M 62 198 L 58 204 L 82 204 L 78 198 Z" fill={c.body2} />
+          <path d="M 122 198 L 118 204 L 142 204 L 138 198 Z" fill={c.body2} />
+        </g>
+      );
+    case 'claw_feet':
+      return (
+        <g>
+          {/* Foot base */}
+          <ellipse cx="70" cy="192" rx="16" ry="10" fill={f} />
+          <ellipse cx="130" cy="192" rx="16" ry="10" fill={f} />
+          {/* Claws left */}
+          <path d="M 58 196 L 50 206" stroke={c.glow} strokeWidth="4" strokeLinecap="round" />
+          <path d="M 68 198 L 64 208" stroke={c.glow} strokeWidth="4" strokeLinecap="round" />
+          <path d="M 78 196 L 80 206" stroke={c.glow} strokeWidth="4" strokeLinecap="round" />
+          {/* Claws right */}
+          <path d="M 118 196 L 116 206" stroke={c.glow} strokeWidth="4" strokeLinecap="round" />
+          <path d="M 130 198 L 130 208" stroke={c.glow} strokeWidth="4" strokeLinecap="round" />
+          <path d="M 142 196 L 146 206" stroke={c.glow} strokeWidth="4" strokeLinecap="round" />
+        </g>
+      );
+    case 'flippers':
+      return (
+        <g>
+          {/* Flat wide flippers */}
+          <path d="M 40 180 C 44 172, 90 172, 92 180 C 94 188, 44 196, 36 192 Z" fill={f} />
+          <path d="M 160 180 C 156 172, 110 172, 108 180 C 106 188, 156 196, 164 192 Z" fill={f} />
+          <path d="M 42 180 C 46 174, 88 174, 90 180" stroke="white" strokeWidth="1.5" fill="none" opacity={0.2} />
+          <path d="M 158 180 C 154 174, 112 174, 110 180" stroke="white" strokeWidth="1.5" fill="none" opacity={0.2} />
         </g>
       );
     default: // none
@@ -439,8 +511,8 @@ export function MouthShape({ id, cy, hw, strokeColor }: { id: MouthStyleId; cy: 
   }
 }
 
-export function TailShape({ id, gradId, c }: PartProps & { id: TailId }) {
-  const f = `url(#${gradId})`;
+export function TailShape({ id, gradId, c, overrideFill }: PartProps & { id: TailId }) {
+  const f = overrideFill ?? `url(#${gradId})`;
   switch (id) {
     case 'fluffy':
       return (

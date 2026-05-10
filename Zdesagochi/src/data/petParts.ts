@@ -2,6 +2,9 @@ export type HeadId      = 'round' | 'oval' | 'square' | 'egg' | 'heart' | 'star'
 export type EarsId      = 'none' | 'pointy' | 'floppy' | 'round_ears' | 'horns' | 'antenna' | 'bat' | 'elf';
 export type BodyPartId  = 'chubby' | 'slim' | 'blocky' | 'bubble' | 'pear' | 'tank';
 export type LimbsId     = 'none' | 'small_paws' | 'long_arms' | 'fins' | 'wings' | 'stubby' | 'tentacles' | 'claws';
+export type ArmsId      = 'none' | 'small_paws' | 'long_arms' | 'fins' | 'wings' | 'stubby' | 'tentacles' | 'claws';
+export type LegsId      = 'none' | 'paws' | 'stubby_legs' | 'hooves' | 'claw_feet' | 'flippers';
+export type PartColorKey = 'head' | 'ears' | 'body' | 'arms' | 'legs' | 'tail';
 export type TailId      = 'none' | 'fluffy' | 'long' | 'fan' | 'spiral' | 'curly' | 'lightning' | 'bow';
 export type NoseId      = 'none' | 'button' | 'cat' | 'led' | 'star' | 'heart';
 export type MouthStyleId = 'auto' | 'smile' | 'blush' | 'fangs' | 'pixel' | 'zigzag' | 'dot';
@@ -136,6 +139,26 @@ export const LIMBS_OPTIONS: PartMeta[] = [
   { id: 'stubby',     name: 'Коротышки', emoji: '🐸' },
   { id: 'tentacles',  name: 'Щупальца',  emoji: '🐙' },
   { id: 'claws',      name: 'Когти',     emoji: '🦅' },
+];
+
+export const ARMS_OPTIONS: PartMeta[] = [
+  { id: 'none',       name: 'Нет',       emoji: '✖️' },
+  { id: 'small_paws', name: 'Лапки',     emoji: '🐾' },
+  { id: 'long_arms',  name: 'Руки',      emoji: '🦾' },
+  { id: 'fins',       name: 'Плавники',  emoji: '🐟' },
+  { id: 'wings',      name: 'Крылья',    emoji: '🦋' },
+  { id: 'stubby',     name: 'Коротышки', emoji: '🐸' },
+  { id: 'tentacles',  name: 'Щупальца',  emoji: '🐙' },
+  { id: 'claws',      name: 'Когти',     emoji: '🦅' },
+];
+
+export const LEGS_OPTIONS: PartMeta[] = [
+  { id: 'none',        name: 'Нет',        emoji: '✖️' },
+  { id: 'paws',        name: 'Лапки',      emoji: '🐾' },
+  { id: 'stubby_legs', name: 'Коротышки',  emoji: '🐸' },
+  { id: 'hooves',      name: 'Копыта',     emoji: '🦌' },
+  { id: 'claw_feet',   name: 'Когти',      emoji: '🦅' },
+  { id: 'flippers',    name: 'Ласты',      emoji: '🐧' },
 ];
 
 export const TAILS_OPTIONS: PartMeta[] = [
