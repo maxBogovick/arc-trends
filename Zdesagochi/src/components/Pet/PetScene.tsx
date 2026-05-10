@@ -1,6 +1,8 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { usePetStore } from '../../store/petStore';
+import type { Pet } from '../../api';
+import { useDarkness } from './RoomScene';
 import { PetDisplay } from './PetDisplay';
 import { PetTalk } from './PetTalk';
 import { RoomScene } from './RoomScene';
@@ -26,6 +28,26 @@ const STAGE_INFO: Record<string, { label: string; emoji: string }> = {
   adult: { label: 'Взрослый',  emoji: '🌳' },
   elder: { label: 'Мудрец',    emoji: '🦋' },
 };
+
+// Rendered inside RoomScene children so it has access to DarknessContext
+function PetBody({ pet }: { pet: Pet }) {
+  const effectiveDarkness = useDarkness();
+  const brightness = Math.max(0.05, 1 - effectiveDarkness * 0.88);
+  return (
+    <div
+      className="absolute inset-0 flex items-center justify-center pointer-events-none"
+      style={{ paddingBottom: '8%', zIndex: 25 }}
+    >
+      <div
+        className="relative pointer-events-auto"
+        style={{ filter: brightness < 1 ? `brightness(${brightness.toFixed(2)})` : undefined }}
+      >
+        <PetTalk pet={pet} />
+        <PetDisplay pet={pet} size={270} />
+      </div>
+    </div>
+  );
+}
 
 export function PetScene() {
   const { pet, updatePetName, actionLoading, placedFurniture, updateRoomFurniture } = usePetStore();
@@ -134,16 +156,8 @@ export function PetScene() {
           {moodInfo.emoji} {moodInfo.text}
         </motion.div>
 
-        {/* Pet + speech bubble */}
-        <div
-          className="absolute inset-0 flex items-center justify-center pointer-events-none"
-          style={{ paddingBottom: '8%', zIndex: 25 }}
-        >
-          <div className="relative pointer-events-auto">
-            <PetTalk pet={pet} />
-            <PetDisplay pet={pet} size={270} />
-          </div>
-        </div>
+        {/* Pet + speech bubble — brightness driven by DarknessContext (set by RoomScene) */}
+        <PetBody pet={pet} />
 
       </RoomScene>
 

@@ -1,9 +1,38 @@
 import { motion } from 'framer-motion';
+import { createContext, useContext, useState, useEffect } from 'react';
 import type { RefObject, ReactNode, MouseEventHandler, CSSProperties } from 'react';
 import { usePetStore, type RoomCustomization, type FloorStyle } from '../../store/petStore';
 import { getBackground } from '../../data/backgrounds';
 import { SceneEffects } from './SceneEffects';
 import { LightingLayer } from './LightingLayer';
+
+// ── Darkness context ──────────────────────────────────────────────────────────
+// RoomScene computes effectiveDarkness once per minute and shares it via context
+// so that FurnitureItemVisual and pet don't need their own timers.
+
+export const DarknessContext = createContext<number>(0);
+export const useDarkness = () => useContext(DarknessContext);
+
+export function computeEffectiveDarkness(c: RoomCustomization, now: Date): number {
+  if (!c.hasSun) return c.ambientDarkness;
+
+  const sunTime = c.sunPreviewHour !== null && c.sunPreviewHour !== undefined
+    ? (() => {
+        const d = new Date();
+        d.setHours(Math.floor(c.sunPreviewHour!), Math.round((c.sunPreviewHour! % 1) * 60), 0, 0);
+        return d;
+      })()
+    : now;
+
+  const h = sunTime.getHours() + sunTime.getMinutes() / 60;
+  const sunriseH = 6, sunsetH = 20;
+  if (h < sunriseH || h > sunsetH) return c.ambientDarkness;
+
+  const progress = (h - sunriseH) / (sunsetH - sunriseH);
+  const sunIntensity = 0.18 + 0.52 * Math.sin(Math.PI * progress);
+  // At peak noon sun (~0.70 intensity) with factor 1.5 → darkness reaches 0
+  return Math.max(0, c.ambientDarkness * (1 - sunIntensity * 1.5));
+}
 
 const DEPTH = 400;
 
@@ -159,6 +188,14 @@ export function RoomScene({
   const bg = getBackground(equippedBgId ?? 'void_dark');
   const accent = c.accentColor;
 
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const effectiveDarkness = computeEffectiveDarkness(c, now);
+
   const floorTexture = buildFloorTextureStyle(c.floorStyle, c.floorColor, accent);
   const backWallStyle = buildBackWallStyle(c);
   const sideWallStyle = buildSideWallStyle(c);
@@ -273,12 +310,12 @@ export function RoomScene({
       </div>
 
       {/* Ambient darkness — multiply layer that dims the whole room.
-          Light sources (screen, zIndex 4) then punch through it. */}
-      {c.ambientDarkness > 0 && (
+          Reduced automatically when sun is active. Light sources (screen, zIndex 4) punch through. */}
+      {effectiveDarkness > 0 && (
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
-            background: `rgba(0, 5, 20, ${c.ambientDarkness})`,
+            background: `rgba(0, 5, 20, ${effectiveDarkness})`,
             mixBlendMode: 'multiply',
             zIndex: 2,
           }}
@@ -322,7 +359,9 @@ export function RoomScene({
         }}
       />
 
-      {children}
+      <DarknessContext.Provider value={effectiveDarkness}>
+        {children}
+      </DarknessContext.Provider>
     </div>
   );
 }

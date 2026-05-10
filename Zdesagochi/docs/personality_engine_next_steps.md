@@ -8,6 +8,7 @@
 > Архитектурные решения фиксировать в `docs/personality_engine_decisions.md`.
 > Каноничный gap-analysis относительно `PERSONALITY_EVOLUTION_SYSTEM.md`: `docs/personality_engine_v5_gap_analysis.md`.
 > Инженерные правила движения по roadmap: `docs/personality_engine_coding_rules.md`.
+> Полный master backlog: `docs/personality_engine_master_backlog.md`.
 
 ---
 
@@ -102,11 +103,14 @@
    - Добавлен regression test: `perfect_balance is XP-only and does not add hidden stat passives`.
 
 4. Решить `chaos_surge`.
-   - Сейчас state есть в типах/definitions, но комментарий говорит, что он "управляется mockApi/server".
-   - Нужно либо реализовать, либо явно вынести из active roadmap.
+   - Done: реализована deterministic activation в `computeEmergentState()`.
+   - Activation gated через `emergentTriggers` + `specialRules.randomizeDailySeed`, без новой `personality.id === 'chaotic'` ветки.
+   - Добавлен regression test: `chaos_surge activates in deterministic three hour windows only for configured personalities`.
 
 5. Добавить validator для unsupported `specialRules`.
-   - Для каждого specialRules поля должна быть реализация или явное предупреждение validator'а.
+   - Done: добавлен `validatePersonalitySpecialRules()`.
+   - Validator возвращает errors для неизвестных runtime keys и warnings для deferred/adapter-owned правил.
+   - Добавлены regression tests на текущие warnings и unknown key rejection.
 
 Критерий готовности:
 
@@ -117,7 +121,43 @@
 
 ---
 
-### P2. Data-driven refactor для gameplay conditions
+### P2. Command result owns full gameplay outcome
+
+Цель: сделать `applyPersonalityCommand()` единым доменным source of truth для результата действия.
+
+Почему теперь раньше data-driven conditions:
+
+- замена `mockApi` блокируется тем, что stats/XP/coins сейчас считаются в adapter layer;
+- offline replay не может восстановить полный gameplay/economy outcome;
+- будущий backend должен принимать тот же command outcome, а не копировать mock logic.
+
+Задачи:
+
+1. Расширить `PetCommandResult`.
+   - `statDeltas`
+   - `xpDelta`
+   - `coinDelta`
+   - `blockedAction`
+   - `appliedModifiers`
+
+2. Перенести base action result calculation из `mockApi` в command/gameplay layer.
+
+3. Оставить в `mockApi` только временный adapter shell:
+   - inventory;
+   - achievements;
+   - quests;
+   - persistence;
+   - UI events.
+
+Критерий готовности:
+
+- backend/mock/replay используют один command outcome;
+- `mockApi` не содержит personality/gameplay calculators для care/play actions;
+- offline command log может replay full gameplay outcome.
+
+---
+
+### P3. Data-driven refactor для gameplay conditions
 
 Цель: убрать hardcoded `personality.id === ...` из `PersonalityEngine`.
 
@@ -170,42 +210,27 @@
 
 ---
 
-### P3. Command result owns full gameplay outcome
+### P4. Split `mockApi` into offline-first services
 
-Цель: сделать `applyPersonalityCommand()` единым доменным source of truth не только для trait/personality side effects, но и для gameplay outcome.
-
-Проблема:
-
-- `mockApi` всё ещё рассчитывает base stat deltas, XP, coins и часть special cases.
-- Replay через `applyPersonalityCommand()` не восстанавливает полный gameplay/economy outcome.
-- Backend должен будет дублировать логику mock adapter'а.
+Цель: заменить `mockApi` как псевдо-server на понятные слои.
 
 Задачи:
 
-1. Расширить `PetCommandResult`.
-   - `statDeltas`
-   - `xpDelta`
-   - `coinDelta`
-   - `blockedAction`
-   - `appliedModifiers`
-
-2. Перенести base action result calculation из `mockApi` в command/gameplay layer.
-
-3. Оставить в `mockApi`:
-   - inventory;
-   - achievements;
-   - quests;
-   - persistence;
-   - UI events.
+1. `PetService` — принимает UI action и вызывает command engine.
+2. `LocalSave` — хранит pet/account/inventory локально.
+3. `SyncQueue` — хранит pending commands offline.
+4. `ServerApi` — отправляет commands при наличии интернета.
+5. `mockApi` удалить или оставить только как test/dev fixture.
 
 Критерий готовности:
 
-- backend/mock/replay используют один command outcome.
-- `mockApi` не содержит personality/gameplay calculators для care/play actions.
+- игра работает offline через LocalSave + SyncQueue;
+- при интернете pending commands уходят в ServerApi;
+- gameplay logic не живет в persistence/sync слоях.
 
 ---
 
-### P4. System influences and lifecycle hooks
+### P5. System influences and lifecycle hooks
 
 Цель: сделать influence registry реально управляющим system behavior.
 
@@ -356,8 +381,8 @@ Reports:
 1. Удалить `anxiousMult`.
 2. Убрать melancholic XP noop или перенести семантику в command/economy layer.
 3. Решить `perfect_balance` passive mismatch. Done: XP-only семантика зафиксирована кодом и тестом.
-4. Реализовать или удалить `chaos_surge`.
-5. Добавить validator для unsupported `specialRules`.
+4. Реализовать или удалить `chaos_surge`. Done: state активируется в deterministic 3-hour windows.
+5. Добавить validator для unsupported `specialRules`. Done: validator фиксирует unknown/deferred/adapter-owned rules.
 
 Почему до data-driven:
 

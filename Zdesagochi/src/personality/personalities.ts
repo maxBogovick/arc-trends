@@ -1,4 +1,4 @@
-import type { PersonalityDefinition } from './types';
+import type { PersonalityDefinition, PersonalityId, PersonalitySpecialRules } from './types';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  PERSONALITIES — реестр всех 16 характеров
@@ -722,6 +722,128 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     },
   },
 ];
+
+type SpecialRuleStatus = 'engine' | 'adapter_owned' | 'deferred';
+
+export interface PersonalitySpecialRuleValidationIssue {
+  severity: 'warning' | 'error';
+  personalityId: PersonalityId;
+  rule: string;
+  status: SpecialRuleStatus | 'unknown';
+  message: string;
+}
+
+const SPECIAL_RULE_SUPPORT: Record<keyof PersonalitySpecialRules, {
+  status: SpecialRuleStatus;
+  owner: string;
+  message: string;
+}> = {
+  playThirstEnabled: {
+    status: 'deferred',
+    owner: 'future gameplay rule registry',
+    message: 'Declared for Playful, but no gameplay/economy effect currently consumes it.',
+  },
+  passiveStatBonusWhenFull: {
+    status: 'engine',
+    owner: 'computeNaturalPassives',
+    message: 'Supported by natural passive calculation.',
+  },
+  rejectSleepWhenEnergized: {
+    status: 'adapter_owned',
+    owner: 'mockApi sleep flow',
+    message: 'Implemented in mockApi; should move into command outcome in P3.',
+  },
+  peakPerformanceThreshold: {
+    status: 'adapter_owned',
+    owner: 'mockApi action outcome via getPeakPerformanceMult',
+    message: 'Implemented through exported engine helper, but applied by mockApi economy flow.',
+  },
+  nighttimeHours: {
+    status: 'engine',
+    owner: 'applyDecay/computeEmergentState',
+    message: 'Supported by night decay and midnight_zoomies checks.',
+  },
+  nightEnergyDecayDisabled: {
+    status: 'engine',
+    owner: 'applyDecay',
+    message: 'Supported by night energy decay calculation.',
+  },
+  xpEveryOtherAction: {
+    status: 'adapter_owned',
+    owner: 'mockApi play economy flow',
+    message: 'Implemented in mockApi; should move into command outcome in P3.',
+  },
+  randomizeDailySeed: {
+    status: 'engine',
+    owner: 'updateCounters/applyDecay/applyActionModifiers/computeEmergentState',
+    message: 'Supported by chaos seed, multipliers, and chaos_surge activation.',
+  },
+  flatXpFromPlay: {
+    status: 'engine',
+    owner: 'applyActionModifiers',
+    message: 'Supported by action modifier calculation.',
+  },
+  stoicPeakOnceOnly: {
+    status: 'deferred',
+    owner: 'future gameplay rule registry',
+    message: 'Current one-shot behavior is hardcoded through counters, not this specialRules field.',
+  },
+  foodBoredomEnabled: {
+    status: 'engine',
+    owner: 'applyActionModifiers',
+    message: 'Supported by food preference modifier calculation.',
+  },
+  newRoomBonusEnabled: {
+    status: 'deferred',
+    owner: 'future gameplay rule registry',
+    message: 'Declared for Adventurer, but no new-room reward effect currently consumes it.',
+  },
+  untrustedPhaseDays: {
+    status: 'deferred',
+    owner: 'future gameplay rule registry',
+    message: 'Declared for Paranoid, but phase timing is not data-driven yet.',
+  },
+  trustThresholdBonds: {
+    status: 'deferred',
+    owner: 'future gameplay rule registry',
+    message: 'Declared for Paranoid, but trust threshold is currently hardcoded in updateCounters.',
+  },
+};
+
+export function validatePersonalitySpecialRules(
+  personalities: PersonalityDefinition[] = PERSONALITIES,
+): PersonalitySpecialRuleValidationIssue[] {
+  const supportedKeys = new Set(Object.keys(SPECIAL_RULE_SUPPORT));
+  const issues: PersonalitySpecialRuleValidationIssue[] = [];
+
+  for (const personality of personalities) {
+    for (const rule of Object.keys(personality.specialRules ?? {})) {
+      if (!supportedKeys.has(rule)) {
+        issues.push({
+          severity: 'error',
+          personalityId: personality.id,
+          rule,
+          status: 'unknown',
+          message: `Unknown specialRules.${rule}; add support metadata before using it in personality data.`,
+        });
+        continue;
+      }
+
+      const support = SPECIAL_RULE_SUPPORT[rule as keyof PersonalitySpecialRules];
+      if (support.status !== 'engine') {
+        issues.push({
+          severity: 'warning',
+          personalityId: personality.id,
+          rule,
+          status: support.status,
+          message: `${support.message} Owner: ${support.owner}.`,
+        });
+      }
+    }
+  }
+
+  return issues;
+}
 
 // Быстрый доступ по id
 export const PERSONALITIES_MAP = new Map(

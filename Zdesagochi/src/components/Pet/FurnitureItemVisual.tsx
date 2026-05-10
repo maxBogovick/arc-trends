@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
 import { getFurniture } from '../../data/roomFurniture';
-import { usePetStore, type PlacedFurnitureItem } from '../../store/petStore';
+import type { PlacedFurnitureItem } from '../../store/petStore';
 import type React from 'react';
 import { useImageUrl } from '../../utils/imageStore';
+import { useDarkness } from './RoomScene';
 
 interface Props {
   placed: PlacedFurnitureItem;
@@ -29,7 +30,7 @@ export function FurnitureItemVisual({
 }: Props) {
   // Must be called before any early return (Rules of Hooks)
   const paintingImage = useImageUrl(placed.imageUrl);
-  const ambientDarkness = usePetStore(s => s.roomCustomization.ambientDarkness);
+  const ambientDarkness = useDarkness();
 
   const def = getFurniture(placed.itemId);
   if (!def) return null;

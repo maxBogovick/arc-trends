@@ -183,3 +183,79 @@ Tradeoff:
 
 Начать Sprint 1 cleanup и фиксировать решения, если cleanup выбирает между несколькими вариантами поведения.
 
+---
+
+## DEC-0003: Command outcome blocks mockApi replacement and offline sync
+
+Status: accepted  
+Date: 2026-05-10  
+Related files: `src/personality/commandHandlers.ts`, `src/personality/commands.ts`, `src/api/mockApi.ts`, `docs/personality_engine_function_readiness.md`, `docs/personality_engine_progress.md`  
+Related roadmap item: M2 / P3 Command outcome
+
+### Context
+
+`mockApi` сейчас одновременно:
+
+- хранит локальное состояние;
+- считает stats/XP/coins;
+- применяет часть gameplay/special cases;
+- вызывает personality command layer;
+- имитирует будущий backend.
+
+Пока `applyPersonalityCommand()` не возвращает полный результат действия, `mockApi` нельзя честно убрать: иначе offline, replay и будущий backend будут считать результат действия разными способами.
+
+### Decision
+
+Следующий главный этап после Sprint 1 cleanup — **Command outcome first**.
+
+До замены `mockApi` нужно расширить `PetCommandResult`, чтобы каждая команда возвращала:
+
+- `statDeltas`;
+- `xpDelta`;
+- `coinDelta`;
+- `blockedAction`;
+- `appliedModifiers`;
+- domain events;
+- новый pet snapshot.
+
+Только после этого `mockApi` можно разрезать на `PetService`, `LocalSave`, `SyncQueue` и `ServerApi`.
+
+### Why
+
+Offline-first игра требует одного источника правды:
+
+```text
+player action -> command engine -> local save -> sync queue -> backend
+```
+
+Если gameplay outcome останется в `mockApi`, backend придется копировать клиентскую логику, а replay не сможет доказуемо восстановить то же состояние.
+
+### Alternatives
+
+- Сначала делать data-driven emergent states: partially rejected as immediate priority. Это важно для добавления новых характеров, но не разблокирует удаление `mockApi`.
+- Сразу удалять `mockApi`: rejected. Нечем заменить расчет stats/XP/coins, offline behavior сломается или разойдется с backend.
+- Оставить `mockApi` навсегда: rejected. Тогда не будет единого backend/mock/replay outcome.
+
+### Consequences
+
+Плюсы:
+
+- появляется понятный путь к offline + sync;
+- `mockApi` перестает быть местом игровой логики;
+- backend сможет принимать команды и проверять тот же результат;
+- replay станет ближе к полному восстановлению gameplay.
+
+Tradeoff:
+
+- data-driven states временно отодвигаются после command outcome или идут только как второй крупный этап.
+
+### Verification
+
+- `PetCommandResult` содержит full gameplay outcome;
+- `mockApi` для основных действий использует command result, а не считает stats/XP/coins сам;
+- tests доказывают одинаковый outcome для command/replay/mock path;
+- targeted check показывает уменьшение gameplay calculators в `src/api/mockApi.ts`.
+
+### Next
+
+Начать M2/P3: расширить `PetCommandResult` и перенести base action result calculation из `mockApi` в command/gameplay layer.

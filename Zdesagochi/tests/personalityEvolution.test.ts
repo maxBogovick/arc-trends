@@ -55,7 +55,7 @@ import {
 import { getEmergentStateDef } from '../src/personality/emergentStates';
 import { validateBalancePatch, validateInfluenceRegistry, validateRemoteInfluence } from '../src/personality/influenceRegistry';
 import { PATTERN_RULES, validatePatternRules } from '../src/personality/patternRules';
-import { getPersonality } from '../src/personality/personalities';
+import { getPersonality, validatePersonalitySpecialRules } from '../src/personality/personalities';
 import { setLayeredEmergentState } from '../src/personality/stateLayers';
 import { PERSONALITY_TRAIT_MAP } from '../src/personality/personalityTraitMap';
 import {
@@ -191,6 +191,37 @@ test('dynamic radius follows age brackets', () => {
 test('depth of immersion is 1 at personality center', () => {
   const vector = PERSONALITY_TRAIT_MAP.bold.position;
   assert.equal(depthOfImmersion(vector, 'bold', 3), 1);
+});
+
+test('personality specialRules validator exposes deferred and adapter-owned rules', () => {
+  const issues = validatePersonalitySpecialRules();
+  const errors = issues.filter(issue => issue.severity === 'error');
+  const warnings = issues.filter(issue => issue.severity === 'warning');
+  const warningKeys = new Set(warnings.map(issue => `${issue.personalityId}:${issue.rule}:${issue.status}`));
+
+  assert.deepEqual(errors, []);
+  assert.ok(warningKeys.has('playful:playThirstEnabled:deferred'));
+  assert.ok(warningKeys.has('bold:rejectSleepWhenEnergized:adapter_owned'));
+  assert.ok(warningKeys.has('melancholic:xpEveryOtherAction:adapter_owned'));
+  assert.ok(warningKeys.has('stoic:stoicPeakOnceOnly:deferred'));
+  assert.ok(warningKeys.has('adventurer:newRoomBonusEnabled:deferred'));
+  assert.ok(warningKeys.has('paranoid:trustThresholdBonds:deferred'));
+});
+
+test('personality specialRules validator rejects unknown runtime keys', () => {
+  const base = getPersonality('playful');
+  const issues = validatePersonalitySpecialRules([{
+    ...base,
+    specialRules: { ...base.specialRules, unsupportedRule: true } as any,
+  }]);
+
+  assert.deepEqual(issues.filter(issue => issue.severity === 'error'), [{
+    severity: 'error',
+    personalityId: 'playful',
+    rule: 'unsupportedRule',
+    status: 'unknown',
+    message: 'Unknown specialRules.unsupportedRule; add support metadata before using it in personality data.',
+  }]);
 });
 
 test('offline save captures snapshot with engine and registry versions', () => {
@@ -475,6 +506,66 @@ test('feast_frenzy uses three feedings in the last hour, not play count', () => 
     undefined,
   );
   assert.equal(state, null);
+});
+
+test('chaos_surge activates in deterministic three hour windows only for configured personalities', () => {
+  const counters = createDefaultCounters({
+    now: new Date(2026, 4, 1, 0, 0, 0),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+  counters.chaosDailySeed = 0.1;
+  counters.chaosSeedDate = '2026-05-01';
+  const stats = { hunger: 80, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 };
+  const activeMinutes: number[] = [];
+  const inactiveMinutes: number[] = [];
+
+  for (let minute = 0; minute < 180; minute++) {
+    const now = new Date(2026, 4, 1, 0, minute, 0);
+    const state = computeEmergentState(
+      stats,
+      getPersonality('chaotic'),
+      [],
+      counters,
+      { clientLocalHour: now.getHours(), sessionGapHours: 0, coinBalance: 0, now, rng: () => 0.1 },
+      null,
+      undefined,
+    );
+
+    if (state === 'chaos_surge') activeMinutes.push(minute);
+    if (state === null) inactiveMinutes.push(minute);
+  }
+
+  assert.ok(activeMinutes.length >= 30);
+  assert.ok(activeMinutes.length <= 60);
+  assert.ok(inactiveMinutes.length > 0);
+
+  const activeNow = new Date(2026, 4, 1, 0, activeMinutes[0], 0);
+  const inactiveNow = new Date(2026, 4, 1, 0, inactiveMinutes[0], 0);
+
+  assert.equal(
+    computeEmergentState(
+      stats,
+      getPersonality('chaotic'),
+      [],
+      counters,
+      { clientLocalHour: inactiveNow.getHours(), sessionGapHours: 0, coinBalance: 0, now: inactiveNow, rng: () => 0.1 },
+      null,
+      undefined,
+    ),
+    null,
+  );
+  assert.equal(
+    computeEmergentState(
+      stats,
+      getPersonality('playful'),
+      [],
+      counters,
+      { clientLocalHour: activeNow.getHours(), sessionGapHours: 0, coinBalance: 0, now: activeNow, rng: () => 0.1 },
+      null,
+      undefined,
+    ),
+    null,
+  );
 });
 
 test('pattern counters materialize seven day rolling action windows', () => {

@@ -70,6 +70,10 @@ export function LightingLayer() {
     return () => clearInterval(timer);
   }, []);
 
+  const sunTime = c.sunPreviewHour !== null && c.sunPreviewHour !== undefined
+    ? (() => { const d = new Date(); d.setHours(Math.floor(c.sunPreviewHour!), Math.round((c.sunPreviewHour! % 1) * 60)); return d; })()
+    : now;
+
   const sources = [
     ...c.roomLights.filter(l => l.isOn).map(l => ({
       id: l.id,
@@ -92,7 +96,7 @@ export function LightingLayer() {
         intensity: 0.38,
         size: (LAMP_SIZES[p.itemId] ?? 42) * p.scale,
       })),
-    ...(c.hasSun ? [getSunLight(now)].filter(Boolean) as SunLight[] : []),
+    ...(c.hasSun ? [getSunLight(sunTime)].filter(Boolean) as SunLight[] : []),
   ];
 
   if (sources.length === 0) return null;

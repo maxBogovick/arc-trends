@@ -1,14 +1,14 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePetStore, type RoomCustomization, type FloorStyle, type RoomPreset, type PlacedFurnitureItem, type RoomLight } from '../store/petStore';
 import { saveImage, deleteImage, useImageUrl } from '../utils/imageStore';
 import { FurnitureItemVisual } from '../components/Pet/FurnitureItemVisual';
 import { getFurniture, getFurnitureByCategory } from '../data/roomFurniture';
 import { BACKGROUNDS, getBackground } from '../data/backgrounds';
-import { RoomScene } from '../components/Pet/RoomScene';
+import { RoomScene, computeEffectiveDarkness } from '../components/Pet/RoomScene';
 
-type PanelTab = 'furniture' | 'room';
-type RoomTab = 'wall' | 'floor' | 'accent' | 'lighting' | 'theme' | 'presets';
+type PanelTab = 'furniture' | 'placed' | 'room';
+type RoomTab = 'wall' | 'floor' | 'lighting' | 'theme' | 'presets';
 type FurnitureCategory = 'plant' | 'lamp' | 'decor' | 'furniture' | 'gadget' | 'special';
 
 const FURNITURE_CATEGORIES: Array<{ id: FurnitureCategory; emoji: string; label: string }> = [
@@ -318,6 +318,20 @@ function WallPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCust
         ]}
       />
 
+      {/* Accent color — moved here from its own tab */}
+      <div>
+        <SectionLabel>✨ Цвет акцента</SectionLabel>
+        <p className="text-[10px] mb-2" style={{ color: 'rgba(255,255,255,0.3)' }}>
+          Влияет на свечение, линии сетки и фоновые эффекты
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {ACCENT_PALETTES.map(color => (
+            <ColorSwatch key={color} color={color} active={c.accentColor === color} onClick={() => set({ accentColor: color })} />
+          ))}
+          <CustomColorPicker value={c.accentColor} onChange={v => set({ accentColor: v })} />
+        </div>
+      </div>
+
     </div>
   );
 }
@@ -379,25 +393,6 @@ function FloorPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCus
   );
 }
 
-function AccentPanel({ c, set }: { c: RoomCustomization; set: (p: Partial<RoomCustomization>) => void }) {
-  return (
-    <div className="space-y-5">
-      <div>
-        <SectionLabel>Цвет акцента</SectionLabel>
-        <p className="text-[10px] mb-2" style={{ color: 'rgba(255,255,255,0.3)' }}>
-          Влияет на свечение, линии сетки и фоновые эффекты
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {ACCENT_PALETTES.map(color => (
-            <ColorSwatch key={color} color={color} active={c.accentColor === color} onClick={() => set({ accentColor: color })} />
-          ))}
-          <CustomColorPicker value={c.accentColor} onChange={v => set({ accentColor: v })} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Lighting panel ────────────────────────────────────────────────────────────
 
 const LIGHT_PRESETS: Array<Omit<RoomLight, 'id' | 'isOn'>> = [
@@ -405,7 +400,6 @@ const LIGHT_PRESETS: Array<Omit<RoomLight, 'id' | 'isOn'>> = [
   { name: 'Бра левое',      x: 12, y: 38, color: '#FFE0A0', intensity: 0.38, size: 52  },
   { name: 'Бра правое',     x: 88, y: 38, color: '#FFE0A0', intensity: 0.38, size: 52  },
   { name: 'Подсветка пола', x: 50, y: 90, color: '#8060FF', intensity: 0.30, size: 75  },
-  { name: 'Солнце',         x: 88, y: 8,  color: '#FFF5C0', intensity: 0.65, size: 140 },
   { name: 'Луна',           x: 78, y: 12, color: '#C0D8FF', intensity: 0.28, size: 85  },
   { name: 'Неон',           x: 50, y: 50, color: '#FF00FF', intensity: 0.32, size: 100 },
 ];
@@ -530,41 +524,117 @@ function SunStatus() {
 }
 
 function LightingPanel() {
-  const { roomCustomization: c, setRoomCustomization, addRoomLight, updateRoomLight, removeRoomLight } = usePetStore();
+  const { roomCustomization: c, setRoomCustomization, addRoomLight, updateRoomLight, removeRoomLight, placedFurniture } = usePetStore();
   const [showPresets, setShowPresets] = useState(false);
+
+  // Live clock so this panel re-renders when time changes (affects effectiveDarkness display)
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const effectiveDarkness = computeEffectiveDarkness(c, now);
+
+  const hasAnyActiveLight =
+    effectiveDarkness < 0.7 ||
+    c.roomLights.some(l => l.isOn) ||
+    placedFurniture.some(p => {
+      const def = getFurniture(p.itemId);
+      return def?.category === 'lamp' && (p.isOn ?? true);
+    });
+
+  // label, targetAmbient, effectiveDarkness threshold (upper bound of this band)
+  const DARKNESS_PRESETS: [string, number, number][] = [
+    ['День',           0,    0.2 ],
+    ['Сумерки',        0.45, 0.65],
+    ['Ночь',           0.82, 0.9 ],
+    ['Кромешная тьма', 0.96, 1.01],
+  ];
+  const activeDarknessPreset = DARKNESS_PRESETS.findIndex(([, , upperBound], i) => {
+    const lowerBound = i === 0 ? -Infinity : DARKNESS_PRESETS[i - 1][2];
+    return effectiveDarkness >= lowerBound && effectiveDarkness < upperBound;
+  });
 
   return (
     <div className="space-y-3">
 
+      {/* Dark room warning */}
+      {!hasAnyActiveLight && (
+        <div
+          className="flex items-start gap-2 p-3 rounded-xl text-xs"
+          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: 'rgba(252,165,165,0.9)' }}
+        >
+          <span className="shrink-0 mt-0.5">⚠️</span>
+          <span>Комната полностью тёмная — добавь источник света или уменьши темноту</span>
+        </div>
+      )}
+
       {/* ── Ambient darkness ─────────────────────────────── */}
-      <div className="p-3 rounded-xl space-y-2" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
-        <SectionLabel>Фоновая темнота</SectionLabel>
-        <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>☀️</span>
-          <input
-            type="range" min={0} max={1} step={0.01}
-            value={c.ambientDarkness}
-            onChange={e => setRoomCustomization({ ambientDarkness: parseFloat(e.target.value) })}
-            className="flex-1 accent-purple-500"
-          />
-          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>🌑</span>
-          <span className="text-[10px] w-7 text-right" style={{ color: 'rgba(255,255,255,0.4)' }}>{Math.round(c.ambientDarkness * 100)}%</span>
-        </div>
-        <div className="flex gap-1.5 flex-wrap">
-          {([['День', 0], ['Сумерки', 0.45], ['Ночь', 0.82], ['Кромешная тьма', 0.96]] as [string, number][]).map(([label, val]) => (
-            <button
-              key={label}
-              onClick={() => setRoomCustomization({ ambientDarkness: val })}
-              className="px-2 py-0.5 rounded-full text-[9px] font-semibold transition-all"
-              style={{
-                background: Math.abs(c.ambientDarkness - val) < 0.05 ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.07)',
-                color: 'rgba(255,255,255,0.7)',
-                border: '1px solid rgba(255,255,255,0.1)',
-              }}
-            >{label}</button>
-          ))}
-        </div>
-      </div>
+      {(() => {
+        // Compute sunFactor for inverse formula (ambientDarkness = effectiveDarkness / sunFactor)
+        const sunTime = c.sunPreviewHour !== null && c.sunPreviewHour !== undefined
+          ? (() => { const d = new Date(); d.setHours(Math.floor(c.sunPreviewHour!), Math.round((c.sunPreviewHour! % 1) * 60), 0, 0); return d; })()
+          : now;
+        const h = sunTime.getHours() + sunTime.getMinutes() / 60;
+        const sunIntensity = (h >= 6 && h <= 20) ? 0.18 + 0.52 * Math.sin(Math.PI * (h - 6) / 14) : 0;
+        const sunFactor = Math.max(0.001, 1 - sunIntensity * 1.5);
+
+        const handleDarknessChange = (value: number) => {
+          if (!c.hasSun) {
+            setRoomCustomization({ ambientDarkness: value });
+          } else {
+            setRoomCustomization({ ambientDarkness: Math.min(1, value / sunFactor) });
+          }
+        };
+
+        const handlePresetClick = (targetAmbient: number) => {
+          if (!c.hasSun) {
+            setRoomCustomization({ ambientDarkness: targetAmbient });
+          } else {
+            setRoomCustomization({ hasSun: false, ambientDarkness: targetAmbient });
+          }
+        };
+
+        return (
+          <div className="p-3 rounded-xl space-y-2" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="flex items-center justify-between">
+              <SectionLabel>Фоновая темнота</SectionLabel>
+              {c.hasSun && (
+                <span className="text-[10px]" style={{ color: 'rgba(255,200,80,0.6)' }}>☀️ с учётом солнца</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>☀️</span>
+              <input
+                type="range" min={0} max={1} step={0.01}
+                value={effectiveDarkness}
+                onChange={e => handleDarknessChange(parseFloat(e.target.value))}
+                className="flex-1 accent-purple-500"
+              />
+              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>🌑</span>
+              <span className="text-[10px] w-7 text-right" style={{ color: 'rgba(255,255,255,0.4)' }}>{Math.round(effectiveDarkness * 100)}%</span>
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {DARKNESS_PRESETS.map(([label, targetAmbient], i) => {
+                const isActive = i === activeDarknessPreset;
+                return (
+                  <button
+                    key={label}
+                    onClick={() => handlePresetClick(targetAmbient)}
+                    className="px-2 py-0.5 rounded-full text-[9px] font-semibold transition-all"
+                    style={{
+                      background: isActive ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.07)',
+                      color: isActive ? '#E9D5FF' : 'rgba(255,255,255,0.5)',
+                      border: isActive ? '1px solid rgba(167,139,250,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                    }}
+                  >{label}</button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Sun ──────────────────────────────────────────── */}
       <div className="p-3 rounded-xl space-y-2" style={{ background: 'rgba(255,180,40,0.06)', border: '1px solid rgba(255,180,40,0.15)' }}>
@@ -581,6 +651,36 @@ function LightingPanel() {
           >{c.hasSun ? '☀️ Включено' : '☀️ Выключено'}</button>
         </div>
         {c.hasSun && <SunStatus />}
+        {c.hasSun && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                Предпросмотр времени
+              </span>
+              {c.sunPreviewHour !== null && (
+                <button
+                  onClick={() => setRoomCustomization({ sunPreviewHour: null })}
+                  className="text-[9px] px-1.5 py-0.5 rounded"
+                  style={{ background: 'rgba(167,139,250,0.2)', color: '#C4B5FD' }}
+                >↺ Реальное время</button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>0ч</span>
+              <input
+                type="range" min={0} max={23.99} step={0.25}
+                value={c.sunPreviewHour ?? new Date().getHours()}
+                onChange={e => setRoomCustomization({ sunPreviewHour: parseFloat(e.target.value) })}
+                className="flex-1 accent-yellow-400"
+              />
+              <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>24ч</span>
+              <span className="text-[10px] w-10 text-right font-mono" style={{ color: 'rgba(255,220,80,0.8)' }}>
+                {String(Math.floor(c.sunPreviewHour ?? new Date().getHours())).padStart(2,'0')}:
+                {String(Math.round(((c.sunPreviewHour ?? 0) % 1) * 60)).padStart(2,'0')}
+              </span>
+            </div>
+          </div>
+        )}
         <p className="text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
           Позиция и цвет меняются автоматически в зависимости от времени суток. Поднимите темноту для контраста.
         </p>
@@ -1027,6 +1127,7 @@ export function RoomEditorPage() {
     ownedFurnitureIds,
     placedFurniture,
     addRoomFurniture,
+    duplicateRoomFurniture,
     removeRoomFurniture,
     updateRoomFurniture,
     buyRoomFurniture,
@@ -1042,15 +1143,66 @@ export function RoomEditorPage() {
   const [furnitureCategory, setFurnitureCategory] = useState<FurnitureCategory>('plant');
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  // ── Undo / Redo history ─────────────────────────────────────────────────────
+  type Snapshot = { furniture: PlacedFurnitureItem[]; customization: RoomCustomization };
+  const history = useRef<Snapshot[]>([]);
+  const future  = useRef<Snapshot[]>([]);
+  const skipNextSnapshot = useRef(false);
+
+  const takeSnapshot = useCallback(() => {
+    if (skipNextSnapshot.current) { skipNextSnapshot.current = false; return; }
+    history.current = [...history.current.slice(-29), { furniture: placedFurniture, customization: roomCustomization }];
+    future.current = [];
+  }, [placedFurniture, roomCustomization]);
+
+  const undo = useCallback(() => {
+    const prev = history.current.pop();
+    if (!prev) return;
+    future.current = [{ furniture: placedFurniture, customization: roomCustomization }, ...future.current.slice(0, 29)];
+    skipNextSnapshot.current = true;
+    setRoomCustomization(prev.customization);
+    // Restore furniture directly through store internals would need a new action; use a workaround via persist
+    usePetStore.setState({ placedFurniture: prev.furniture });
+  }, [placedFurniture, roomCustomization, setRoomCustomization]);
+
+  const redo = useCallback(() => {
+    const next = future.current.shift();
+    if (!next) return;
+    history.current = [...history.current, { furniture: placedFurniture, customization: roomCustomization }];
+    skipNextSnapshot.current = true;
+    setRoomCustomization(next.customization);
+    usePetStore.setState({ placedFurniture: next.furniture });
+  }, [placedFurniture, roomCustomization, setRoomCustomization]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undo, redo]);
 
   const selectedItem = placedFurniture.find(p => p.uid === selectedUid) ?? null;
   const selectedPaintingUrl = useImageUrl(selectedItem?.imageUrl);
+
+  // Show "Сохранено" flash after any room change
+  useEffect(() => {
+    setSavedFlash(true);
+    const t = setTimeout(() => setSavedFlash(false), 1500);
+    return () => clearTimeout(t);
+  }, [placedFurniture, roomCustomization]);
 
   const countInRoom = (itemId: string) =>
     placedFurniture.filter(p => p.itemId === itemId).length;
 
   const handleSceneClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === sceneRef.current) setSelectedUid(null);
+    if (e.target === sceneRef.current) { setSelectedUid(null); setShowAdvanced(false); }
   };
 
   const handleFurnitureMove = (uid: string, dx: number, dy: number) => {
@@ -1058,6 +1210,7 @@ export function RoomEditorPage() {
     const rect = sceneRef.current.getBoundingClientRect();
     const placed = placedFurniture.find(p => p.uid === uid);
     if (!placed) return;
+    takeSnapshot();
     updateRoomFurniture(uid, {
       x: Math.max(3, Math.min(97, placed.x + (dx / rect.width) * 100)),
       y: Math.max(3, Math.min(97, placed.y + (dy / rect.height) * 100)),
@@ -1067,7 +1220,6 @@ export function RoomEditorPage() {
   const ROOM_TABS: Array<{ id: RoomTab; label: string }> = [
     { id: 'wall',     label: '🧱 Стена'  },
     { id: 'floor',    label: '🏠 Пол'    },
-    { id: 'accent',   label: '✨ Акцент' },
     { id: 'lighting', label: '💡 Свет'   },
     { id: 'theme',    label: '🌌 Тема'   },
     { id: 'presets',  label: '💾 Пресеты'},
@@ -1094,21 +1246,23 @@ export function RoomEditorPage() {
       >
         {/* Top-level tabs */}
         <div className="flex gap-1 p-3 shrink-0">
-          {(['furniture', 'room'] as PanelTab[]).map(tab => (
+          {([
+            { id: 'furniture', label: '🛋️ Каталог' },
+            { id: 'placed',    label: `📋 В комнате${placedFurniture.length ? ` (${placedFurniture.length})` : ''}` },
+            { id: 'room',      label: '🎨 Комната' },
+          ] as { id: PanelTab; label: string }[]).map(tab => (
             <button
-              key={tab}
-              onClick={() => setPanelTab(tab)}
-              className="flex-1 py-2 rounded-xl text-sm font-bold transition-all"
+              key={tab.id}
+              onClick={() => setPanelTab(tab.id)}
+              className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
               style={{
-                background: panelTab === tab
+                background: panelTab === tab.id
                   ? 'linear-gradient(135deg,rgba(124,58,237,0.4),rgba(236,72,153,0.2))'
                   : 'rgba(255,255,255,0.05)',
-                color: panelTab === tab ? '#E9D5FF' : 'rgba(255,255,255,0.5)',
-                border: panelTab === tab ? '1px solid rgba(124,58,237,0.4)' : '1px solid transparent',
+                color: panelTab === tab.id ? '#E9D5FF' : 'rgba(255,255,255,0.5)',
+                border: panelTab === tab.id ? '1px solid rgba(124,58,237,0.4)' : '1px solid transparent',
               }}
-            >
-              {tab === 'furniture' ? '🛋️ Мебель' : '🎨 Комната'}
-            </button>
+            >{tab.label}</button>
           ))}
         </div>
 
@@ -1133,7 +1287,8 @@ export function RoomEditorPage() {
               ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2">
+            <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2 flex flex-col">
+              <div className="flex-1 space-y-2">
               {itemsInCategory.map(item => {
                 const owned = ownedFurnitureIds.includes(item.id);
                 const canAfford = coins >= item.price;
@@ -1158,7 +1313,7 @@ export function RoomEditorPage() {
                     </div>
                     {owned ? (
                       <button
-                        onClick={() => addRoomFurniture(item.id)}
+                        onClick={() => { takeSnapshot(); addRoomFurniture(item.id); }}
                         className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-white transition-all shrink-0"
                         style={{ background: 'linear-gradient(135deg,#7C3AED,#EC4899)' }}
                       >
@@ -1166,7 +1321,7 @@ export function RoomEditorPage() {
                       </button>
                     ) : (
                       <button
-                        onClick={() => canAfford && buyRoomFurniture(item.id)}
+                        onClick={() => canAfford && (takeSnapshot(), buyRoomFurniture(item.id))}
                         disabled={!canAfford}
                         className="px-2 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0"
                         style={{
@@ -1183,8 +1338,75 @@ export function RoomEditorPage() {
                   </div>
                 );
               })}
+              </div>
+
+              {/* Clear all furniture — placed at the bottom, away from Add buttons */}
+              {placedFurniture.length > 0 && (
+                <div className="pt-3 mt-2 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  {clearConfirm ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs flex-1" style={{ color: 'rgba(255,255,255,0.5)' }}>Удалить всю мебель?</span>
+                      <button
+                        onClick={() => { takeSnapshot(); clearRoomFurniture(); setSelectedUid(null); setClearConfirm(false); }}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-bold"
+                        style={{ background: 'rgba(239,68,68,0.35)', color: '#FCA5A5' }}
+                      >Да</button>
+                      <button
+                        onClick={() => setClearConfirm(false)}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-bold"
+                        style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}
+                      >Нет</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setClearConfirm(true)}
+                      className="w-full py-2 rounded-xl text-xs font-bold transition-all"
+                      style={{ background: 'rgba(239,68,68,0.1)', color: 'rgba(252,165,165,0.7)', border: '1px solid rgba(239,68,68,0.2)' }}
+                    >🗑️ Очистить всю мебель</button>
+                  )}
+                </div>
+              )}
             </div>
           </>
+        )}
+
+        {/* ── Placed items panel (Layer Panel) ── */}
+        {panelTab === 'placed' && (
+          <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
+            {placedFurniture.length === 0 ? (
+              <p className="text-xs text-center py-8" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                Комната пуста — добавь мебель из каталога
+              </p>
+            ) : (
+              [...placedFurniture].reverse().map(p => {
+                const def = getFurniture(p.itemId);
+                const isSelected = selectedUid === p.uid;
+                return (
+                  <div
+                    key={p.uid}
+                    onClick={() => { setSelectedUid(p.uid); setPanelTab('furniture'); }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all"
+                    style={{
+                      background: isSelected ? 'rgba(124,58,237,0.25)' : 'rgba(255,255,255,0.05)',
+                      border: isSelected ? '1px solid rgba(124,58,237,0.45)' : '1px solid rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>{def?.emoji ?? '?'}</span>
+                    <span className="flex-1 text-xs font-semibold truncate text-white">{def?.name ?? p.itemId}</span>
+                    {p.locked && <span style={{ fontSize: 11 }}>🔒</span>}
+                    {getFurniture(p.itemId)?.category === 'lamp' && (
+                      <span style={{ fontSize: 11, opacity: (p.isOn ?? true) ? 1 : 0.3 }}>💡</span>
+                    )}
+                    <button
+                      onClick={e => { e.stopPropagation(); takeSnapshot(); removeRoomFurniture(p.uid); if (selectedUid === p.uid) setSelectedUid(null); }}
+                      className="w-5 h-5 flex items-center justify-center rounded text-[10px] shrink-0"
+                      style={{ background: 'rgba(239,68,68,0.15)', color: '#FCA5A5' }}
+                    >✕</button>
+                  </div>
+                );
+              })
+            )}
+          </div>
         )}
 
         {/* ── Room panel ── */}
@@ -1211,13 +1433,12 @@ export function RoomEditorPage() {
             <div className="flex-1 overflow-y-auto px-3 pb-3">
               {roomTab === 'wall'     && <WallPanel     c={roomCustomization} set={setRoomCustomization} />}
               {roomTab === 'floor'    && <FloorPanel    c={roomCustomization} set={setRoomCustomization} />}
-              {roomTab === 'accent'   && <AccentPanel   c={roomCustomization} set={setRoomCustomization} />}
               {roomTab === 'lighting' && <LightingPanel />}
               {roomTab === 'theme'    && <ThemePanel />}
               {roomTab === 'presets'  && <PresetsPanel />}
 
               {/* Reset button */}
-              {roomTab !== 'theme' && roomTab !== 'presets' && roomTab !== 'lighting' && (
+              {(roomTab === 'wall' || roomTab === 'floor') && (
                 <div className="mt-4 pt-3 border-t border-white/10">
                   <button
                     onClick={resetRoomCustomization}
@@ -1244,38 +1465,48 @@ export function RoomEditorPage() {
           className="flex items-center justify-between px-6 py-4 shrink-0"
           style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}
         >
-          <h1 className="font-display font-bold text-xl text-white">🛋️ Редактор комнаты</h1>
-          <div className="flex items-center gap-2">
-            {clearConfirm ? (
-              <>
-                <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.55)' }}>Удалить всю мебель?</span>
-                <button
-                  onClick={() => { clearRoomFurniture(); setSelectedUid(null); setClearConfirm(false); }}
-                  className="px-3 py-2 rounded-xl text-sm font-bold transition-all"
-                  style={{ background: 'rgba(239,68,68,0.35)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.5)' }}
-                >Да</button>
-                <button
-                  onClick={() => setClearConfirm(false)}
-                  className="px-3 py-2 rounded-xl text-sm font-bold transition-all"
-                  style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}
-                >Нет</button>
-              </>
-            ) : (
-              <button
-                onClick={() => setClearConfirm(true)}
-                className="px-3 py-2 rounded-xl text-sm font-bold transition-all"
-                style={{ background: 'rgba(239,68,68,0.15)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.3)' }}
-              >
-                🗑️ Очистить всё
-              </button>
-            )}
+          <div className="flex items-center gap-3">
+            <h1 className="font-display font-bold text-xl text-white">🛋️ Редактор комнаты</h1>
+            <AnimatePresence>
+              {savedFlash && (
+                <motion.span
+                  initial={{ opacity: 0, x: -6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="text-xs font-semibold"
+                  style={{ color: 'rgba(134,239,172,0.8)' }}
+                >✓ Сохранено</motion.span>
+              )}
+            </AnimatePresence>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={undo}
+              disabled={history.current.length === 0}
+              title="Отменить (Ctrl+Z)"
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                color: history.current.length ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.2)',
+              }}
+            >↺</button>
+            <button
+              onClick={redo}
+              disabled={future.current.length === 0}
+              title="Повторить (Ctrl+Y)"
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                color: future.current.length ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.2)',
+              }}
+            >↻</button>
+            <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.12)', margin: '0 4px' }} />
             <button
               onClick={() => setActiveTab('home')}
               className="px-4 py-2 rounded-xl text-sm font-bold text-white transition-all"
               style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)' }}
-            >
-              ✕ Закрыть
-            </button>
+            >✕ Закрыть</button>
           </div>
         </div>
 
@@ -1389,28 +1620,35 @@ export function RoomEditorPage() {
                   <span className="text-xs text-purple-300 w-10 text-right">{(selectedItem.rotation ?? 0).toFixed(0)}°</span>
                 </div>
 
-                {/* Tilt X (lean forward/back in 3D) */}
-                <div className="flex items-center gap-2 w-full">
-                  <span className="text-xs text-purple-300 shrink-0 w-16">3D ось X</span>
-                  <input
-                    type="range" min={-80} max={80} step={1}
-                    value={selectedItem.tiltX ?? 0}
-                    onChange={e => updateRoomFurniture(selectedItem.uid, { tiltX: parseFloat(e.target.value) })}
-                    className="flex-1 accent-purple-500"
-                  />
-                  <span className="text-xs text-purple-300 w-10 text-right">{(selectedItem.tiltX ?? 0).toFixed(0)}°</span>
-                </div>
-
-                {/* Tilt Y (lean left/right in 3D) */}
-                <div className="flex items-center gap-2 w-full">
-                  <span className="text-xs text-purple-300 shrink-0 w-16">3D ось Y</span>
-                  <input
-                    type="range" min={-80} max={80} step={1}
-                    value={selectedItem.tiltY ?? 0}
-                    onChange={e => updateRoomFurniture(selectedItem.uid, { tiltY: parseFloat(e.target.value) })}
-                    className="flex-1 accent-purple-500"
-                  />
-                  <span className="text-xs text-purple-300 w-10 text-right">{(selectedItem.tiltY ?? 0).toFixed(0)}°</span>
+                {/* 3D tilt — hidden behind Advanced toggle */}
+                <div className="w-full">
+                  <button
+                    onClick={() => setShowAdvanced(v => !v)}
+                    className="text-[10px] font-semibold flex items-center gap-1 mb-1"
+                    style={{ color: 'rgba(167,139,250,0.7)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  >
+                    {showAdvanced ? '▾' : '▸'} 3D наклон
+                  </button>
+                  {showAdvanced && (
+                    <div className="space-y-1.5 pl-3" style={{ borderLeft: '2px solid rgba(167,139,250,0.2)' }}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-purple-300 shrink-0 w-12">Ось X</span>
+                        <input type="range" min={-80} max={80} step={1}
+                          value={selectedItem.tiltX ?? 0}
+                          onChange={e => updateRoomFurniture(selectedItem.uid, { tiltX: parseFloat(e.target.value) })}
+                          className="flex-1 accent-purple-500" />
+                        <span className="text-xs text-purple-300 w-10 text-right">{(selectedItem.tiltX ?? 0).toFixed(0)}°</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-purple-300 shrink-0 w-12">Ось Y</span>
+                        <input type="range" min={-80} max={80} step={1}
+                          value={selectedItem.tiltY ?? 0}
+                          onChange={e => updateRoomFurniture(selectedItem.uid, { tiltY: parseFloat(e.target.value) })}
+                          className="flex-1 accent-purple-500" />
+                        <span className="text-xs text-purple-300 w-10 text-right">{(selectedItem.tiltY ?? 0).toFixed(0)}°</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Color / Hue */}
@@ -1438,12 +1676,18 @@ export function RoomEditorPage() {
 
                 <div className="flex items-center gap-2 shrink-0 flex-wrap">
                   <button
+                    onClick={() => {
+                      const newUid = duplicateRoomFurniture(selectedItem.uid);
+                      if (newUid) { setSelectedUid(newUid); setShowAdvanced(false); }
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all"
+                    style={{ background: 'rgba(124,58,237,0.25)', border: '1px solid rgba(124,58,237,0.4)' }}
+                  >⧉ Дублировать</button>
+                  <button
                     onClick={() => updateRoomFurniture(selectedItem.uid, { flipped: !selectedItem.flipped })}
                     className="px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all"
                     style={{ background: 'rgba(124,58,237,0.25)', border: '1px solid rgba(124,58,237,0.4)' }}
-                  >
-                    ↔ Отразить
-                  </button>
+                  >↔ Отразить</button>
                   {getFurniture(selectedItem.itemId)?.category === 'lamp' && (
                     <button
                       onClick={() => updateRoomFurniture(selectedItem.uid, { isOn: !(selectedItem.isOn ?? true) })}
@@ -1463,39 +1707,17 @@ export function RoomEditorPage() {
                   )}
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => {
-                        const maxZ = Math.max(...placedFurniture.map(f => f.zIndex));
-                        updateRoomFurniture(selectedItem.uid, { zIndex: maxZ + 1 });
-                      }}
-                      title="На самый перед"
-                      className="h-8 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center"
+                      onClick={() => updateRoomFurniture(selectedItem.uid, { zIndex: Math.max(...placedFurniture.map(f => f.zIndex)) + 1 })}
+                      title="На передний план"
+                      className="px-2.5 h-8 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
                       style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
-                    >⤒</button>
+                    >↑ Вперёд</button>
                     <button
-                      onClick={() => updateRoomFurniture(selectedItem.uid, { zIndex: selectedItem.zIndex + 1 })}
-                      title="Слой выше"
-                      className="w-8 h-8 rounded-lg text-sm font-bold transition-all flex items-center justify-center"
+                      onClick={() => updateRoomFurniture(selectedItem.uid, { zIndex: Math.max(1, Math.min(...placedFurniture.map(f => f.zIndex)) - 1) })}
+                      title="На задний план"
+                      className="px-2.5 h-8 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
                       style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
-                    >↑</button>
-                    <span
-                      className="text-[10px] font-mono w-6 text-center"
-                      style={{ color: 'rgba(255,255,255,0.35)' }}
-                    >{selectedItem.zIndex}</span>
-                    <button
-                      onClick={() => updateRoomFurniture(selectedItem.uid, { zIndex: Math.max(1, selectedItem.zIndex - 1) })}
-                      title="Слой ниже"
-                      className="w-8 h-8 rounded-lg text-sm font-bold transition-all flex items-center justify-center"
-                      style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
-                    >↓</button>
-                    <button
-                      onClick={() => {
-                        const minZ = Math.min(...placedFurniture.map(f => f.zIndex));
-                        updateRoomFurniture(selectedItem.uid, { zIndex: Math.max(1, minZ - 1) });
-                      }}
-                      title="На самый зад"
-                      className="h-8 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center"
-                      style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
-                    >⤓</button>
+                    >↓ Назад</button>
                   </div>
                   <button
                     onClick={() => updateRoomFurniture(selectedItem.uid, { locked: !selectedItem.locked })}
@@ -1509,7 +1731,7 @@ export function RoomEditorPage() {
                     {selectedItem.locked ? '🔒 Разблок.' : '🔓 Заблок.'}
                   </button>
                   <button
-                    onClick={() => { removeRoomFurniture(selectedItem.uid); setSelectedUid(null); }}
+                    onClick={() => { takeSnapshot(); removeRoomFurniture(selectedItem.uid); setSelectedUid(null); }}
                     className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
                     style={{ background: 'rgba(239,68,68,0.2)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.35)' }}
                   >

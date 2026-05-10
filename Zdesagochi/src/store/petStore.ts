@@ -55,6 +55,7 @@ export interface RoomCustomization {
   // Ambient lighting
   ambientDarkness: number;  // 0 = fully lit, 1 = pitch black
   hasSun: boolean;           // sun moves with real time of day
+  sunPreviewHour: number | null; // null = real time, 0-23 = simulated hour
   // Effects
   accentColor: string;
 }
@@ -82,6 +83,7 @@ export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
   roomLights: DEFAULT_ROOM_LIGHTS,
   ambientDarkness: 0,
   hasSun: false,
+  sunPreviewHour: null,
   accentColor: '#A855F7',
 };
 
@@ -155,6 +157,7 @@ interface PetStore {
   ownedFurnitureIds: string[];
   placedFurniture: PlacedFurnitureItem[];
   addRoomFurniture(itemId: string): void;
+  duplicateRoomFurniture(uid: string): string | null;
   removeRoomFurniture(uid: string): void;
   updateRoomFurniture(uid: string, changes: Partial<PlacedFurnitureItem>): void;
   buyRoomFurniture(itemId: string): void;
@@ -285,7 +288,8 @@ function loadRoomCustomization(): RoomCustomization {
   try {
     const raw = localStorage.getItem('roomCustomization');
     if (!raw) return DEFAULT_ROOM_CUSTOMIZATION;
-    return stripBase64FromCustomization({ ...DEFAULT_ROOM_CUSTOMIZATION, ...JSON.parse(raw) });
+    const loaded = stripBase64FromCustomization({ ...DEFAULT_ROOM_CUSTOMIZATION, ...JSON.parse(raw) });
+    return { ...loaded, sunPreviewHour: null }; // never restore preview time — always start at real time
   } catch { return DEFAULT_ROOM_CUSTOMIZATION; }
 }
 
@@ -1018,6 +1022,26 @@ export const usePetStore = create<PetStore>((set, get) => {
       const next = [...placedFurniture, newItem];
       persistRoom(roomCustomization, next);
       set({ placedFurniture: next });
+    },
+
+    duplicateRoomFurniture(uid) {
+      const source = get().placedFurniture.find(p => p.uid === uid);
+      if (!source) return null;
+      const newUid = `placed_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const copy: PlacedFurnitureItem = {
+        ...source,
+        uid: newUid,
+        x: Math.min(97, source.x + 4),
+        y: Math.min(97, source.y + 4),
+        locked: false,
+        imageUrl: undefined, // don't share IDB image ref
+      };
+      set(s => {
+        const next = [...s.placedFurniture, copy];
+        persistRoom(s.roomCustomization, next);
+        return { placedFurniture: next };
+      });
+      return newUid;
     },
 
     removeRoomFurniture(uid) {

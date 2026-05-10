@@ -3,6 +3,7 @@
 > Дата создания: 2026-05-09  
 > Назначение: единый файл процесса. Перед любой работой по движку характера сначала читать этот файл, затем `docs/personality_engine_coding_rules.md`, затем `docs/personality_engine_next_steps.md`.
 > Архитектурные решения фиксировать в `docs/personality_engine_decisions.md`.
+> MVP backlog и текущий источник задач: `docs/personality_engine_master_backlog.md`.
 
 ---
 
@@ -15,6 +16,8 @@
 ```
 
 Эта команда является рабочим правилом для всех следующих сессий.
+
+Для выбора задач использовать `docs/personality_engine_master_backlog.md` как полный backlog.
 
 ---
 
@@ -168,12 +171,12 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 | Field | Current Value |
 |---|---|
-| Current Goal | Подготовить движок к data-driven refactor без ложного/мертвого поведения |
-| Current Step | Sprint 1 — Cleanup before refactor |
-| Why This Step | Нельзя безопасно выносить правила в data registry, пока в engine есть noop-код, устаревшие комментарии и неподтвержденные specialRules |
-| Current Vector | Правильный: уменьшаем хаос перед архитектурной миграцией |
-| Next Step | Реализовать или явно удалить `chaos_surge` |
-| Why Next | После закрытия `perfect_balance` следующий ложный сигнал — state есть в типах/definitions, но фактическая lifecycle-семантика не закреплена в engine |
+| Current Goal | Довести движок до usable offline-first MVP |
+| Current Step | MVP-1 — Full Command Outcome |
+| Why This Step | Замена `mockApi` блокируется тем, что stats/XP/coins/blocked result сейчас считаются не одним command engine |
+| Current Vector | Правильный: делаем `applyPersonalityCommand()` единым источником результата действия |
+| Next Step | MVP-1.1 — расширить `PetCommandResult` |
+| Why Next | Пока команда не возвращает stats/XP/coins/blocked/appliedModifiers, `mockApi` нельзя заменить на LocalSave + SyncQueue + ServerApi |
 | Required Verification | `npm test`, `npm run build`, targeted `rg` checks when relevant |
 
 ---
@@ -182,30 +185,30 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Решен `perfect_balance` mismatch.
+Добавлен validator для unsupported `specialRules`.
 
 ### Why
 
-В `FLAG_RESTORE_EFFECTS` была пустая запись `perfect_balance` с комментарием, что passive bonus обрабатывается в `computeNaturalPassives`. Фактически stat passive не существовал, а реальное поведение флага — XP multiplier `1.15`.
+`specialRules` позволяли объявлять поля, которые выглядят как поддержанные механики, но фактически могли быть deferred или жить в `mockApi`. Перед data-driven refactor это создавало риск снова перенести ложные обещания.
 
 ### Impact
 
-Семантика `perfect_balance` теперь однозначна: это XP-only flag без скрытого stat passive. Это предотвращает перенос несуществующей механики в будущий data registry и снижает риск ложных требований при P2 refactor.
+`validatePersonalitySpecialRules()` теперь делает ownership явным: unknown keys дают errors, deferred/adapter-owned rules дают warnings, engine-supported rules проходят без issue. Это закрывает Sprint 1 cleanup и создает guardrail перед P2 registry migration.
 
 ### Verification
 
-- `rg "perfect_balance:|passive bonus|пассивный бонус|perfect_balance.*computeNaturalPassives|computeNaturalPassives.*perfect_balance" src/personality/PersonalityEngine.ts tests/personalityEvolution.test.ts docs/personality_engine_next_steps.md docs/personality_engine_progress.md` — no stale engine/test references; docs mention only resolved status/history.
+- `rg "validatePersonalitySpecialRules|SPECIAL_RULE_SUPPORT|unsupportedRule|playThirstEnabled|newRoomBonusEnabled" src/personality/personalities.ts tests/personalityEvolution.test.ts` — validator and tests present.
 - `npm test` — passed.
 - `npm run build` — passed.
 - Vite chunk size warning remains non-blocking.
 
 ### Next
 
-Реализовать или явно удалить `chaos_surge`.
+MVP-1.1 — расширить `PetCommandResult`.
 
 ### Why Next
 
-Это следующий cleanup пункт: `chaos_surge` присутствует как state/тип/definition, но комментарии и lifecycle ownership не дают проверяемой механики. Нужно либо реализовать его через правильный owner, либо явно убрать из active roadmap.
+Это первый шаг M2/P3: чтобы убрать `mockApi` как место игровой логики, результат команды должен содержать stats/XP/coins/blocked/appliedModifiers. После этого offline save, sync queue и backend смогут использовать один результат.
 
 ---
 
@@ -287,33 +290,53 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### Current Step
 
-Sprint 1 — Cleanup before refactor.
+MVP-1 — Full Command Outcome.
 
 Goal:
 
-- remove misleading/noop code;
-- make actual behavior clear before data-driven migration;
-- prevent false assumptions during refactor.
+- make `applyPersonalityCommand()` return full gameplay outcome;
+- move base stat/xp/coin calculation out of `mockApi`;
+- keep offline playable through local save + command log;
+- make future backend sync use the same command result.
 
 Concrete tasks:
 
 1. Remove `anxiousMult` noop. Done.
 2. Remove melancholic XP noop or move semantics into command/gameplay outcome. Done: noop removed; real semantic move remains part of P3 command outcome.
 3. Resolve `perfect_balance` mismatch. Done: XP-only semantics documented and tested.
-4. Decide/handle `chaos_surge`.
-5. Add validator for unsupported `specialRules`.
+4. Decide/handle `chaos_surge`. Done: deterministic 3-hour activation implemented and tested.
+5. Add validator for unsupported `specialRules`. Done: unknown/deferred/adapter-owned rules are validated.
+
+Sprint 1 status: Done.
+
+MVP blocking order:
+
+1. Full Command Outcome first. Blocks replacing `mockApi`, offline/backend parity, full replay.
+2. Offline shell second. Blocks usable offline-first sync path.
+3. Minimum explainability third. Blocks understandable MVP.
+4. Data-driven states, simulations, UI polish after MVP.
+
+MVP-1 concrete tasks:
+
+1. Extend `PetCommandResult` with `statDeltas`, `xpDelta`, `coinDelta`, `blockedAction`, `appliedModifiers`.
+2. Move `play` outcome from `mockApi` into command/gameplay layer.
+3. Move `feed` outcome.
+4. Move `bathe/heal/bond`.
+5. Move `sleep/wake`.
+6. Move `use_item`.
+7. Add replay/full outcome regression tests.
 
 ### Next Step
 
 Start with:
 
-> Implement or explicitly remove `chaos_surge`.
+> MVP-1.1 — Extend `PetCommandResult` with full gameplay outcome fields.
 
 Why first:
 
-- it is the next misleading state/ownership mismatch;
-- it clarifies whether `chaos_surge` is real active gameplay or deferred/removed;
-- it prevents migrating an undefined lifecycle into the future data registry.
+- it is the hard blocker for replacing `mockApi`;
+- without it offline can save commands but cannot replay exact stats/XP/coins;
+- it creates the contract that LocalSave, SyncQueue and future BackendApi will use.
 
 ---
 
@@ -328,18 +351,18 @@ npm run build
 
 Status:
 
-- passed after resolving `perfect_balance` XP-only semantics;
+- passed after adding `validatePersonalitySpecialRules()`;
 - Vite chunk size warning remains non-blocking.
 
 Latest cleanup check:
 
 ```bash
-rg "perfect_balance:|passive bonus|пассивный бонус|perfect_balance.*computeNaturalPassives|computeNaturalPassives.*perfect_balance" src/personality/PersonalityEngine.ts tests/personalityEvolution.test.ts docs/personality_engine_next_steps.md docs/personality_engine_progress.md
+rg "validatePersonalitySpecialRules|SPECIAL_RULE_SUPPORT|unsupportedRule|playThirstEnabled|newRoomBonusEnabled" src/personality/personalities.ts tests/personalityEvolution.test.ts
 ```
 
 Status:
 
-- no stale engine/test references; docs mention only resolved status/history.
+- validator and tests present.
 
 Latest domain-internal check:
 

@@ -36,6 +36,9 @@ const STOIC_FLAT_PLAY_XP = 15;
 const ROLLING_WINDOW_DAYS = 30;
 const HIGH_PLAY_THRESHOLD = 8;
 const FEAST_FRENZY_FEED_WINDOW_MS = 60 * 60 * 1000;
+const CHAOS_SURGE_INTERVAL_MINUTES = 3 * 60;
+const CHAOS_SURGE_MIN_DURATION_MINUTES = 30;
+const CHAOS_SURGE_MAX_DURATION_MINUTES = 60;
 
 // ── Вспомогательные утилиты ──────────────────────────────────────────────────
 
@@ -385,8 +388,9 @@ export function computeEmergentState(
     }
   }
 
-  // chaos_surge — автоматически каждые 3ч (проверяется снаружи по времени)
-  // Не вычисляется здесь — управляется mockApi/server
+  if (isChaosSurgeActive(personality, counters, context)) {
+    candidates.push({ type: 'chaos_surge', priority: getStatePriority('chaos_surge') });
+  }
 
   if (candidates.length === 0) return null;
 
@@ -1070,6 +1074,30 @@ function recentFeedCount(counters: BehavioralCounters, nowMs: number): number {
 
 function pruneRecentFeeds(timestamps: string[], nowMs: number): string[] {
   return timestamps.filter(timestamp => nowMs - new Date(timestamp).getTime() <= FEAST_FRENZY_FEED_WINDOW_MS);
+}
+
+function isChaosSurgeActive(
+  personality: PersonalityDefinition,
+  counters: BehavioralCounters,
+  context: PersonalityRuntimeContext = {},
+): boolean {
+  if (!personality.specialRules?.randomizeDailySeed) return false;
+  if (!personality.emergentTriggers.some(trigger => trigger.stateType === 'chaos_surge')) return false;
+
+  const now = getContextNow(context);
+  const minutesSinceMidnight = now.getHours() * 60 + now.getMinutes();
+  const bucket = Math.floor(minutesSinceMidnight / CHAOS_SURGE_INTERVAL_MINUTES);
+  const minuteInBucket = minutesSinceMidnight % CHAOS_SURGE_INTERVAL_MINUTES;
+  const dateKey = Number(now.toISOString().slice(0, 10).replace(/-/g, ''));
+  const seed = Math.max(1, Math.floor(counters.chaosDailySeed * 1_000_000_000) + dateKey + bucket);
+  const rng = seededRandom(seed);
+  const duration =
+    CHAOS_SURGE_MIN_DURATION_MINUTES +
+    Math.floor(rng() * (CHAOS_SURGE_MAX_DURATION_MINUTES - CHAOS_SURGE_MIN_DURATION_MINUTES + 1));
+  const maxStart = CHAOS_SURGE_INTERVAL_MINUTES - duration;
+  const start = Math.floor(rng() * (maxStart + 1));
+
+  return minuteInBucket >= start && minuteInBucket < start + duration;
 }
 
 // Эффекты флагов на restore (аддитивные)
