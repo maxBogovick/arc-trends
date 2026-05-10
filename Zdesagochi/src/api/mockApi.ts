@@ -13,7 +13,8 @@ import type {
   BehavioralFlag, BehavioralCounters, MoodSnapshot,
   TraitVector,
 } from '../personality/types';
-import type { InfluenceCooldownState, OfflineKeyValueStorage, PetCommand, PetCommandResult } from '../personality';
+import type { InfluenceCooldownState, OfflineKeyValueStorage, PetCommand } from '../personality';
+import { PetService, type PetCommandDraft } from './petService';
 import { calcMoodWithBias, createDefaultCounters } from '../personality/PersonalityEngine';
 import {
   addCatharsisProgress,
@@ -28,11 +29,7 @@ import { createMemoryTextGenerator } from '../personality/memoryTextGenerator';
 import { getPersonality, getPersonalityBySkin } from '../personality/personalities';
 import {
   createBrowserOfflineStorage,
-  createOfflinePetSave,
-  loadOfflinePetSave,
   syncLayeredStatesFromLegacy,
-  applyPersonalityCommand,
-  trySaveOfflinePetSave,
 } from '../personality';
 
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
@@ -44,11 +41,9 @@ const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 let traitSyncCounter = 0;
 const influenceCooldowns = new Map<string, number>();
 let offlineCommandCounter = 0;
-let offlineCommandLog: PetCommand[] = [];
 let offlineHydrated = false;
 let offlineStorageOverride: OfflineKeyValueStorage | null | undefined;
 const memoryTextGenerator = createMemoryTextGenerator();
-const MAX_OFFLINE_COMMAND_LOG = 250;
 let mockTimeScale = 1;
 let mockVirtualNowMs = Date.now();
 let mockRealAnchorMs = Date.now();
@@ -61,12 +56,6 @@ const NEUTRAL_TRAIT_VECTOR: TraitVector = {
   caution: 50,
   curiosity: 50,
 };
-
-type OfflineCommandDraft = PetCommand extends infer Command
-  ? Command extends PetCommand
-    ? Omit<Command, 'commandId'> & { commandId?: string }
-    : never
-  : never;
 
 function mockNow(): Date {
   const realNowMs = Date.now();
@@ -99,7 +88,6 @@ export function setMockOfflineStorage(storage: OfflineKeyValueStorage | null): v
 
 export function clearMockOfflineRuntimeState(): void {
   offlineCommandCounter = 0;
-  offlineCommandLog = [];
   offlineHydrated = false;
   influenceCooldowns.clear();
 }
@@ -391,95 +379,62 @@ function restoreCooldowns(cooldowns: InfluenceCooldownState): void {
   }
 }
 
-function ensureOfflineHydrated(): void {
-  if (offlineHydrated) return;
-  offlineHydrated = true;
-
-  const storage = getMockOfflineStorage();
-  if (!storage) return;
-
-  const loaded = loadOfflinePetSave(storage);
-  if (!loaded.ok) return;
-
-  S.pet = normalizePetEvolutionFields(loaded.save.petSnapshot);
-  offlineCommandLog = [...loaded.save.commandLog];
-  restoreCooldowns(loaded.save.influenceCooldowns);
-}
-
-function persistOfflineState(): void {
-  const storage = getMockOfflineStorage();
-  if (!storage) return;
-
-  trimOfflineCommandLog();
-
-  const savedAt = currentMockIso();
-  const save = createOfflinePetSave(S.pet, savedAt, {
-    commandLog: offlineCommandLog,
-    influenceCooldowns: cooldownMapToRecord(),
-  });
-
-  const saved = trySaveOfflinePetSave(storage, save);
-  if (saved.ok || saved.reason !== 'quota_exceeded') return;
-
-  offlineCommandLog = offlineCommandLog.slice(-50);
-  const compactSaved = trySaveOfflinePetSave(
-    storage,
-    createOfflinePetSave(S.pet, savedAt, {
-      commandLog: offlineCommandLog,
-      influenceCooldowns: cooldownMapToRecord(),
-    }),
-  );
-  if (!compactSaved.ok && compactSaved.reason !== 'quota_exceeded') throw compactSaved.error;
-}
-
 function nextOfflineCommandId(type: PetCommand['type']): string {
   offlineCommandCounter++;
   return `mock-${offlineCommandCounter}-${type}-${currentMockIso()}`;
 }
 
-function recordOfflineCommand(command: OfflineCommandDraft): void {
-  offlineCommandLog.push({
-    ...command,
-    commandId: command.commandId ?? nextOfflineCommandId(command.type),
-  } as PetCommand);
-  trimOfflineCommandLog();
-}
-
-async function applyMockPersonalityCommand(command: OfflineCommandDraft): Promise<PetCommandResult> {
-  const fullCommand = {
-    ...command,
-    commandId: command.commandId ?? nextOfflineCommandId(command.type),
-  } as PetCommand;
-
-  const result = await applyPersonalityCommand(S.pet, fullCommand, {
-    currentSync: traitSyncCounter,
-    influenceCooldowns: cooldownMapToRecord(),
-    coinBalance: S.coins,
-    getIntensityMultiplier,
-    memoryTextGenerator,
-    rng: mockRng,
+function createMockPetService(): PetService {
+  return new PetService({
+    storage: getMockOfflineStorage(),
+    autoHydrate: false,
+    getState: () => ({
+      pet: S.pet,
+      account: S.account,
+      coins: S.coins,
+      inventory: S.inventory,
+      influenceCooldowns: cooldownMapToRecord(),
+    }),
+    setState: patch => {
+      if (patch.pet) S.pet = normalizePetEvolutionFields(patch.pet);
+      if (patch.account) S.account = { ...patch.account };
+      if (typeof patch.coins === 'number') S.coins = patch.coins;
+      if (patch.inventory) S.inventory = patch.inventory;
+      if (patch.influenceCooldowns) restoreCooldowns(patch.influenceCooldowns);
+    },
+    nowIso: currentMockIso,
+    nextCommandId: nextOfflineCommandId,
+    normalizePet: normalizePetEvolutionFields,
+    getRuntime: () => ({
+      currentSync: traitSyncCounter,
+      getIntensityMultiplier,
+      memoryTextGenerator,
+      rng: mockRng,
+    }),
   });
-
-  S.pet = normalizePetEvolutionFields(result.pet);
-  restoreCooldowns(result.influenceCooldowns);
-  offlineCommandLog.push(fullCommand);
-  trimOfflineCommandLog();
-  return result;
 }
 
-async function applyMockCommandOrThrow(command: OfflineCommandDraft): Promise<PetCommandResult> {
+function ensureOfflineHydrated(): void {
+  if (offlineHydrated) return;
+  offlineHydrated = true;
+  createMockPetService().hydrate();
+}
+
+function persistOfflineState(): void {
+  createMockPetService().persist();
+}
+
+async function applyMockPersonalityCommand(command: PetCommandDraft) {
+  ensureOfflineHydrated();
+  return createMockPetService().applyCommand(command);
+}
+
+async function applyMockCommandOrThrow(command: PetCommandDraft) {
   const result = await applyMockPersonalityCommand(command);
   if (result.blockedAction) {
     throw new Error(result.blockedAction.reason);
   }
-  S.coins += result.coinDelta;
   return result;
-}
-
-function trimOfflineCommandLog(): void {
-  if (offlineCommandLog.length > MAX_OFFLINE_COMMAND_LOG) {
-    offlineCommandLog = offlineCommandLog.slice(-MAX_OFFLINE_COMMAND_LOG);
-  }
 }
 
 function addEvent(type: PetEvent['type'], description: string, emoji: string, extra?: Pick<PetEvent, 'xpGained' | 'coinsGained'>) {
@@ -776,15 +731,16 @@ export class MockApiService implements ApiService {
     traitSyncCounter = 0;
     influenceCooldowns.clear();
     addEvent('evolve', `${previousName} сохранил память пути и обрёл новое тело.`, '🌱');
-    recordOfflineCommand({ type: 'sync', at: currentMockIso() });
     persistOfflineState();
     return { pet: finalizePet(), account: { ...S.account } };
   }
 
   async updatePetName(name: string) {
     await delay(rand(180, 280));
+    ensureOfflineHydrated();
     if (!name.trim()) throw new Error('Имя не может быть пустым');
     S.pet.name = name.trim();
+    persistOfflineState();
     return finalizePet();
   }
 
@@ -801,6 +757,7 @@ export class MockApiService implements ApiService {
 
   async buyItem(itemId: string): Promise<BuyResult> {
     await delay(rand(300, 500));
+    ensureOfflineHydrated();
     const item = SHOP_ITEMS.find(i => i.id === itemId);
     if (!item) throw new Error(`Предмет "${itemId}" не найден`);
     if (S.coins < item.price) throw new Error(`Недостаточно монет! Нужно ${item.price}, есть ${S.coins}`);
@@ -813,6 +770,7 @@ export class MockApiService implements ApiService {
     tickQuest('q_buy');
     checkAchievement('shopaholic', S.shopBuyCount);
     checkAchievement('collector', S.shopBuyCount);
+    persistOfflineState();
 
     return { coins: S.coins, item, inventory: this._buildInventory() };
   }
@@ -824,6 +782,7 @@ export class MockApiService implements ApiService {
 
   async useInventoryItem(itemId: string): Promise<Pet> {
     await delay(rand(250, 420));
+    ensureOfflineHydrated();
     const qty = S.inventory.get(itemId) ?? 0;
     if (qty <= 0) throw new Error('Этого предмета нет в инвентаре');
     const item = SHOP_ITEMS.find(i => i.id === itemId);
@@ -851,12 +810,14 @@ export class MockApiService implements ApiService {
 
   async claimAchievement(achievementId: string): Promise<ClaimResult> {
     await delay(rand(200, 350));
+    ensureOfflineHydrated();
     const a = S.achievements.find(x => x.id === achievementId);
     if (!a) throw new Error('Достижение не найдено');
     if (!a.unlocked) throw new Error('Достижение ещё не разблокировано');
     if (a.claimed) throw new Error('Награда уже получена');
     a.claimed = true;
     S.coins += a.reward;
+    persistOfflineState();
     return { achievement: { ...a }, coins: a.reward, newBalance: S.coins };
   }
 
@@ -866,6 +827,7 @@ export class MockApiService implements ApiService {
 
   async claimQuestReward(questId: string): Promise<QuestClaimResult> {
     await delay(rand(200, 350));
+    ensureOfflineHydrated();
     const q = S.quests.find(x => x.id === questId);
     if (!q) throw new Error('Задание не найдено');
     if (!q.completed) throw new Error('Задание ещё не выполнено');
@@ -874,6 +836,7 @@ export class MockApiService implements ApiService {
     S.coins += q.reward.coins;
     gainXp(q.reward.xp);
     addEvent('quest', `Выполнено: «${q.name}»`, q.emoji, { coinsGained: q.reward.coins, xpGained: q.reward.xp });
+    persistOfflineState();
     return { quest: { ...q }, coins: q.reward.coins, xp: q.reward.xp, newBalance: S.coins };
   }
 
@@ -886,6 +849,7 @@ export class MockApiService implements ApiService {
 
   async buyRoom(roomId: string): Promise<Room[]> {
     await delay(rand(300, 500));
+    ensureOfflineHydrated();
     const room = ROOMS.find(r => r.id === roomId);
     if (!room) throw new Error('Комната не найдена');
     if (S.purchasedRooms.has(roomId)) throw new Error('Комната уже куплена');
@@ -895,6 +859,7 @@ export class MockApiService implements ApiService {
     S.roomBuyCount++;
     addEvent('buy', `Куплена комната «${room.name}»`, room.emoji, { coinsGained: -room.price });
     checkAchievement('room_owner', S.roomBuyCount);
+    persistOfflineState();
     return ROOMS.map(r => ({ ...r, unlocked: S.purchasedRooms.has(r.id) }));
   }
 

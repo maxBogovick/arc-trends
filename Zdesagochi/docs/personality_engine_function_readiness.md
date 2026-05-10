@@ -47,8 +47,8 @@ Data-driven states важны, но они не заменяют `mockApi`. Их
 | Gameplay emergent states | 55% | Состояния есть и часть хорошо протестирована, но условия активации еще hardcoded в `PersonalityEngine` |
 | Data-driven rules | 30% | Influence registry и pattern rules есть, но gameplay conditions/passives/actions еще не вынесены в registry |
 | Command pipeline | 75% | `applyPersonalityCommand()` возвращает full command outcome для основных pet actions: stats/XP/coins/blocked/modifiers/meta/events |
-| Mock/backend parity | 55% | `mockApi` больше не считает gameplay outcome основных действий, но еще остается compatibility shell вместо нормальных PetService/LocalSave/SyncQueue/ServerApi |
-| Events/explainability | 55% | Есть `gameplay_outcome_applied` events и outcome fields, но еще нет сохраненной explainability history для UI/debug |
+| Mock/backend parity | 65% | `mockApi` больше не считает gameplay outcome основных действий; PetService/LocalSave/SyncQueue/ServerApi есть, но настоящий backend sync еще не реализован |
+| Events/explainability | 70% | Есть `gameplay_outcome_applied` events, outcome fields и сохраненная ExplainabilityLog history для UI/debug |
 | Balance/simulation proof | 10% | Тесты есть, но simulation reports по скорости и балансу почти отсутствуют |
 | Documentation/code alignment | 55% | Главные расхождения описаны, часть закрыта, но `PERSONALITY_EVOLUTION_SYSTEM.md` еще не полностью совпадает с кодом |
 
@@ -112,10 +112,10 @@ Data-driven states важны, но они не заменяют `mockApi`. Их
 | Milestone | Что значит Done | Почему это важно |
 |---|---|---|
 | M1. Command outcome | `applyPersonalityCommand()` возвращает stats/xp/coins/blocked/appliedModifiers; `mockApi` использует этот результат | Replay/backend/mock считают одно и то же; это главный blocker для замены `mockApi` |
-| M2. Split mockApi | Вместо `mockApi` есть LocalSave, SyncQueue, ServerApi и PetService; gameplay logic там не живет | Offline остается, online sync становится нормальным |
+| M2. Split mockApi | Done — вместо `mockApi` как псевдо-сервера есть LocalSave, SyncQueue, ServerApi и PetService; gameplay logic там не живет | Offline остается, online sync становится нормальным |
 | M3. Data-driven emergent states | `computeEmergentState()` больше не содержит personality-specific activation branches для обычных gameplay states | Новый характер/состояние можно добавить через data |
 | M4. System influences | `system:*` и `env:*` influences применяются generic sync pass | Registry реально управляет долгосрочным поведением |
-| M5. Events/explainability | Важные state/trait/outcome changes создают domain events или memories | Игрок и разработчик понимают, почему характер изменился |
+| M5. Events/explainability | Done — важные state/trait/outcome changes создают domain events, а offline command/result history сохраняется в ExplainabilityLog | Игрок и разработчик понимают, почему характер изменился |
 | M6. Simulation reports | Есть отчеты по скорости formation/evolution/shadow/singularity/memories | Баланс доказан, а не угадан |
 | M7. Final audit | `PERSONALITY_EVOLUTION_SYSTEM.md` совпадает с кодом или явно помечает deferred | Нет ложных обещаний |
 

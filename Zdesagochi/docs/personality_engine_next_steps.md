@@ -407,10 +407,10 @@ Reports:
 
 ### Sprint 3 — Offline shell and system influences
 
-1. Создать PetService поверх command outcome.
-2. Создать LocalSave без gameplay logic.
-3. Создать SyncQueue для pending commands.
-4. Описать ServerApi command contract.
+1. Создать PetService поверх command outcome. Done.
+2. Создать LocalSave без gameplay logic. Done.
+3. Создать SyncQueue для pending commands. Done.
+4. Описать ServerApi command contract. Done.
 5. После offline shell вернуться к `applyEligibleSystemInfluences()` и generic `onApply` lifecycle hooks.
 
 Почему здесь:

@@ -11,6 +11,21 @@ export {
   completeMockPetLifecycle, getMockAccount,
 } from './mockApi';
 export { RealApiService } from './realApi';
+export { LocalSave, DEFAULT_LOCAL_SAVE_KEY, inventoryEntriesToMap } from './localSave';
+export { SyncQueue, DEFAULT_SYNC_QUEUE_KEY } from './syncQueue';
+export {
+  ExplainabilityLog,
+  DEFAULT_EXPLAINABILITY_LOG_KEY,
+  DEFAULT_EXPLAINABILITY_LOG_LIMIT,
+  createExplainabilityRecord,
+  explainCommandRecord,
+} from './explainability';
+export { PetService } from './petService';
+export type { LocalInventoryEntry, LocalSaveSnapshot, LocalSaveState, LocalSaveLoadResult } from './localSave';
+export type { SyncQueueLoadResult } from './syncQueue';
+export type { CommandExplanation, ExplainabilityLogLoadResult, ExplainabilityRecord } from './explainability';
+export type { ServerApi, ServerCommandAck, ServerCommandBatch } from './serverApi';
+export type { PetCommandDraft, PetServiceOptions, PetServiceRuntime, PetServiceState } from './petService';
 
 import type { ApiService } from './types';
 import { MockApiService } from './mockApi';

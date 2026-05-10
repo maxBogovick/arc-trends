@@ -172,11 +172,11 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 | Field | Current Value |
 |---|---|
 | Current Goal | Довести движок до usable offline-first MVP |
-| Current Step | MVP-2 — Offline Shell Without Gameplay Logic |
-| Why This Step | MVP-1 закрыл единый command outcome; следующий blocker — заменить `mockApi` как псевдо-сервер на offline-first service layers |
+| Current Step | Post-MVP hardening — Data-driven states / system influences |
+| Why This Step | MVP-1..3 закрыли usable offline-first loop; следующий риск — hardcoded gameplay state/system influence rules |
 | Current Vector | Правильный: делаем `applyPersonalityCommand()` единым источником результата действия |
-| Next Step | MVP-2.1 — создать `PetService` поверх command engine |
-| Why Next | UI должен зависеть от service contract, а не от `mockApi`; это первый шаг к LocalSave + SyncQueue + ServerApi |
+| Next Step | M3 — Data-driven emergent states |
+| Why Next | `computeEmergentState()` всё ещё содержит personality-specific branches, которые сложнее балансировать и переносить |
 | Required Verification | `npm test`, `npm run build`, targeted `rg` checks when relevant |
 
 ---
@@ -185,34 +185,33 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Закрыт MVP-1 — Full Command Outcome.
+Закрыт MVP-3 — Minimum Explainability.
 
 ### Why
 
-До этого `mockApi` сам считал stats/XP/coins/blockers для основных действий. Это делало невозможной честную offline/backend/replay parity: разные слои могли получить разный результат одной команды.
+До этого command result уже содержал domain events, но offline layer сохранял только snapshot и pending commands. После reload/debug нельзя было получить компактный ответ “почему изменилась эта команда”.
 
 ### Impact
 
-`applyPersonalityCommand()` теперь возвращает full outcome для `feed/play/bathe/heal/bond/sleep/wake/use_item`: `statDeltas`, `xpDelta`, `coinDelta`, `blockedAction`, `appliedModifiers`, `meta`, `events`, `pet`.
+Добавлен `ExplainabilityLog`, который сохраняет compact command/result/events history рядом с offline command path.
 
-`mockApi` для основных действий больше не считает base stats/XP/coins/personality modifiers сам. Он вызывает command engine, применяет `coinDelta`, сохраняет offline command log и оставляет за собой adapter-shell: inventory, achievements, quests, UI events.
-
-Special rules `rejectSleepWhenEnergized`, `peakPerformanceThreshold`, `xpEveryOtherAction` переведены в engine-owned metadata.
+`PetService` теперь после каждого command result пишет pending command в `SyncQueue`, snapshot в `LocalSave`, а explainability record в `ExplainabilityLog`. Для UI/debug есть selector `ExplainabilityLog.select()` и pure helper `explainCommandRecord()`.
 
 ### Verification
 
 - `npm test` — passed.
+- `npx tsc --noEmit` — passed.
 - `npm run build` — passed.
-- `rg "baseResult|modified = applyActionModifiers|xpEveryOtherAction|rejectSleepWhenEnergized|getPeakPerformanceMult|getParanoidRestoreMult|applyActionModifiers|isActionBlocked" src/api/mockApi.ts` — no gameplay outcome calculators remain in `mockApi`.
-- Integration test: `personality command MVP actions expose integrated gameplay outcomes`.
+- Unit test: `explainability selector summarizes command result events`.
+- Integration test: `MockApi persists local save and sync queue without gameplay logic` now verifies saved explanation details.
 
 ### Next
 
-MVP-2.1 — создать `PetService`.
+M3 — Data-driven emergent states.
 
 ### Why Next
 
-Теперь command engine умеет считать результат действия. Следующий blocker — убрать прямую зависимость UI от `mockApi` и ввести service layer, который будет одинаково работать offline и позже online через sync queue.
+MVP loop now has full command outcome, offline shell, and saved explainability. Следующий blocker уже не MVP, а hardening: убрать hardcoded gameplay state/system influence rules.
 
 ---
 

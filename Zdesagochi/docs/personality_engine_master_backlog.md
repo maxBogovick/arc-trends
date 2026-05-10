@@ -326,11 +326,11 @@ ServerApi interface
 
 | ID | Задача | Done when |
 |---|---|---|
-| MVP-2.1 | Создать `PetService` | UI action идет через service, service вызывает command engine |
-| MVP-2.2 | Создать `LocalSave` | pet/account/inventory сохраняются локально без gameplay logic |
-| MVP-2.3 | Создать `SyncQueue` | pending commands переживают reload и не применяются дважды |
-| MVP-2.4 | Создать `ServerApi` contract | описано, что клиент отправляет commands, не snapshot |
-| MVP-2.5 | Свести `mockApi` к compatibility wrapper | `mockApi` можно заменить или удалить без потери правил игры |
+| MVP-2.1 | Создать `PetService` | Done — UI/mock action идет через service, service вызывает command engine |
+| MVP-2.2 | Создать `LocalSave` | Done — pet/account/inventory сохраняются локально без gameplay logic |
+| MVP-2.3 | Создать `SyncQueue` | Done — pending commands переживают reload и не применяются дважды |
+| MVP-2.4 | Создать `ServerApi` contract | Done — клиентский контракт отправляет commands, не snapshot |
+| MVP-2.5 | Свести `mockApi` к compatibility wrapper | Done — `mockApi` делегирует command path в `PetService` и держит adapter shell |
 
 Что не делать в MVP-2:
 
@@ -361,9 +361,9 @@ online later:
 
 | ID | Задача | Done when |
 |---|---|---|
-| MVP-3.1 | Events for command outcome | У команды есть events про stats/XP/coins/state/trait changes |
-| MVP-3.2 | Events saved with offline command/result | Offline история объяснима |
-| MVP-3.3 | Basic selector for UI/debug | Можно показать “почему это произошло” |
+| MVP-3.1 | Events for command outcome | Done — у команды есть events про stats/XP/coins/state/trait changes |
+| MVP-3.2 | Events saved with offline command/result | Done — offline explainability log сохраняет command/result/events |
+| MVP-3.3 | Basic selector for UI/debug | Done — `ExplainabilityLog.select()` / `explainCommandRecord()` показывают “почему это произошло” |
 
 Что не делать в MVP-3:
 
@@ -418,8 +418,8 @@ MVP считается готовым, когда выполнено:
 | Offline | Можно играть без интернета, snapshot и pending commands сохраняются |
 | Sync contract | Есть понятный contract: клиент отправляет commands, сервер подтверждает snapshot |
 | Replay | Command replay восстанавливает core gameplay outcome |
-| Events | Команда объясняет основные изменения |
-| Tests | `npm test` проходит |
+| Events | Done — команда объясняет основные изменения |
+| Tests | Done — `npm test` проходит |
 | Build | `npm run build` проходит |
 
 После этого можно честно сказать:
@@ -446,10 +446,6 @@ MVP считается готовым, когда выполнено:
 
 Делать именно это:
 
-1. `MVP-2.1` — создать `PetService`, который вызывает `applyPersonalityCommand()` и возвращает command result.
-2. `MVP-2.2` — выделить `LocalSave` для pet/account/inventory без gameplay logic.
-3. `MVP-2.3` — выделить `SyncQueue` для pending commands.
-4. `MVP-2.4` — описать `ServerApi` contract: клиент отправляет commands, не вручную измененный snapshot.
-5. `MVP-2.5` — свести `mockApi` к compatibility wrapper или заменить его service calls.
-
-Не начинать `data-driven states`, пока UI/action flow не переведен на offline-first service layers.
+1. `M3. Data-driven emergent states` — убрать personality-specific activation branches из `computeEmergentState()`.
+2. `M4. System influences` — вынести `system:*` / `env:*` influences в generic sync pass.
+3. `M6. Simulation reports` — проверить скорость formation/evolution/shadow/singularity/memories.

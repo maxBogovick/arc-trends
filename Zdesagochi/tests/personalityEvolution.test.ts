@@ -8,6 +8,9 @@ import {
   setMockOfflineStorage,
   setMockTimeScale,
 } from '../src/api/mockApi';
+import { LocalSave } from '../src/api/localSave';
+import { SyncQueue } from '../src/api/syncQueue';
+import { ExplainabilityLog, explainCommandRecord } from '../src/api/explainability';
 import type { BehavioralCounters, BehavioralFlag, MoodSnapshot, TraitVector } from '../src/personality/types';
 import {
   applyActionModifiers,
@@ -275,6 +278,55 @@ test('offline sync window returns commands after last synced id', () => {
 
   const unchanged = markCommandsSynced(save, 'cmd-missing');
   assert.equal(unchanged, save);
+});
+
+test('sync queue persists pending commands and dedupes by commandId', () => {
+  const storage = makeMemoryStorage();
+  const command: PetCommand = {
+    type: 'bond',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-bond-1',
+  };
+
+  const queue = new SyncQueue(storage);
+  queue.enqueue(command);
+  queue.enqueue({ ...command, at: '2026-05-04T01:10:00.000Z' });
+
+  const reloaded = new SyncQueue(storage);
+  assert.deepEqual(reloaded.listPending().map(entry => entry.commandId), ['cmd-bond-1']);
+
+  reloaded.markSynced('cmd-bond-1');
+  assert.deepEqual(new SyncQueue(storage).listPending(), []);
+});
+
+test('explainability selector summarizes command result events', async () => {
+  const result = await applyPersonalityCommand(makePet({ formationComplete: true }), {
+    type: 'feed',
+    foodId: 'apple',
+    foodEffect: { hungerRestore: 10, happinessBonus: 5, healthBonus: 2 },
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-explain-feed',
+  });
+
+  const explanation = explainCommandRecord({
+    command: result.command,
+    events: result.events,
+    statDeltas: result.statDeltas,
+    xpDelta: result.xpDelta,
+    coinDelta: result.coinDelta,
+    blockedAction: result.blockedAction,
+    appliedModifiers: result.appliedModifiers,
+    meta: result.meta,
+    engineVersion: result.engineVersion,
+    registryVersion: result.registryVersion,
+    recordedAt: '2026-05-04T01:00:01.000Z',
+  });
+
+  assert.equal(explanation.commandId, 'cmd-explain-feed');
+  assert.equal(explanation.blocked, false);
+  assert.equal(explanation.details.some(detail => detail.includes('Stats: hunger +10')), true);
+  assert.equal(explanation.details.some(detail => detail.includes('XP:')), true);
+  assert.equal(explanation.details.some(detail => detail.includes('Traits:')), true);
 });
 
 test('offline command log can be compacted before persistence', () => {
@@ -2035,7 +2087,7 @@ await testAsync('MockApi debug time can advance virtual sync time', async () => 
   setMockTimeScale(1);
 });
 
-await testAsync('MockApi persists offline snapshot command log and cooldowns', async () => {
+await testAsync('MockApi persists local save and sync queue without gameplay logic', async () => {
   const storage = makeMemoryStorage();
   setMockOfflineStorage(storage);
   clearMockOfflineRuntimeState();
@@ -2044,15 +2096,20 @@ await testAsync('MockApi persists offline snapshot command log and cooldowns', a
     const api = new MockApiService();
     await api.getPet();
     const afterBond = await api.bondWithPet();
-    const loaded = loadOfflinePetSave(storage);
+    const loaded = new LocalSave(storage).load();
+    const pending = new SyncQueue(storage).listPending();
+    const explanation = new ExplainabilityLog(storage).select();
 
     assert.equal(loaded.ok, true);
-    if (!loaded.ok) assert.fail('offline save was not persisted');
+    if (!loaded.ok) assert.fail('local save was not persisted');
 
-    assert.equal(loaded.save.petSnapshot.id, afterBond.id);
-    assert.equal(loaded.save.commandLog.at(-1)?.type, 'bond');
-    assert.equal(typeof loaded.save.influenceCooldowns['action:bond'], 'number');
-    closeTo(loaded.save.petSnapshot.traitVector.sociality, afterBond.traitVector.sociality);
+    assert.equal(loaded.snapshot.pet.id, afterBond.id);
+    assert.equal(pending.at(-1)?.type, 'bond');
+    assert.equal(explanation?.commandType, 'bond');
+    assert.equal(explanation.details.some(detail => detail.startsWith('Stats:')), true);
+    assert.equal(explanation.details.some(detail => detail.startsWith('Traits:')), true);
+    assert.equal(typeof loaded.snapshot.influenceCooldowns['action:bond'], 'number');
+    closeTo(loaded.snapshot.pet.traitVector.sociality, afterBond.traitVector.sociality);
 
     clearMockOfflineRuntimeState();
     const rehydrated = await new MockApiService().getPet();
@@ -2064,7 +2121,7 @@ await testAsync('MockApi persists offline snapshot command log and cooldowns', a
   }
 });
 
-await testAsync('MockApi useInventoryItem writes use_item command to offline log', async () => {
+await testAsync('MockApi useInventoryItem writes use_item command to sync queue', async () => {
   const storage = makeMemoryStorage();
   setMockOfflineStorage(storage);
   clearMockOfflineRuntimeState();
@@ -2075,16 +2132,17 @@ await testAsync('MockApi useInventoryItem writes use_item command to offline log
     await api.buyItem('vitamin');
     await api.useInventoryItem('vitamin');
 
-    const loaded = loadOfflinePetSave(storage);
+    const loaded = new LocalSave(storage).load();
     assert.equal(loaded.ok, true);
-    if (!loaded.ok) assert.fail('offline save was not persisted');
+    if (!loaded.ok) assert.fail('local save was not persisted');
 
-    const lastCommand = loaded.save.commandLog.at(-1);
+    const lastCommand = new SyncQueue(storage).listPending().at(-1);
     assert.equal(lastCommand?.type, 'use_item');
     if (lastCommand?.type === 'use_item') {
       assert.equal(lastCommand.itemId, 'vitamin');
       assert.equal(lastCommand.itemKind, 'medicine');
     }
+    assert.equal(loaded.snapshot.inventory.some(item => item.itemId === 'vitamin'), false);
   } finally {
     setMockOfflineStorage(null);
     clearMockOfflineRuntimeState();
