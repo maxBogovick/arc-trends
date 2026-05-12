@@ -49,19 +49,24 @@ function SkyBody({ hour, sceneW, sceneH }: SkyBodyProps) {
     '#FFFDE7';
 
   if (night) {
-    // Moon: crescent via two circles
     return (
       <g>
-        {/* soft glow */}
-        <circle cx={cx} cy={cy} r={22} fill="rgba(220,230,255,0.08)" />
-        <circle cx={cx} cy={cy} r={14} fill="rgba(220,230,255,0.12)" />
+        {/* outer atmospheric halo */}
+        <motion.circle cx={cx} cy={cy} r={36} fill="rgba(210,225,255,0.06)"
+          animate={{ r: [36, 40, 36] }} transition={{ duration: 5, repeat: Infinity }} />
+        {/* mid glow */}
+        <circle cx={cx} cy={cy} r={26} fill="rgba(215,228,255,0.13)" />
+        <circle cx={cx} cy={cy} r={18} fill="rgba(225,235,255,0.20)" />
         {/* moon disc */}
-        <circle cx={cx} cy={cy} r={10} fill="#E8EEF8" />
-        {/* shadow circle to create crescent */}
-        <circle cx={cx + 6} cy={cy - 2} r={8} fill="#4a5a8a" />
-        {/* subtle surface detail */}
-        <circle cx={cx - 3} cy={cy + 2} r={1.5} fill="rgba(150,160,200,0.4)" />
-        <circle cx={cx - 5} cy={cy - 3} r={1} fill="rgba(150,160,200,0.3)" />
+        <circle cx={cx} cy={cy} r={12} fill="#F4F7FF" />
+        {/* crescent shadow — matches night sky color */}
+        <circle cx={cx + 7} cy={cy - 2} r={9.5} fill="#0A1428" />
+        {/* thin rim highlight */}
+        <circle cx={cx} cy={cy} r={12} fill="none" stroke="rgba(200,215,255,0.35)" strokeWidth={1} />
+        {/* surface craters */}
+        <circle cx={cx - 3} cy={cy + 3} r={1.8} fill="rgba(160,175,220,0.45)" />
+        <circle cx={cx - 5} cy={cy - 2} r={1.1} fill="rgba(160,175,220,0.35)" />
+        <circle cx={cx - 1} cy={cy + 5} r={0.9} fill="rgba(160,175,220,0.30)" />
       </g>
     );
   }
@@ -140,6 +145,64 @@ function LightRays({ hour, windowStyle, sceneW, sceneH }: RaysProps) {
           );
         })}
       </defs>
+    </g>
+  );
+}
+
+// ── Sky time darkening ────────────────────────────────────────────────────────
+
+/** Returns [overlayOpacity, overlayColor] based on hour (-1 = no sun → no overlay) */
+function computeSkyDarkness(hour: number): { opacity: number; color: string } {
+  if (hour < 0) return { opacity: 0, color: '#010818' };
+
+  // deep night
+  if (hour < 5)  return { opacity: 0.78, color: '#010818' };
+  // dawn: 5→7 fade out
+  if (hour < 7)  return { opacity: 0.78 * (1 - (hour - 5) / 2), color: '#010818' };
+  // full day
+  if (hour < 17) return { opacity: 0, color: '#010818' };
+  // sunset warm tint: 17→19
+  if (hour < 19) {
+    const t = (hour - 17) / 2; // 0→1
+    return { opacity: t * 0.30, color: '#200A30' };
+  }
+  // dusk: 19→20
+  if (hour < 20) {
+    const t = (hour - 19); // 0→1
+    return { opacity: 0.30 + t * 0.48, color: '#0A0F20' };
+  }
+  // night
+  return { opacity: 0.78, color: '#010818' };
+}
+
+interface TimeOverlayProps { hour: number; w: number; h: number }
+
+function SkyTimeOverlay({ hour, w, h }: TimeOverlayProps) {
+  const { opacity, color } = computeSkyDarkness(hour);
+  if (opacity <= 0) return null;
+  return <rect x={0} y={0} width={w} height={h} fill={color} opacity={opacity} style={{ pointerEvents: 'none' }} />;
+}
+
+function NightStars({ hour, w, h }: TimeOverlayProps) {
+  const { opacity } = computeSkyDarkness(hour);
+  if (opacity <= 0.05) return null;
+  const starsOpacity = Math.min(1, opacity / 0.6);
+
+  const stars = Array.from({ length: 45 }, (_, i) => ({
+    x: (((i * 137.508) % 100) / 100) * w,
+    y: (((i * 98.61) % 80) / 100) * h,
+    r: 0.5 + (i % 4) * 0.4,
+    twinkleDelay: (i % 7) * 0.45,
+    twinkleDur: 1.8 + (i % 5) * 0.5,
+  }));
+
+  return (
+    <g opacity={starsOpacity}>
+      {stars.map((s, i) => (
+        <motion.circle key={i} cx={s.x} cy={s.y} r={s.r} fill="white"
+          animate={{ opacity: [0.35, 0.95, 0.35] }}
+          transition={{ duration: s.twinkleDur, repeat: Infinity, delay: s.twinkleDelay }} />
+      ))}
     </g>
   );
 }
@@ -492,17 +555,26 @@ function SceneWinter({ w, h }: { w: number; h: number }) {
   );
 }
 
-function Scene({ scene, w, h }: { scene: BackdropScene; w: number; h: number }) {
-  switch (scene) {
-    case 'garden':    return <SceneGarden    w={w} h={h} />;
-    case 'ocean':     return <SceneOcean     w={w} h={h} />;
-    case 'mountains': return <SceneMountains w={w} h={h} />;
-    case 'space':     return <SceneSpace     w={w} h={h} />;
-    case 'city':      return <SceneCity      w={w} h={h} />;
-    case 'sakura':    return <SceneSakura    w={w} h={h} />;
-    case 'desert':    return <SceneDesert    w={w} h={h} />;
-    case 'winter':    return <SceneWinter    w={w} h={h} />;
-  }
+function Scene({ scene, w, h, hour }: { scene: BackdropScene; w: number; h: number; hour: number }) {
+  return (
+    <>
+      {(() => {
+        switch (scene) {
+          case 'garden':    return <SceneGarden    w={w} h={h} />;
+          case 'ocean':     return <SceneOcean     w={w} h={h} />;
+          case 'mountains': return <SceneMountains w={w} h={h} />;
+          case 'space':     return <SceneSpace     w={w} h={h} />;
+          case 'city':      return <SceneCity      w={w} h={h} />;
+          case 'sakura':    return <SceneSakura    w={w} h={h} />;
+          case 'desert':    return <SceneDesert    w={w} h={h} />;
+          case 'winter':    return <SceneWinter    w={w} h={h} />;
+        }
+      })()}
+      {/* night stars appear on all scenes except space/city which already have own stars */}
+      {scene !== 'space' && scene !== 'city' && <NightStars hour={hour} w={w} h={h} />}
+      <SkyTimeOverlay hour={hour} w={w} h={h} />
+    </>
+  );
 }
 
 // ── Window frame ─────────────────────────────────────────────────────────────
@@ -687,7 +759,7 @@ export function BackdropScene({
         style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
         preserveAspectRatio="xMidYMid slice"
       >
-        <Scene scene={backdropScene} w={w} h={h} />
+        <Scene scene={backdropScene} w={w} h={h} hour={hour} />
         <SkyBody hour={hour} sceneW={w} sceneH={h} />
       </svg>
     );
@@ -707,7 +779,7 @@ export function BackdropScene({
 
       {/* scene visible only through window glass */}
       <g clipPath={`url(#${clipId})`}>
-        <Scene scene={backdropScene} w={w} h={h} />
+        <Scene scene={backdropScene} w={w} h={h} hour={hour} />
         <SkyBody hour={hour} sceneW={w} sceneH={h} />
         {/* glass tint */}
         <rect x={0} y={0} width={w} height={h} fill="rgba(180,210,240,0.06)" />
