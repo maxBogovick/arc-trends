@@ -446,6 +446,6 @@ MVP считается готовым, когда выполнено:
 
 Делать именно это:
 
-1. `Backend replay/validation adapter` — переигрывать или валидировать `SyncQueue` commands тем же command outcome contract.
-2. `M4. System influences` — вынести оставшиеся `system:*` / `env:*` influences в generic sync pass.
+1. `Production backend transport/storage` — подключить `BackendReplayServerApi` semantics к реальному backend, auth и durable storage.
+2. `Generic onApply lifecycle hooks` — вынести оставшиеся lifecycle side effects из ручных веток в data hooks.
 3. `Broader balance proof` — добавить Monte Carlo/edge-case simulation reports поверх deterministic M6 report.

@@ -9,6 +9,7 @@ import type {
   StatKey,
   SyncContext,
 } from './types';
+import { seededRandom } from './random';
 import { EMERGENT_STATE_MAP } from './emergentStates';
 
 const FEAST_FRENZY_FEED_WINDOW_MS = 60 * 60 * 1000;
@@ -225,12 +226,4 @@ function isChaosSurgeActive(
 
 function getContextNow(context: PersonalityRuntimeContext): Date {
   return context.now ?? new Date();
-}
-
-function seededRandom(seed: number): () => number {
-  let s = seed;
-  return () => {
-    s = (s * 16807 + 0) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
 }

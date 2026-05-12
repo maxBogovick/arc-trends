@@ -172,11 +172,11 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 | Field | Current Value |
 |---|---|
 | Current Goal | Довести движок до usable offline-first MVP |
-| Current Step | Post-MVP backend replay/validation |
-| Why This Step | MVP-1/MVP-2/MVP-3 закрыты; следующий риск — server-authoritative sync должен использовать тот же command outcome |
+| Current Step | Post-MVP production backend transport/storage |
+| Why This Step | Command outcome, offline queue, backend replay adapter и generic system/env pass есть; следующий риск — настоящий durable/secure sync |
 | Current Vector | Правильный: делаем `applyPersonalityCommand()` единым источником результата действия |
-| Next Step | Backend replay/validation adapter |
-| Why Next | Offline shell готов локально; backend должен валидировать/replay commands без расхождения с клиентским движком |
+| Next Step | Production backend transport/storage |
+| Why Next | In-memory replay adapter доказывает semantics, но real backend transport/storage/auth ещё не подключены |
 | Required Verification | `npm test`, `npm run build`, `npm run simulate:balance`, targeted `rg` checks when relevant |
 
 ---
@@ -185,17 +185,19 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Закрыт M7 — Final docs/code audit.
+Закрыт generic `system:*` / `env:*` sync pass.
 
 ### Why
 
-До этого большой `PERSONALITY_EVOLUTION_SYSTEM.md` местами описывал старый runtime path (`OfflinePetSave` + `MockApi`), хотя фактический код уже использует `PetService`, `LocalSave`, `SyncQueue` и `ExplainabilityLog`.
+До этого registry содержал system/environment influences, но на `sync` реально применялся только ручной auto-sleep path. Из-за этого среда и состояние питомца не влияли на характер единым data-driven способом.
 
 ### Impact
 
-Добавлен final audit artifact `docs/reports/personality_engine_final_audit.md`.
+Добавлен `applyEligibleSystemInfluences()` на sync path.
 
-Ключевые stale claims в `PERSONALITY_EVOLUTION_SYSTEM.md` обновлены: `OfflinePetSave` помечен как legacy/helper, product path описан как `PetService` + `LocalSave` + `SyncQueue` + `ServerApi` + `ExplainabilityLog`, а deferred backend/LiveOps/Monte Carlo work явно вынесен за MVP scope.
+Теперь eligible `system:*` / `env:*` influences из registry проходят через общие conditions/cooldowns и `applyInfluence()`. Подключены условия `stat_below`, `session_gap_hours`, `same_room_hours`; `system:starvation`, `system:inactivity_long`, `system:consistent_week`, `env:same_room_48h` стали data-driven sync influences.
+
+Добавлены domain events `influence_applied` и `influence_condition_skipped`; cooldown skip уже пишет `influence_cooldown_skipped`.
 
 ### Verification
 
@@ -203,16 +205,15 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 - `npx tsc --noEmit` — passed.
 - `npm run build` — passed with existing Vite chunk-size warning.
 - `npm run simulate:balance` — passed.
-- Audit report: `docs/reports/personality_engine_final_audit.md`.
-- Balance report: `docs/reports/personality_balance_report.md`.
+- Tests: `personality command sync applies eligible system influences from registry`, `personality command sync records skipped system influence conditions and cooldowns`, `personality command sync applies eligible environment influences from registry`.
 
 ### Next
 
-Backend replay/validation adapter.
+Production backend transport/storage.
 
 ### Why Next
 
-Offline-first MVP scope закрыт локально. Следующий blocker — server-authoritative sync/replay.
+Local/offline and in-memory server semantics are now aligned. Следующий blocker — real durable/secure backend sync.
 
 ---
 
@@ -386,9 +387,9 @@ Status:
 
 ## 11. Open Risks
 
-1. Backend replay/validation adapter is not implemented yet.
+1. Production backend transport/storage/auth is not implemented yet.
 2. Server-side economy/inventory/rewards confirmation is not implemented yet.
-3. Generic `system:*` / `env:*` registry sync pass is not implemented yet.
+3. Generic lifecycle `onApply` hooks are not fully data-driven yet.
 4. Action/passive/decay rule registries are still partial; some behavior remains hardcoded.
 5. UI/product layer does not yet expose the full evolution system.
 6. Balance proof is deterministic for core scenarios; broader Monte Carlo/edge-case reports are still needed.

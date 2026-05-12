@@ -94,6 +94,7 @@ export const STATIC_INFLUENCE_REGISTRY: RegisteredInfluence[] = [
     traitDeltas: { sociality: -3, caution: 3, order: -1 },
     traumaDelta: 3,
     cooldownSyncs: 48,
+    conditions: [{ type: 'session_gap_hours', params: { min: 48 } }],
   },
   {
     id: 'system:consistent_week',
@@ -107,10 +108,11 @@ export const STATIC_INFLUENCE_REGISTRY: RegisteredInfluence[] = [
   {
     id: 'system:starvation',
     category: 'system',
-    label: 'Голод < 5 (3+ синков)',
+    label: 'Голод < 5',
     traitDeltas: { caution: 3, sociality: -2 },
     traumaDelta: 5,
     cooldownSyncs: 6,
+    conditions: [{ type: 'stat_below', params: { stat: 'hunger', value: 5 } }],
   },
   { id: 'item:puzzle', category: 'item', label: 'Головоломка', traitDeltas: { curiosity: 4, order: 2, vitality: -1 }, cooldownSyncs: 6 },
   { id: 'item:music_box', category: 'item', label: 'Музыкальная шкатулка', traitDeltas: { sociality: 3, caution: -2, order: 1 }, traumaDelta: -4, cooldownSyncs: 8 },
@@ -118,7 +120,14 @@ export const STATIC_INFLUENCE_REGISTRY: RegisteredInfluence[] = [
   { id: 'item:magic_wand', category: 'item', label: 'Волшебная палочка', traitDeltas: { curiosity: 5, vitality: 3, caution: -2 }, cooldownSyncs: 12 },
   { id: 'item:crystal_ball', category: 'item', label: 'Хрустальный шар', traitDeltas: { curiosity: 4, caution: -1, sociality: 2 }, traumaDelta: -3, cooldownSyncs: 24 },
   { id: 'env:new_room', category: 'environment', label: 'Новая комната', traitDeltas: { curiosity: 4, vitality: 2, caution: -1 }, cooldownSyncs: 0 },
-  { id: 'env:same_room_48h', category: 'environment', label: '48ч в одной комнате', traitDeltas: { curiosity: -2, order: 1 }, cooldownSyncs: 48 },
+  {
+    id: 'env:same_room_48h',
+    category: 'environment',
+    label: '48ч в одной комнате',
+    traitDeltas: { curiosity: -2, order: 1 },
+    cooldownSyncs: 48,
+    conditions: [{ type: 'same_room_hours', params: { min: 48 } }],
+  },
   {
     id: 'social:visit_feral',
     category: 'social',

@@ -108,6 +108,9 @@ export type InfluenceConditionType =
   | 'personality_is'
   | 'trait_above'
   | 'trait_below'
+  | 'stat_below'
+  | 'session_gap_hours'
+  | 'same_room_hours'
   | 'streak_days'
   | 'formation_period';
 

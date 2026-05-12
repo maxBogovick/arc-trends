@@ -1066,8 +1066,9 @@ singularityZones:      PersonalityId[];
 - [x] Mock runtime delegates command path to `PetService`
 - [x] Command handler для core gameplay stats/XP/coins/blockers основных pet actions
 - [x] Browser/mock persist adapter подключён для `LocalSave` + `SyncQueue` + `ExplainabilityLog`
+- [x] Backend replay/validation adapter — in-memory `BackendReplayServerApi` переигрывает command batches тем же command engine
 - [ ] Full backend parity для economy/inventory/rewards confirmation
-- [ ] Backend replay/validation adapter
+- [ ] Production backend transport/storage/auth adapter
 
 ### Phase A — Фундамент
 - [x] Типы эволюции добавлены в `types.ts` / `api/types.ts` (отдельный `evolutionTypes.ts` не выделен)
@@ -1144,6 +1145,7 @@ singularityZones:      PersonalityId[];
 - Core Memories: threshold crossing, weekly drift, rare/common cap;
 - command handler + PetService integration для базового ухода, items/env, sleep lifecycle, sync;
 - data-driven `GAMEPLAY_STATE_RULES` для ordinary gameplay emergent states;
+- generic `system:*` / `env:*` sync influence pass для inactivity/consistent week/starvation/same room;
 - offline shell: `LocalSave`, `SyncQueue`, `ServerApi`, `ExplainabilityLog`;
 - simulation balance report для formation/evolution/shadow/singularity/memories;
 - New Life в новом теле: `/api/pet/new-life`, `legacyVector`, `memoryGuardian`, Guardian hints;
@@ -1154,8 +1156,8 @@ singularityZones:      PersonalityId[];
 
 - NPC/social: `applyNpcVisit()`, `npcPets.ts`, `NpcVisitPanel.tsx`;
 - `TraitRadar.tsx` и выделение inline UI-блоков в отдельные компоненты при необходимости;
-- backend replay/validation adapter и server confirmation для economy/inventory/rewards;
-- generic `system:*` / `env:*` influence sync pass; сейчас command layer владеет auto-sleep, но не всей registry-driven lifecycle логикой;
+- production backend transport/storage/auth adapter и server confirmation для economy/inventory/rewards;
+- generic `onApply` lifecycle hooks; сейчас sleep/wake side effects ещё частично command-owned;
 - более широкий Monte Carlo balance proof за пределами core deterministic scenarios;
 - LiveOps backend: `/api/influence-registry`, server validation, GlobalBalancePatch расчёт, CMS;
 - Tiny AI hardening и A/B metrics;

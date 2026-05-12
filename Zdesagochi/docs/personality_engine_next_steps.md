@@ -163,7 +163,7 @@
 - targeted `rg` по `src/api/mockApi.ts` не находит старые gameplay outcome calculators;
 - `npm test` и `npm run build` проходят.
 
-Следующий шаг: backend replay/validation adapter поверх уже готовых PetService, LocalSave, SyncQueue и ServerApi contract.
+Следующий шаг: production backend transport/storage поверх уже готового command/replay path.
 
 ---
 
@@ -240,24 +240,25 @@
 
 ---
 
-### P5. System influences and lifecycle hooks
+### P5. System influences and lifecycle hooks — DONE/PARTIAL
 
 Цель: сделать influence registry реально управляющим system behavior.
 
 Задачи:
 
-1. На `sync` запускать `applyEligibleSystemInfluences()`.
+1. На `sync` запускать `applyEligibleSystemInfluences()`. Done.
 2. Подключить:
-   - `system:inactivity_long`
-   - `system:consistent_week`
-   - `system:starvation`
-   - `env:same_room_48h`
-3. Реализовать generic `onApply` lifecycle hook.
+   - `system:inactivity_long` — Done.
+   - `system:consistent_week` — Done.
+   - `system:starvation` — Done.
+   - `env:same_room_48h` — Done.
+3. Реализовать generic `onApply` lifecycle hook. Deferred: sleep/wake lifecycle ещё частично command-owned.
 
 Критерий готовности:
 
 - system/environment influences меняют trait vector через registry.
-- sleep/wake lifecycle hooks не размазаны по ручным веткам.
+- applied/skipped influences пишут domain events.
+- sleep/wake lifecycle hooks ещё нужно вынести из ручных веток, если цель — полный data-driven lifecycle.
 
 ---
 
@@ -437,10 +438,11 @@ Reports:
 
 1. Simulation reports. Done: `npm run simulate:balance` writes `docs/reports/personality_balance_report.md`.
 2. Final audit. Done: `docs/reports/personality_engine_final_audit.md`.
-3. Backend replay adapter.
-4. Remote registry endpoint.
-5. Global balance pipeline.
-6. Broader Monte Carlo simulation reports.
+3. Backend replay adapter. Done: `BackendReplayServerApi` + `PetService.syncPendingCommands()`.
+4. Production backend transport/storage.
+5. Remote registry endpoint.
+6. Global balance pipeline.
+7. Broader Monte Carlo simulation reports.
 
 ---
 

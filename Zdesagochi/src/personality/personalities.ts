@@ -850,8 +850,14 @@ export const PERSONALITIES_MAP = new Map(
   PERSONALITIES.map(p => [p.id, p])
 );
 
+export function getPersonalityStrict(id: string): PersonalityDefinition {
+  const personality = PERSONALITIES_MAP.get(id as any);
+  if (!personality) throw new Error(`Unknown personality id: ${id}`);
+  return personality;
+}
+
 export const getPersonality = (id: string): PersonalityDefinition =>
-  PERSONALITIES_MAP.get(id as any) ?? PERSONALITIES[0];
+  PERSONALITIES_MAP.get(id as any) ?? getPersonalityStrict('playful');
 
 // Карта скин → характер (берётся первый совпавший)
 export const SKIN_TO_PERSONALITY = new Map<string, string>(

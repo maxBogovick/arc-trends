@@ -26,15 +26,15 @@
 
 | Приоритет | Что делать | Что это разблокирует | Что будет заблокировано, если не сделать |
 |---|---|---|---|
-| 1 | Backend replay/validation adapter | Server-authoritative sync using the same command outcome | Нельзя безопасно включать competitive economy/social sync |
-| 2 | Generic `system:*` / `env:*` influence pass | Registry-driven lifecycle beyond auto-sleep | Часть system/env поведения останется hardcoded |
-| 3 | Action/passive/decay registries | Добавление новых правил без правки engine code | Новые характеры всё ещё могут требовать code branches |
+| 1 | Production backend transport/storage | Перенос `BackendReplayServerApi` semantics в настоящий backend | In-memory replay есть, но real sync не durable/secure |
+| 2 | Lifecycle hooks / state side-effect registries | Добавление новых side effects без правки command branches | Сон/пробуждение и часть lifecycle effects всё ещё command-owned |
+| 3 | Generic `onApply` lifecycle hooks | Sleep/wake/other side effects как data-driven hooks | Часть lifecycle effects всё ещё живёт в command branches |
 | 4 | Broader Monte Carlo simulation reports | Доказанный баланс на распределениях и edge cases | Детерминированный proof есть, но редкие сценарии не покрыты |
 | 5 | Product UI polish: TraitRadar/NPC/explanation cards | Полный игровой UX поверх готового engine | Engine готов, но часть UX останется inline/minimal |
 
-Решение: **сначала backend replay/validation**, если цель — online/server-authoritative MVP.
+Решение: **сначала production backend transport/storage**, если цель — online MVP.
 
-Причина простая: offline/local engine уже считает command outcome и сохраняет explainability. Следующий архитектурный риск — чтобы backend не копировал и не расходился с client command semantics.
+Причина простая: command outcome, offline queue, backend replay adapter и generic system/env pass уже есть. Следующий архитектурный риск — перенести эти semantics в настоящий durable/secure backend.
 
 ---
 
@@ -44,9 +44,9 @@
 |---|---:|---|
 | Trait evolution core | 70% | Движение по 6D trait vector, formation, proposal, accept/reject, regression работают и покрыты тестами |
 | Gameplay emergent states | 70% | Состояния есть, activation/retention правила вынесены в `GAMEPLAY_STATE_RULES`, regression-тесты проходят |
-| Data-driven rules | 45% | Influence registry, pattern rules и gameplay state rules есть; passives/actions еще не полностью registry-driven |
+| Data-driven rules | 70% | Influence registry, pattern rules, gameplay state rules, action/passive/decay rules есть; lifecycle side effects ещё не полностью registry-driven |
 | Command pipeline | 80% | `applyPersonalityCommand()` возвращает full command outcome для основных pet actions и владеет sync auto-sleep system influence |
-| Mock/backend parity | 65% | `mockApi` больше не считает gameplay outcome основных действий; PetService/LocalSave/SyncQueue/ServerApi есть, но настоящий backend sync еще не реализован |
+| Mock/backend parity | 75% | `mockApi` больше не считает gameplay outcome основных действий; `BackendReplayServerApi` переигрывает command batches тем же command engine; реальный transport/server storage еще не реализован |
 | Events/explainability | 70% | Есть `gameplay_outcome_applied` events, outcome fields и сохраненная ExplainabilityLog history для UI/debug |
 | Balance/simulation proof | 55% | Есть reproducible balance report artifact для formation/evolution/shadow/singularity/memories; нужны более широкие Monte Carlo/edge-case прогоны |
 | Documentation/code alignment | 75% | Final audit artifact есть; ключевые stale claims в `PERSONALITY_EVOLUTION_SYSTEM.md` обновлены, но большой spec остаётся частично историческим |
@@ -71,9 +71,9 @@
 | Memory text generation | Partial | `memoryTextGenerator.ts`, templates, sanitizer | AI/device mode не проверен как product feature |
 | Weekly drift | Partial | `checkWeeklyDrift()`; тест `weekly drift requires seven snapshots and uses directional cooldown` | Не ясно, насколько это видно игроку и правильно сбалансировано |
 | Sleep lifecycle | Ready/Partial | `onStartSleep()`, `onWakeFromSleep()`, `checkVarianceHardReset()`; тесты `sleep lifecycle resets confused only after natural 4h sleep`, `variance hard reset requires last full sleep timestamp`, MVP outcome integration test | Sleep/wake command outcome есть; product UX/debug explainability еще минимальные |
-| Offline save | Ready | `LocalSave`, `PetService`; legacy `createOfflinePetSave()`, `save/load/deleteOfflinePetSave()`; тесты offline storage | Backend canonical sync еще не реализован |
-| Offline command log | Ready | `SyncQueue`, `appendOfflineCommand()`, `getUnsyncedCommands()`, `markCommandsSynced()`; тесты idempotency/sync window/compaction | Backend confirmation/replay adapter еще нужен |
-| Personality command replay | Ready/Partial | `replayPersonalityCommands()`; тесты replay sync math и `personality command replay preserves full gameplay outcome` | Replay core outcome есть; нужна интеграция с будущим sync queue/server confirm |
+| Offline save | Ready | `LocalSave`, `PetService`; legacy `createOfflinePetSave()`, `save/load/deleteOfflinePetSave()`; тесты offline storage | Реальный backend persistence/transport еще не реализован |
+| Offline command log | Ready | `SyncQueue`, `PetService.syncPendingCommands()`, `appendOfflineCommand()`, `getUnsyncedCommands()`, `markCommandsSynced()`; тесты idempotency/sync window/compaction/server ack | Server replay adapter есть; нужен production transport |
+| Personality command replay | Ready | `replayPersonalityCommands()`, `BackendReplayServerApi`; тесты replay sync math, full outcome и server batch replay | Нужна production интеграция с настоящим backend storage |
 | `applyPersonalityCommand()` entrypoint | Ready/Partial | `commandHandlers.ts`; тесты feed/use_item/sync/replay/MVP action integration | Владеет основным command outcome; дальше нужно вынести оставшиеся hardcoded gameplay rules в registry |
 | Influence cooldowns in commands | Ready | `canApplyInfluenceAtSync()`, command handler cooldown tests | Нет крупного риска |
 | Food item fallback | Ready | `use_item` command with `itemKind`; тесты food fallback и item precedence | Нет крупного риска |
@@ -81,14 +81,14 @@
 | Base stat deltas for actions | Ready/Partial | `getBaseActionResult()` в command handler; MVP integration test | Дальше нужно сделать data-driven registry, но это не блокирует MVP-2 |
 | XP/coins outcome | Ready/Partial | `PetCommandResult.xpDelta/coinDelta`, level-up coin bonus, MVP integration test | Нужно сохранить explainability history и server contract |
 | Action modifiers | Partial | `applyActionModifiers()`; tests active layers, `perfect_balance` XP-only, MVP outcome test | Модификаторы применяются в command outcome; часть personality-specific logic hardcoded и позже уйдет в registry |
-| Decay | Partial | `applyDecay()`; command sync вызывает decay | Есть hardcoded personality branches; нужно вынести в decay rules registry |
-| Natural passives | Partial | `computeNaturalPassives()`; foodie/pristine/empath/natural regen | Passive effects hardcoded; нужен registry |
+| Decay | Ready/Partial | `decayRules.ts`, `applyDecay()` executor; command sync вызывает decay | Decay rules вынесены в registry; broader lifecycle side effects ещё отдельно |
+| Natural passives | Ready/Partial | `passiveRules.ts`, `computeNaturalPassives()` executor; foodie/pristine/empath/natural regen | Passive effects вынесены в registry |
 | Mood calculation | Partial | `calcMoodWithBias()`; command sync updates mood | Работает, но mood rules не data-driven |
 | Behavioral counters | Ready/Partial | `updateCounters()`; rolling window tests | Много hardcoded special cases; часть thresholds не data-driven |
 | Pattern rules | Ready/Partial | `PATTERN_RULES`, `validatePatternRules()`; tests for conditions | Только flags; gameplay emergent conditions еще не в этом registry |
 | Behavioral flags | Ready/Partial | `runPatternEngine()`; tests for `perfect_balance`, rolling windows | Flag healing/deactivation частично есть, но balance не доказан |
 | Emergent state definitions | Ready | `emergentStates.ts`, `EMERGENT_STATE_DEFS`, `EMERGENT_STATE_MAP` | Definitions есть; activation logic не полностью data-driven |
-| Emergent state activation | Partial | `computeEmergentState()`; tests for stoic/enlightenment/feast/chaos | Главный долг: много `personality.id === ...` branches |
+| Emergent state activation | Ready/Partial | `GAMEPLAY_STATE_RULES`, `computeEmergentState()`; tests for stoic/enlightenment/feast/chaos | Ordinary gameplay states вынесены; broader registry schema для future states/actions ещё нужна |
 | `chaos_surge` | Ready | deterministic activation implemented; test `chaos_surge activates...` | Balance/UX не проверены симуляцией |
 | `perfect_balance` | Ready | XP-only semantic fixed; test `perfect_balance is XP-only...` | Нет stat passive, и это теперь осознанно |
 | State layers | Ready | `stateLayers.ts`; tests `state layers keep cognitive and evolution states...`, `legacy emergentState...` | UI должен дальше читать active states consistently |
@@ -96,11 +96,11 @@
 | Special rules validator | Ready | `validatePersonalitySpecialRules()`; tests expose deferred/adapter-owned and reject unknown keys | Validator не реализует сами deferred rules; он только делает их видимыми |
 | Data-driven gameplay conditions | Ready/Partial | `GAMEPLAY_STATE_RULES`, `getGameplayStateCandidates()` | Ordinary gameplay states вынесены; broader rule schema для actions/passives/decay ещё нужна |
 | Data-driven action rules | Missing | Нет action rule registry | Нужно после emergent conditions или вместе с command outcome |
-| Data-driven passive rules | Missing | Нет passive effect registry | Нужно вынести `computeNaturalPassives()` |
-| System/environment influences | Missing/Partial | Registry содержит system/env influences | Generic sync pass не подключен |
+| Data-driven passive/decay rules | Ready/Partial | `PASSIVE_RULES`, `DECAY_RULES`, validators | Есть passive/decay registries; дальше lifecycle hooks/state side effects |
+| System/environment influences | Ready/Partial | `applyEligibleSystemInfluences()` на `sync`; tests for `system:starvation`, cooldown/condition skips, `env:same_room_48h` | Generic pass есть; `onApply` lifecycle hooks ещё не полностью data-driven |
 | Global balance patch | Partial | `validateBalancePatch()`, `getIntensityMultiplier()`; tests | Нет полноценной telemetry/update pipeline |
 | Domain events | Partial | `DomainEvent`, command result events | Events не покрывают все important gameplay changes |
-| Backend parity | Missing/Partial | Команды serializable, replay частичный | Backend еще должен использовать тот же full command outcome |
+| Backend parity | Partial | `BackendReplayServerApi`, `PetService.syncPendingCommands()`; tests validate accepted/rejected batch replay and queue ack | In-memory adapter есть; production backend transport/storage/security еще нужны |
 | Simulation reports | Ready/Partial | `npm run simulate:balance`; `docs/reports/personality_balance_report.md` | Deterministic core proof есть; нужны Monte Carlo/edge-case distributions |
 | Final doc/code audit | Ready/Partial | `docs/reports/personality_engine_final_audit.md`; targeted updates in `PERSONALITY_EVOLUTION_SYSTEM.md` | Большой v5 spec остаётся reference/historical документом, не единственным source of truth |
 
@@ -113,7 +113,7 @@
 | M1. Command outcome | `applyPersonalityCommand()` возвращает stats/xp/coins/blocked/appliedModifiers; `mockApi` использует этот результат | Replay/backend/mock считают одно и то же; это главный blocker для замены `mockApi` |
 | M2. Split mockApi | Done — вместо `mockApi` как псевдо-сервера есть LocalSave, SyncQueue, ServerApi и PetService; gameplay logic там не живет | Offline остается, online sync становится нормальным |
 | M3. Data-driven emergent states | Done — `computeEmergentState()` больше не содержит personality-specific activation branches для обычных gameplay states | Новый характер/состояние можно добавить через data |
-| M4. System influences | Partial — auto-sleep теперь command-owned system outcome; generic `system:*` / `env:*` registry pass еще не реализован | Registry реально управляет долгосрочным поведением |
+| M4. System influences | Done/Partial — auto-sleep command-owned, generic `system:*` / `env:*` registry pass подключён; lifecycle `onApply` hooks ещё частично ручные | Registry реально управляет долгосрочным поведением |
 | M5. Events/explainability | Done — важные state/trait/outcome changes создают domain events, а offline command/result history сохраняется в ExplainabilityLog | Игрок и разработчик понимают, почему характер изменился |
 | M6. Simulation reports | Done — есть reproducible report по скорости formation/evolution/shadow/singularity/memories | Баланс доказан, а не угадан |
 | M7. Final audit | Done — final audit report создан, ключевые stale sections в `PERSONALITY_EVOLUTION_SYSTEM.md` обновлены, deferred work явно перечислен | Нет ложных обещаний по MVP scope |

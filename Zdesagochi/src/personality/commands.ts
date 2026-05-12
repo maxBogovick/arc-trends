@@ -6,6 +6,7 @@ import type {
   EmergentStateType,
   EvolutionProposal,
   EvolutionRecord,
+  InfluenceCondition,
   PersonalityId,
   StatKey,
   TraitVector,
@@ -36,6 +37,8 @@ export type DomainEvent =
   | { type: 'emergent_state_changed'; at: string; commandId: string; from: EmergentStateType | null; to: EmergentStateType | null }
   | { type: 'sleep_started'; at: string; commandId: string }
   | { type: 'sleep_finished'; at: string; commandId: string; naturalWake: boolean; sleptHours: number }
+  | { type: 'influence_applied'; at: string; commandId: string; influenceId: string; label: string }
+  | { type: 'influence_condition_skipped'; at: string; commandId: string; influenceId: string; blockedConditions: InfluenceCondition[] }
   | { type: 'influence_cooldown_skipped'; at: string; commandId: string; influenceId: string; lastAppliedSync: number; currentSync: number; cooldownSyncs: number }
   | { type: 'offline_sync_capped'; at: string; commandId: string; reason: string };
 

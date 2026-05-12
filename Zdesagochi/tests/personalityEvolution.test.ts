@@ -11,6 +11,8 @@ import {
 import { LocalSave } from '../src/api/localSave';
 import { SyncQueue } from '../src/api/syncQueue';
 import { ExplainabilityLog, explainCommandRecord } from '../src/api/explainability';
+import { BackendReplayServerApi } from '../src/api/backendReplayServer';
+import { PetService, type PetServiceState } from '../src/api/petService';
 import type { BehavioralCounters, BehavioralFlag, MoodSnapshot, TraitVector } from '../src/personality/types';
 import {
   applyActionModifiers,
@@ -56,9 +58,12 @@ import {
   rejectEvolution,
 } from '../src/personality/TraitEvolutionEngine';
 import { getEmergentStateDef } from '../src/personality/emergentStates';
+import { BASE_ACTION_RULES, validateActionRules } from '../src/personality/actionRules';
+import { PASSIVE_RULES, validatePassiveRules } from '../src/personality/passiveRules';
+import { DECAY_RULES, validateDecayRules } from '../src/personality/decayRules';
 import { validateBalancePatch, validateInfluenceRegistry, validateRemoteInfluence } from '../src/personality/influenceRegistry';
 import { PATTERN_RULES, validatePatternRules } from '../src/personality/patternRules';
-import { getPersonality, validatePersonalitySpecialRules } from '../src/personality/personalities';
+import { getPersonality, getPersonalityStrict, validatePersonalitySpecialRules } from '../src/personality/personalities';
 import { setLayeredEmergentState } from '../src/personality/stateLayers';
 import { PERSONALITY_TRAIT_MAP } from '../src/personality/personalityTraitMap';
 import {
@@ -228,6 +233,11 @@ test('personality specialRules validator rejects unknown runtime keys', () => {
   }]);
 });
 
+test('getPersonalityStrict rejects unknown ids while compatibility lookup falls back', () => {
+  assert.throws(() => getPersonalityStrict('missing-personality'), /Unknown personality id/);
+  assert.equal(getPersonality('missing-personality').id, 'playful');
+});
+
 test('offline save captures snapshot with engine and registry versions', () => {
   const pet = makePet();
   const save = createOfflinePetSave(pet, '2026-05-04T00:00:00.000Z');
@@ -297,6 +307,142 @@ test('sync queue persists pending commands and dedupes by commandId', () => {
 
   reloaded.markSynced('cmd-bond-1');
   assert.deepEqual(new SyncQueue(storage).listPending(), []);
+});
+
+await testAsync('backend replay server validates and replays command batches', async () => {
+  const pet = makePet({ formationComplete: true });
+  const server = new BackendReplayServerApi({
+    initialState: {
+      pet,
+      account: {},
+      coins: 0,
+      influenceCooldowns: {},
+      currentSync: 0,
+      lastAcceptedCommandId: null,
+    },
+    memoryTextGenerator: testMemoryGenerator,
+    rng: () => 0.5,
+  });
+  const commands: PetCommand[] = [
+    { type: 'feed', foodId: 'apple', at: '2026-05-04T01:00:00.000Z', commandId: 'server-feed-1' },
+    { type: 'play', scoreSeed: 'seed', at: '2026-05-04T01:05:00.000Z', commandId: 'server-play-1' },
+  ];
+
+  const ack = await server.submitCommands({ clientId: 'client-a', commands });
+  assert.deepEqual(ack.acceptedCommandIds, ['server-feed-1', 'server-play-1']);
+  assert.deepEqual(ack.rejectedCommandIds, []);
+  assert.equal(ack.lastAcceptedCommandId, 'server-play-1');
+
+  const state = server.getState();
+  assert.equal(state.pet.stats.hunger, 100);
+  assert.equal(state.pet.xp > pet.xp, true);
+  assert.equal(state.coins > 0, true);
+
+  const afterFirst = await server.fetchCommandResults('server-feed-1');
+  assert.equal(afterFirst.length, 1);
+  assert.equal(afterFirst[0].command.commandId, 'server-play-1');
+
+  const duplicateAck = await server.submitCommands({ clientId: 'client-a', commands: [commands[0]] });
+  assert.deepEqual(duplicateAck.acceptedCommandIds, ['server-feed-1']);
+  assert.equal((await server.fetchCommandResults(null)).length, 2);
+});
+
+await testAsync('backend replay server rejects stale base command batches', async () => {
+  const server = new BackendReplayServerApi({
+    initialState: {
+      pet: makePet(),
+      account: {},
+      coins: 0,
+      influenceCooldowns: {},
+      currentSync: 0,
+      lastAcceptedCommandId: null,
+    },
+  });
+
+  const ack = await server.submitCommands({
+    clientId: 'client-a',
+    baseCommandId: 'missing-server-cursor',
+    commands: [{ type: 'bond', at: '2026-05-04T01:00:00.000Z', commandId: 'stale-bond-1' }],
+  });
+
+  assert.deepEqual(ack.acceptedCommandIds, []);
+  assert.deepEqual(ack.rejectedCommandIds, ['stale-bond-1']);
+  assert.equal(ack.rejectedCommands[0].reason, 'stale_base');
+  assert.equal(server.getState().lastAcceptedCommandId, null);
+});
+
+await testAsync('backend replay server rejects invalid runtime command shapes', async () => {
+  const server = new BackendReplayServerApi({
+    initialState: {
+      pet: makePet(),
+      account: {},
+      coins: 0,
+      influenceCooldowns: {},
+      currentSync: 0,
+      lastAcceptedCommandId: null,
+    },
+  });
+
+  const ack = await server.submitCommands({
+    clientId: 'client-a',
+    commands: [
+      { type: 'unknown_action', at: '2026-05-04T01:00:00.000Z', commandId: 'bad-type-1' },
+      { type: 'bond', at: 'not-a-date' },
+    ] as PetCommand[],
+  });
+
+  assert.deepEqual(ack.acceptedCommandIds, []);
+  assert.deepEqual(ack.rejectedCommandIds, ['bad-type-1', 'invalid:1']);
+  assert.deepEqual(ack.rejectedCommands.map(command => command.reason), ['invalid_command', 'invalid_command']);
+});
+
+await testAsync('PetService syncPendingCommands clears server accepted prefix only', async () => {
+  const storage = makeMemoryStorage();
+  const initialPet = makePet({ formationComplete: true });
+  const state: PetServiceState = {
+    pet: JSON.parse(JSON.stringify(initialPet)) as Pet,
+    account: {},
+    coins: 0,
+    inventory: new Map(),
+    influenceCooldowns: {},
+  };
+  let commandIndex = 0;
+  const service = new PetService({
+    getState: () => state,
+    setState: patch => Object.assign(state, patch),
+    nowIso: () => '2026-05-04T01:00:00.000Z',
+    nextCommandId: type => `local-${type}-${++commandIndex}`,
+    normalizePet: pet => pet,
+    getRuntime: () => ({
+      currentSync: 0,
+      getIntensityMultiplier: () => 1,
+      memoryTextGenerator: testMemoryGenerator,
+      rng: () => 0.5,
+    }),
+    storage,
+  });
+  const server = new BackendReplayServerApi({
+    initialState: {
+      pet: initialPet,
+      account: {},
+      coins: 0,
+      influenceCooldowns: {},
+      currentSync: 0,
+      lastAcceptedCommandId: null,
+    },
+    memoryTextGenerator: testMemoryGenerator,
+    rng: () => 0.5,
+  });
+
+  await service.applyCommand({ type: 'bond', at: '2026-05-04T01:00:00.000Z' });
+  await service.applyCommand({ type: 'play', scoreSeed: 'seed', at: '2026-05-04T01:05:00.000Z' });
+  assert.equal(service.listPendingCommands().length, 2);
+
+  const ack = await service.syncPendingCommands(server, 'client-a');
+  assert.deepEqual(ack.acceptedCommandIds, ['local-bond-1', 'local-play-2']);
+  assert.deepEqual(ack.rejectedCommandIds, []);
+  assert.deepEqual(service.listPendingCommands(), []);
+  assert.equal(server.getState().lastAcceptedCommandId, 'local-play-2');
 });
 
 test('explainability selector summarizes command result events', async () => {
@@ -418,6 +564,35 @@ test('pattern rule params validate against supported evaluator semantics', () =>
     ],
     effect: { flagType: 'trust_bond', action: 'activate' },
   }]), /unsupported/);
+});
+
+test('action rule registry validates numeric base action data', () => {
+  validateActionRules(BASE_ACTION_RULES);
+  assert.throws(() => validateActionRules({
+    play: {
+      statDeltas: { happiness: Number.NaN },
+      xp: 0,
+      coins: 0,
+    },
+  }), /must be finite/);
+});
+
+test('passive rule registry validates passive data shape', () => {
+  validatePassiveRules(PASSIVE_RULES);
+  assert.throws(() => validatePassiveRules([{
+    id: 'bad-passive',
+    conditions: [],
+    statDeltas: {},
+  }]), /conditions must not be empty/);
+});
+
+test('decay rule registry validates decay data shape', () => {
+  validateDecayRules(DECAY_RULES);
+  assert.throws(() => validateDecayRules([{
+    id: 'bad-decay',
+    conditions: [],
+    multiplier: 1,
+  }]), /conditions must not be empty/);
 });
 
 test('perfect_balance requires every stat above threshold, not only average streak', () => {
@@ -758,6 +933,37 @@ test('pattern same_food_ratio uses rolling seven day food buckets', () => {
   assert.equal(flags.some(flag => flag.type === 'food_monotony'), false);
 });
 
+test('pattern same_food_ratio ignores stale food buckets after inactivity', () => {
+  let counters = createDefaultCounters({
+    now: new Date('2026-05-01T10:00:00.000Z'),
+    rng: () => 0.1,
+  }) as BehavioralCounters;
+
+  for (let day = 1; day <= 5; day++) {
+    counters = updateCounters(
+      counters,
+      'feed',
+      { hunger: 50, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+      {
+        foodId: 'apple',
+        clientLocalHour: 10,
+        coinBalance: 0,
+        now: new Date(`2026-05-0${day}T10:00:00.000Z`),
+        rng: () => 0.1,
+      },
+    ) as BehavioralCounters;
+  }
+
+  const flags = runPatternEngine(
+    counters,
+    [],
+    getPersonality('adventurer'),
+    { now: new Date('2026-05-20T10:00:00.000Z'), rng: () => 0.1 },
+  );
+
+  assert.equal(flags.some(flag => flag.type === 'food_monotony'), false);
+});
+
 test('pattern night_single uses consecutive rolling night interaction days', () => {
   let counters = createDefaultCounters({
     now: new Date('2026-05-01T01:00:00.000Z'),
@@ -858,6 +1064,30 @@ await testAsync('personality command play returns full gameplay outcome', async 
   assert.equal(result.pet.stats.bond, 48);
   assert.equal(result.pet.xp, 80);
   assert.equal(result.events.some(event => event.type === 'gameplay_outcome_applied'), true);
+});
+
+await testAsync('personality command play uses one fallback rng score for meta and rewards', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    personality: 'playful',
+  });
+  let calls = 0;
+  const result = await applyPersonalityCommand(pet, {
+    type: 'play',
+    scoreSeed: 'not-a-number',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-play-one-score',
+  }, {
+    rng: () => {
+      calls++;
+      return calls === 1 ? 0.25 : 0.75;
+    },
+  });
+
+  const score = result.meta?.score;
+  assert.equal(typeof score, 'number');
+  assert.equal(result.xpDelta, Math.round(Math.floor((score as number) * 0.5) * 1.6));
+  assert.equal(result.coinDelta, Math.round((Math.floor((score as number) * 0.1) + 2) * 1.4));
 });
 
 await testAsync('personality command replay preserves full gameplay outcome', async () => {
@@ -1207,6 +1437,72 @@ await testAsync('personality command sync owns auto sleep system influence', asy
   assert.equal(result.meta?.autoSleepStarted, true);
   assert.equal(result.events.some(event => event.type === 'sleep_started'), true);
   assert.equal(result.appliedModifiers.some(modifier => modifier.id === 'system:auto_sleep'), true);
+});
+
+await testAsync('personality command sync applies eligible system influences from registry', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    lastUpdated: '2026-05-04T00:00:00.000Z',
+    stats: { hunger: 4, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    traumaLevel: 0,
+  });
+
+  const result = await applyPersonalityCommand(pet, {
+    type: 'sync',
+    at: '2026-05-04T00:10:00.000Z',
+    commandId: 'cmd-sync-starvation',
+  }, {
+    currentSync: 6,
+  });
+
+  assert.equal(result.events.some(event => event.type === 'influence_applied' && event.influenceId === 'system:starvation'), true);
+  assert.equal(result.appliedModifiers.some(modifier => modifier.id === 'system:starvation'), true);
+  assert.equal(result.pet.traumaLevel, 5);
+  assert.equal(result.influenceCooldowns['system:starvation'], 6);
+});
+
+await testAsync('personality command sync records skipped system influence conditions and cooldowns', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    lastUpdated: '2026-05-04T00:00:00.000Z',
+    stats: { hunger: 80, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  });
+
+  const result = await applyPersonalityCommand(pet, {
+    type: 'sync',
+    at: '2026-05-04T00:10:00.000Z',
+    commandId: 'cmd-sync-system-skips',
+  }, {
+    currentSync: 6,
+    influenceCooldowns: { 'system:consistent_week': 5 },
+  });
+
+  assert.equal(result.events.some(event => event.type === 'influence_condition_skipped' && event.influenceId === 'system:starvation'), true);
+  assert.equal(result.events.some(event => event.type === 'influence_cooldown_skipped' && event.influenceId === 'system:consistent_week'), true);
+  assert.equal(result.appliedModifiers.some(modifier => modifier.id.startsWith('system:')), false);
+});
+
+await testAsync('personality command sync applies eligible environment influences from registry', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    behavioralCounters: {
+      ...createDefaultCounters(),
+      sameRoomHours: 50,
+      lastRoomCheckTs: '2026-05-04T00:00:00.000Z',
+    } as BehavioralCounters,
+  });
+
+  const result = await applyPersonalityCommand(pet, {
+    type: 'sync',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-sync-same-room',
+  }, {
+    currentSync: 48,
+  });
+
+  assert.equal(result.events.some(event => event.type === 'influence_applied' && event.influenceId === 'env:same_room_48h'), true);
+  assert.equal(result.appliedModifiers.some(modifier => modifier.id === 'env:same_room_48h'), true);
+  assert.equal(result.influenceCooldowns['env:same_room_48h'], 48);
 });
 
 await testAsync('personality command replay uses deterministic rng for singularity collapse', async () => {
@@ -2031,7 +2327,7 @@ await testAsync('weekly drift requires seven snapshots and uses directional cool
   assert.equal(pet.lastMemoryTimestamp.vitality_down, '2026-05-04T01:00:00.000Z');
 });
 
-await testAsync('common memories cap at 20 while rare memories remain', async () => {
+await testAsync('core memories cap common at 20 and rare at 50', async () => {
   const pet = makePet({
     traitVector: {
       vitality: 70,
@@ -2047,14 +2343,16 @@ await testAsync('common memories cap at 20 while rare memories remain', async ()
     })),
   });
 
-  addCoreMemory(pet, {
-    tier: 'rare',
-    emoji: '★',
-    text: 'Rare stays',
-    category: 'system',
-    traitKey: 'vitality',
-    direction: 'origin',
-  }, { now: new Date('2026-05-03T00:00:00.000Z') });
+  for (let i = 0; i < 55; i++) {
+    addCoreMemory(pet, {
+      tier: 'rare',
+      emoji: '★',
+      text: `Rare ${i}`,
+      category: 'system',
+      traitKey: 'vitality',
+      direction: 'origin',
+    }, { now: new Date(Date.parse('2026-05-03T00:00:00.000Z') + i * 1000) });
+  }
 
   for (let i = 0; i < 25; i++) {
     await checkWeeklyDrift(pet, {
@@ -2065,9 +2363,10 @@ await testAsync('common memories cap at 20 while rare memories remain', async ()
 
   const rareCount = pet.coreMemories.filter(memory => memory.tier === 'rare').length;
   const commonCount = pet.coreMemories.filter(memory => memory.tier === 'common').length;
-  assert.equal(rareCount, 1);
+  assert.equal(rareCount, 50);
   assert.equal(commonCount, 20);
-  assert.equal(pet.coreMemories.some(memory => memory.text === 'Rare stays'), true);
+  assert.equal(pet.coreMemories.some(memory => memory.text === 'Rare 54'), true);
+  assert.equal(pet.coreMemories.some(memory => memory.text === 'Rare 0'), false);
 });
 
 await testAsync('MockApi play action moves trait vector as side effect', async () => {

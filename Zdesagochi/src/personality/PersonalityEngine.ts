@@ -1,6 +1,6 @@
 import type {
   PersonalityDefinition,
-  StatKey, ActionType, StatAdditives,
+  StatKey, ActionType,
   BehavioralFlag, BehavioralFlagType,
   BehavioralCounters, ConditionOp, PatternCondition,
   EmergentStateType, BlockedAction,
@@ -10,6 +10,10 @@ import { MODIFIER_CAPS } from './types';
 import { EMERGENT_STATE_MAP } from './emergentStates';
 import { applyGameplayStateEnterEffects, getGameplayStateCandidates } from './gameplayStateRules';
 import { PATTERN_RULES } from './patternRules';
+import { seededRandom } from './random';
+import { FLAG_RESTORE_EFFECTS } from './actionRules';
+import { applyPassiveRules } from './passiveRules';
+import { BASE_DECAY_PER_MINUTE, getDecayMultiplier } from './decayRules';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  PersonalityEngine — чистый, без состояния, только функции.
@@ -21,16 +25,6 @@ import { PATTERN_RULES } from './patternRules';
 //    Restore: base + clamp(Σ addBonuses,     0,         STAT_RESTORE_ADD_MAX)
 //    Decay:   base × clamp(Π decayMults,     DECAY_MIN, DECAY_MAX)
 // ════════════════════════════════════════════════════════════════════════════
-
-// ── Базовые тики decay (процентов в минуту) ──────────────────────────────────
-const BASE_DECAY_PER_MINUTE: Record<StatKey, number> = {
-  hunger:      0.083,  // ~5/ч → 0 за 20ч
-  happiness:   0.083,
-  energy:      0.100,  // ~6/ч → 0 за 16ч
-  health:      0.033,  // ~2/ч
-  cleanliness: 0.067,  // ~4/ч
-  bond:        0.050,  // ~3/ч
-};
 
 // Flat XP за игру при flat-режиме (stoic)
 const STOIC_FLAT_PLAY_XP = 15;
@@ -51,14 +45,6 @@ function multiplyAll(mults: number[]): number {
 
 function isDifferentDay(isoA: string, isoB: string): boolean {
   return isoA.slice(0, 10) !== isoB.slice(0, 10);
-}
-
-function seededRandom(seed: number): () => number {
-  let s = seed;
-  return () => {
-    s = (s * 16807 + 0) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
 }
 
 function getChaosMultipliers(counters: BehavioralCounters, context: PersonalityRuntimeContext = {}): {
@@ -100,21 +86,8 @@ export function applyDecay(
 
   for (const stat of keys) {
     const base = BASE_DECAY_PER_MINUTE[stat] * elapsedMinutes;
-    const persDecay = personality.decayRates[stat] ?? 1.0;
-
-    // Эмпат: при низком bond весь decay ×1.3
-    const empathDecayMult = (personality.id === 'empath' && currentStats.bond < 30) ? 1.3 : 1.0;
-
-    // Дикий: ночью energy не падает
-    const feralNightMult = (
-      personality.id === 'feral' &&
-      personality.specialRules?.nightEnergyDecayDisabled &&
-      stat === 'energy' &&
-      isNightHour(context.clientLocalHour, personality.specialRules?.nighttimeHours)
-    ) ? 0.0 : 1.0;
-
     const totalMult = clamp(
-      multiplyAll([persDecay, chaosMult, empathDecayMult, feralNightMult]),
+      getDecayMultiplier(stat, currentStats, personality, counters, context) * chaosMult,
       MODIFIER_CAPS.DECAY_MULT_MIN,
       MODIFIER_CAPS.DECAY_MULT_MAX,
     );
@@ -357,7 +330,7 @@ export function runPatternEngine(
     if (rule.personalityId !== undefined && rule.personalityId !== personality.id) continue;
 
     // Проверить все условия (AND)
-    if (!rule.conditions.every(cond => evalCondition(cond, counters))) continue;
+    if (!rule.conditions.every(cond => evalCondition(cond, counters, getContextNow(context)))) continue;
 
     const { flagType, action, severity = 1, healProgressDelta = 0 } = rule.effect;
 
@@ -388,7 +361,7 @@ export function runPatternEngine(
 
 // ── Оценка одного условия PatternCondition по счётчикам ──────────────────────
 
-function evalCondition(cond: PatternCondition, c: BehavioralCounters): boolean {
+function evalCondition(cond: PatternCondition, c: BehavioralCounters, now = getContextNow({})): boolean {
   const op: ConditionOp = cond.op ?? '>=';
 
   switch (cond.type) {
@@ -431,7 +404,7 @@ function evalCondition(cond: PatternCondition, c: BehavioralCounters): boolean {
     }
     case 'same_food_ratio': {
       const { ratio, minFeeds = 5 } = cond.params as Record<string, number>;
-      const rollingFoodLog = rollingFoodCounts(c, 7);
+      const rollingFoodLog = rollingFoodCounts(c, 7, now);
       const totalFeeds = Object.values(rollingFoodLog).reduce((a, b) => a + b, 0);
       if (totalFeeds < minFeeds) return false;
       const maxCount = Math.max(...Object.values(rollingFoodLog), 0);
@@ -612,36 +585,7 @@ export function computeNaturalPassives(
   personality: PersonalityDefinition,
   _counters: BehavioralCounters,
 ): Partial<Record<StatKey, number>> {
-  const bonuses: Partial<Record<StatKey, number>> = {};
-
-  // Гурман: при hunger > 80 все статы +3
-  if (personality.id === 'foodie' && personality.specialRules?.passiveStatBonusWhenFull && stats.hunger > 80) {
-    (['happiness', 'energy', 'health', 'cleanliness', 'bond'] as StatKey[]).forEach(s => {
-      bonuses[s] = (bonuses[s] ?? 0) + 3;
-    });
-  }
-
-  // Чистюля: при cleanliness > 85 все статы +10
-  if (personality.id === 'pristine' && stats.cleanliness > 85) {
-    (['hunger', 'happiness', 'energy', 'health', 'bond'] as StatKey[]).forEach(s => {
-      bonuses[s] = (bonuses[s] ?? 0) + 10;
-    });
-  }
-  // Чистюля: при cleanliness < 40 все действия −30% (обрабатывается в applyActionModifiers через flag)
-
-  // Эмпат: при bond > 80 happiness +10
-  if (personality.id === 'empath' && stats.bond > 80) {
-    bonuses.happiness = (bonuses.happiness ?? 0) + 10;
-  }
-
-  // Натуральная регенерация health
-  if (personality.naturalHealthRegen > 0 && stats.health < 70) {
-    bonuses.health = (bonuses.health ?? 0) + personality.naturalHealthRegen;
-  }
-
-  // Нервный: пик-перфоманс XP (сигнал — не стат-бонус, управляется снаружи)
-
-  return bonuses;
+  return applyPassiveRules(stats, personality);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -755,12 +699,6 @@ function avgStats(stats: Record<StatKey, number>): number {
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
-function isNightHour(hour: number, range?: [number, number]): boolean {
-  const [start, end] = range ?? [22, 6];
-  if (start > end) return hour >= start || hour < end;
-  return hour >= start && hour < end;
-}
-
 function getContextNow(context: PersonalityRuntimeContext): Date {
   return context.now ?? new Date();
 }
@@ -828,7 +766,6 @@ function incrementRollingCounter(counters: BehavioralCounters, date: string, key
   if (!bucket) {
     bucket = { date, counts: {} };
     counters.rollingWindows.dailyBuckets.push(bucket);
-    counters.rollingWindows.dailyBuckets.sort((a, b) => a.date.localeCompare(b.date));
   }
 
   bucket.counts[key] = (bucket.counts[key] ?? 0) + amount;
@@ -840,7 +777,6 @@ function incrementRollingFood(counters: BehavioralCounters, date: string, foodId
   if (!bucket) {
     bucket = { date, counts: {}, foodCounts: {} };
     counters.rollingWindows.dailyBuckets.push(bucket);
-    counters.rollingWindows.dailyBuckets.sort((a, b) => a.date.localeCompare(b.date));
   }
 
   bucket.foodCounts ??= {};
@@ -920,13 +856,13 @@ function consecutiveSingleNightInteractionDays(counters: BehavioralCounters, now
   return streak;
 }
 
-function rollingFoodCounts(counters: BehavioralCounters, days: number): Record<string, number> {
+function rollingFoodCounts(counters: BehavioralCounters, days: number, now: Date): Record<string, number> {
   const buckets = counters.rollingWindows?.dailyBuckets ?? [];
-  const latestDate = buckets[buckets.length - 1]?.date ?? counters.lastDayReset;
+  const currentDate = toDateOnly(now);
   const result: Record<string, number> = {};
 
   for (const bucket of buckets) {
-    if (daysBetween(bucket.date, latestDate) >= days) continue;
+    if (daysBetween(bucket.date, currentDate) >= days) continue;
     for (const [foodId, count] of Object.entries(bucket.foodCounts ?? {})) {
       result[foodId] = (result[foodId] ?? 0) + count;
     }
@@ -978,33 +914,6 @@ function getStatePriority(state: EmergentStateType): number {
 function pruneRecentFeeds(timestamps: string[], nowMs: number): string[] {
   return timestamps.filter(timestamp => nowMs - new Date(timestamp).getTime() <= FEAST_FRENZY_FEED_WINDOW_MS);
 }
-
-// Эффекты флагов на restore (аддитивные)
-const FLAG_RESTORE_EFFECTS: Partial<Record<BehavioralFlagType, Partial<Record<ActionType, StatAdditives>>>> = {
-  food_anxiety: {
-    feed: { happiness: 5 },  // еда успокаивает при тревоге
-  },
-  abandonment_fear: {
-    bond: { happiness: -10, bond: 5 }, // первый bond после разлуки болезненный
-  },
-  overtreated: {
-    heal: { health: -10 },  // сниженная эффективность лечения
-  },
-  night_disruption: {
-    sleep: { energy: -10 }, // плохой сон
-  },
-  play_burnout: {
-    play: { happiness: -5 }, // burnout
-  },
-  trust_bond: {
-    feed:  { bond: 2 },
-    play:  { bond: 2 },
-    bathe: { bond: 2 },
-  },
-  culinary_explorer: {
-    feed: { happiness: 5, health: 3 },
-  },
-};
 
 function getFlagXpMult(flags: BehavioralFlag[], action: ActionType): number {
   let mult = 1.0;

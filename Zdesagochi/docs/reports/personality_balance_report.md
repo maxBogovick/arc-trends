@@ -1,12 +1,12 @@
 # Personality Balance Simulation Report
 
-Generated at: 2026-05-11T19:41:34.910Z
+Generated at: 2026-05-12T09:22:49.237Z
 
 ## Summary
 
 | Scenario | Status | Key metrics |
 |---|---|---|
-| Formation speed | pass | commandsToFormation: 157<br>simulatedDays: 20<br>formationThreshold: 200 |
+| Formation speed | pass | commandsToFormation: 156<br>simulatedDays: 20<br>formationThreshold: 200 |
 | Evolution proposal speed | pass | stableChecksToProposal: 72<br>expectedStabilitySyncs: 72<br>targetPersonality: paranoid |
 | Shadow entry and recovery | pass | traumaToEnter: 80<br>catharsisSteps: 4<br>cooldownSet: true |
 | Singularity rarity and collapse | pass | syncsToSingularity: 48<br>zonesAtEntry: 3<br>collapsedTo: chaotic |
@@ -20,7 +20,7 @@ Status: pass
 
 | Metric | Value |
 |---|---|
-| commandsToFormation | 157 |
+| commandsToFormation | 156 |
 | simulatedDays | 20 |
 | formationThreshold | 200 |
 | formedPersonality | playful |

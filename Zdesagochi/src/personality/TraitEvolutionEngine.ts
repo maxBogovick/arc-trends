@@ -33,6 +33,8 @@ export const STABILITY_SYNCS = 72;
 export const VOID_THRESHOLD_SYNCS = 7 * 24;
 export const WEEKLY_DRIFT_THRESHOLD = 6;
 export const MEMORY_COOLDOWN_MS = 72 * 60 * 60 * 1000;
+export const RARE_CORE_MEMORY_CAP = 50;
+export const COMMON_CORE_MEMORY_CAP = 20;
 export const CONFUSED_VARIANCE_THRESHOLD = 25;
 export const MINIMUM_RESET_SLEEP_HOURS = 4;
 export const VARIANCE_HARD_RESET_HOURS = 48;
@@ -697,9 +699,9 @@ export function addCoreMemory(
     ...memory,
   };
 
-  pet.coreMemories.unshift(coreMemory);
-  const rare = pet.coreMemories.filter(m => m.tier === 'rare');
-  const common = pet.coreMemories.filter(m => m.tier === 'common').slice(0, 20);
+  const sorted = [coreMemory, ...pet.coreMemories].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const rare = sorted.filter(m => m.tier === 'rare').slice(0, RARE_CORE_MEMORY_CAP);
+  const common = sorted.filter(m => m.tier === 'common').slice(0, COMMON_CORE_MEMORY_CAP);
   pet.coreMemories = [...rare, ...common].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   return coreMemory;
 }
@@ -790,6 +792,14 @@ export function matchesInfluenceCondition(
       return typeof params.key === 'string' && pet.traitVector[params.key as TraitKey] > Number(params.value);
     case 'trait_below':
       return typeof params.key === 'string' && pet.traitVector[params.key as TraitKey] < Number(params.value);
+    case 'stat_below': {
+      const stat = params.stat;
+      return typeof stat === 'string' && pet.stats[stat as keyof typeof pet.stats] < Number(params.value);
+    }
+    case 'session_gap_hours':
+      return (pet.behavioralCounters?.sessionGapHours ?? 0) >= Number(params.min);
+    case 'same_room_hours':
+      return (pet.behavioralCounters?.sameRoomHours ?? 0) >= Number(params.min);
     case 'formation_period':
       return Boolean(params.active) !== pet.formationComplete;
     case 'streak_days': {

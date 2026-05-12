@@ -1,8 +1,10 @@
 import type { Pet, PetMood } from '../api/types';
 import type { AppliedModifier, DomainEvent, InfluenceCooldownState, PetCommand, PetCommandResult } from './commands';
 import { PERSONALITY_ENGINE_VERSION, STATIC_REGISTRY_VERSION } from './engineVersion';
+import { BASE_ACTION_RULES } from './actionRules';
 import { getInfluenceRegistry, getIntensityMultiplier as getGlobalIntensityMultiplier } from './influenceRegistry';
 import { createMemoryTextGenerator, type MemoryTextGenerator } from './memoryTextGenerator';
+import { cloneData } from './clone';
 import {
   applyDecay,
   applyActionModifiers,
@@ -133,6 +135,16 @@ export async function applyPersonalityCommand(
     if (gameplayOutcome.meta.autoSleepStarted) {
       events.push({ type: 'sleep_started', at: command.at, commandId: command.commandId });
     }
+    await applyEligibleSystemInfluences(
+      nextPet,
+      command,
+      options,
+      ctx,
+      events,
+      influenceCooldowns,
+      currentSync,
+      gameplayOutcome,
+    );
     const prevVector = cloneTraitVector(nextPet.traitVector);
     applyRegression(nextPet);
     recordDailyTraitSnapshot(nextPet, now);
@@ -449,10 +461,11 @@ function applyActionOutcome(
     return outcome;
   }
 
-  const base = getBaseActionResult(pet, command, actionType, context);
+  const playScore = command.type === 'play' ? getPlayScore(command, context.rng) : undefined;
+  const base = getBaseActionResult(pet, command, actionType, context, playScore);
   if (!base) return outcome;
-  if (command.type === 'play') {
-    outcome.meta.score = getPlayScore(command, context.rng);
+  if (playScore !== undefined) {
+    outcome.meta.score = playScore;
   }
 
   const actionContext: ActionContext = {
@@ -495,14 +508,19 @@ function getBaseActionResult(
   command: PetCommand,
   actionType: ActionType,
   context: { rng: () => number },
+  playScore?: number,
 ): { statDeltas: Partial<Record<StatKey, number>>; xp: number; coins: number } | null {
+  const rule = BASE_ACTION_RULES[actionType];
+  if (!rule) return actionType ? { statDeltas: {}, xp: 0, coins: 0 } : null;
+
   switch (command.type) {
     case 'play': {
-      const score = getPlayScore(command, context.rng);
+      const score = playScore ?? getPlayScore(command, context.rng);
+      const scaling = rule.scoreScaling;
       return {
-        statDeltas: { happiness: 20, energy: -15, bond: 8 },
-        xp: Math.floor(score * 0.5),
-        coins: Math.floor(score * 0.1) + 2,
+        statDeltas: { ...rule.statDeltas },
+        xp: scaling ? Math.floor(score * scaling.xpMultiplier) : rule.xp,
+        coins: scaling ? Math.floor(score * scaling.coinMultiplier) + scaling.coinFlat : rule.coins,
       };
     }
     case 'feed': {
@@ -513,20 +531,22 @@ function getBaseActionResult(
           happiness: effect.happinessBonus,
           health: effect.healthBonus,
         },
-        xp: 8,
-        coins: 0,
+        xp: rule.xp,
+        coins: rule.coins,
       };
     }
-    case 'bathe':
+    case 'bathe': {
+      const personalityOverride = rule.personalityOverrides?.[pet.personality as keyof typeof rule.personalityOverrides] ?? {};
       return {
-        statDeltas: { cleanliness: 40, happiness: pet.personality === 'feral' ? -20 : 5, health: 5 },
-        xp: 12,
-        coins: 0,
+        statDeltas: { ...rule.statDeltas, ...personalityOverride },
+        xp: rule.xp,
+        coins: rule.coins,
       };
+    }
     case 'heal':
-      return { statDeltas: { health: 35, happiness: -5 }, xp: 18, coins: 0 };
+      return { statDeltas: { ...rule.statDeltas }, xp: rule.xp, coins: rule.coins };
     case 'bond':
-      return { statDeltas: { happiness: 15, bond: 20 }, xp: 6, coins: 0 };
+      return { statDeltas: { ...rule.statDeltas }, xp: rule.xp, coins: rule.coins };
     case 'use_item': {
       const effect = command.itemEffect ?? {};
       return {
@@ -538,8 +558,8 @@ function getBaseActionResult(
           cleanliness: effect.cleanliness,
           bond: effect.bond,
         },
-        xp: effect.xp ?? 0,
-        coins: effect.coins ?? 0,
+        xp: effect.xp ?? rule.xp,
+        coins: effect.coins ?? rule.coins,
       };
     }
     default:
@@ -719,6 +739,43 @@ async function applyCommandInfluence(
   await applyRegisteredInfluence(pet, influenceId, command, options, ctx, events, influenceCooldowns, currentSync);
 }
 
+async function applyEligibleSystemInfluences(
+  pet: Pet,
+  command: PetCommand,
+  options: PersonalityCommandHandlerOptions,
+  ctx: Parameters<typeof applyInfluence>[2],
+  events: DomainEvent[],
+  influenceCooldowns: InfluenceCooldownState,
+  currentSync: number,
+  outcome: GameplayOutcome,
+): Promise<void> {
+  const registry = options.influenceRegistry ?? getInfluenceRegistry();
+  const candidates = registry.filter(influence => {
+    if (influence.category !== 'system' && influence.category !== 'environment') return false;
+    return (influence.conditions?.length ?? 0) > 0;
+  });
+
+  for (const influence of candidates) {
+    const applied = await applyRegisteredInfluence(
+      pet,
+      influence.id,
+      command,
+      options,
+      ctx,
+      events,
+      influenceCooldowns,
+      currentSync,
+    );
+    if (applied) {
+      outcome.appliedModifiers.push({
+        source: 'base',
+        id: influence.id,
+        description: `Applied automatic influence: ${influence.label}`,
+      });
+    }
+  }
+}
+
 async function applyRegisteredInfluence(
   pet: Pet,
   influenceId: string,
@@ -728,10 +785,10 @@ async function applyRegisteredInfluence(
   events: DomainEvent[],
   influenceCooldowns: InfluenceCooldownState,
   currentSync: number,
-): Promise<void> {
+): Promise<boolean> {
   const registry = options.influenceRegistry ?? getInfluenceRegistry();
   const influence = registry.find(entry => entry.id === influenceId);
-  if (!influence) return;
+  if (!influence) return false;
 
   const lastAppliedSync = influenceCooldowns[influence.id];
   const cooldownSyncs = influence.cooldownSyncs ?? 0;
@@ -746,20 +803,39 @@ async function applyRegisteredInfluence(
       currentSync,
       cooldownSyncs,
     });
-    return;
+    return false;
   }
 
-  const { prevVector, applied } = applyInfluence(pet, influence, {
+  const { prevVector, applied, blockedConditions = [] } = applyInfluence(pet, influence, {
     ...ctx,
     dominantInfluences: [influence.label],
   });
-  if (!applied) return;
+  if (!applied) {
+    if (blockedConditions.length > 0) {
+      events.push({
+        type: 'influence_condition_skipped',
+        at: command.at,
+        commandId: command.commandId,
+        influenceId: influence.id,
+        blockedConditions,
+      });
+    }
+    return false;
+  }
 
   influenceCooldowns[influence.id] = currentSync;
+  events.push({
+    type: 'influence_applied',
+    at: command.at,
+    commandId: command.commandId,
+    influenceId: influence.id,
+    label: influence.label,
+  });
   await checkThresholdCrossings(pet, prevVector, {
     ...ctx,
     dominantInfluences: [influence.label],
   });
+  return true;
 }
 
 function createDeterministicRng(seedText: string): () => number {
@@ -885,5 +961,5 @@ function cloneTraitVector(vector: TraitVector): TraitVector {
 }
 
 function clonePet(pet: Pet): Pet {
-  return JSON.parse(JSON.stringify(pet)) as Pet;
+  return cloneData(pet);
 }

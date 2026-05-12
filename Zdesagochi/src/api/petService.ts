@@ -5,6 +5,7 @@ import { SyncQueue } from './syncQueue';
 import type { InfluenceCooldownState, OfflineKeyValueStorage, PetCommand, PetCommandResult } from '../personality';
 import type { PersonalityCommandHandlerOptions } from '../personality/commandHandlers';
 import { applyPersonalityCommand, createBrowserOfflineStorage } from '../personality';
+import type { ServerApi, ServerCommandAck } from './serverApi';
 
 export type PetCommandDraft = PetCommand extends infer Command
   ? Command extends PetCommand
@@ -111,6 +112,20 @@ export class PetService {
   markCommandSynced(commandId: string): void {
     this.hydrate();
     this.syncQueue?.markSynced(commandId);
+  }
+
+  async syncPendingCommands(serverApi: ServerApi, clientId: string): Promise<ServerCommandAck> {
+    this.hydrate();
+    const commands = this.syncQueue?.listPending() ?? [];
+    const ack = await serverApi.submitCommands({ clientId, commands });
+    const accepted = new Set(ack.acceptedCommandIds);
+
+    for (const command of commands) {
+      if (!accepted.has(command.commandId)) break;
+      this.syncQueue?.markSynced(command.commandId);
+    }
+
+    return ack;
   }
 
   listExplainabilityRecords() {

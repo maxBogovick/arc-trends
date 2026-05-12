@@ -21,10 +21,18 @@ export {
   explainCommandRecord,
 } from './explainability';
 export { PetService } from './petService';
+export { BackendReplayServerApi } from './backendReplayServer';
 export type { LocalInventoryEntry, LocalSaveSnapshot, LocalSaveState, LocalSaveLoadResult } from './localSave';
 export type { SyncQueueLoadResult } from './syncQueue';
 export type { CommandExplanation, ExplainabilityLogLoadResult, ExplainabilityRecord } from './explainability';
-export type { ServerApi, ServerCommandAck, ServerCommandBatch } from './serverApi';
+export type {
+  ServerApi,
+  ServerCommandAck,
+  ServerCommandBatch,
+  ServerCommandRejectReason,
+  ServerRejectedCommand,
+} from './serverApi';
+export type { BackendReplayServerOptions, BackendReplayServerState } from './backendReplayServer';
 export type { PetCommandDraft, PetServiceOptions, PetServiceRuntime, PetServiceState } from './petService';
 
 import type { ApiService } from './types';
