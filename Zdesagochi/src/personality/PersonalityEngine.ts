@@ -8,6 +8,7 @@ import type {
 } from './types';
 import { MODIFIER_CAPS } from './types';
 import { EMERGENT_STATE_MAP } from './emergentStates';
+import { applyGameplayStateEnterEffects, getGameplayStateCandidates } from './gameplayStateRules';
 import { PATTERN_RULES } from './patternRules';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -36,9 +37,6 @@ const STOIC_FLAT_PLAY_XP = 15;
 const ROLLING_WINDOW_DAYS = 30;
 const HIGH_PLAY_THRESHOLD = 8;
 const FEAST_FRENZY_FEED_WINDOW_MS = 60 * 60 * 1000;
-const CHAOS_SURGE_INTERVAL_MINUTES = 3 * 60;
-const CHAOS_SURGE_MIN_DURATION_MINUTES = 30;
-const CHAOS_SURGE_MAX_DURATION_MINUTES = 60;
 
 // ── Вспомогательные утилиты ──────────────────────────────────────────────────
 
@@ -291,117 +289,25 @@ export function computeEmergentState(
   currentState: EmergentStateType | null,
   enteredAt: string | undefined,
 ): EmergentStateType | null {
-  const candidates: { type: EmergentStateType; priority: number }[] = [];
-  const avg = avgStats(stats);
-  const now = getContextNow(context).getTime();
-
-  const hasFlag = (f: BehavioralFlagType) => flags.some(fl => fl.type === f);
-
-  // stoic_peak — одноразовый
-  if (personality.id === 'stoic' && !counters.stoicPeakUsed) {
-    if (counters.consecutiveGoodSyncs >= 10) {
-      candidates.push({ type: 'stoic_peak', priority: 12 });
-    }
-  }
-
-  // stoic_peak истекает через 2ч
-  if (currentState === 'stoic_peak' && enteredAt) {
-    const elapsed = (now - new Date(enteredAt).getTime()) / 3600000;
-    if (elapsed >= 2) return null;
-    candidates.push({ type: 'stoic_peak', priority: 12 });
-  }
-
-  // enlightenment — sage, 7 дней avg > 70
-  if (personality.id === 'sage' && !counters.enlightenmentActive) {
-    if (counters.consecutiveGoodSyncs >= 7 * 24) {
-      candidates.push({ type: 'enlightenment', priority: 11 });
-    }
-  }
-  // enlightenment истекает через 24ч или при avg < 50
-  if (currentState === 'enlightenment' && enteredAt) {
-    const elapsed = (now - new Date(enteredAt).getTime()) / 3600000;
-    if (elapsed >= 24 || avg < 50) {
-      counters.enlightenmentActive = false;
-      return null;
-    }
-    candidates.push({ type: 'enlightenment', priority: 11 });
-  }
-
-  // feast_frenzy — foodie
-  if (personality.id === 'foodie' && recentFeedCount(counters, now) >= 3 && stats.happiness > 90) {
-    candidates.push({ type: 'feast_frenzy', priority: 14 });
-  }
-
-  // deep_melancholy — melancholic
-  if (personality.id === 'melancholic' && counters.consecutiveBadMoodSyncs >= 5) {
-    candidates.push({ type: 'deep_melancholy', priority: 9 });
-  }
-
-  // wanderlust — adventurer
-  if (personality.id === 'adventurer' && counters.sameRoomHours >= 48) {
-    candidates.push({ type: 'wanderlust', priority: 10 });
-  }
-
-  // midnight_zoomies — feral
-  if (personality.id === 'feral' &&
-      isNightHour(context.clientLocalHour, personality.specialRules?.nighttimeHours)) {
-    candidates.push({ type: 'midnight_zoomies', priority: 8 });
-  }
-
-  // coin_obsession — greedy
-  if (personality.id === 'greedy' && context.coinBalance < 50 && counters.playCountToday < 5) {
-    candidates.push({ type: 'coin_obsession', priority: 7 });
-  }
-
-  // food_panic — при флаге food_anxiety
-  if (hasFlag('food_anxiety') && stats.hunger < 50) {
-    candidates.push({ type: 'food_panic', priority: 6 });
-  }
-
-  // trust_collapse — paranoid
-  if (personality.id === 'paranoid' &&
-      counters.paranoidPhase === 'collapsed') {
-    candidates.push({ type: 'trust_collapse', priority: 5 });
-  }
-
-  // apathy — empath
-  if (personality.id === 'empath' && context.sessionGapHours >= 48) {
-    candidates.push({ type: 'apathy', priority: 4 });
-  }
-
-  // tantrum — bold или playful + energy < 15
-  if ((personality.id === 'bold' || personality.id === 'playful') && stats.energy < 15) {
-    candidates.push({ type: 'tantrum', priority: 3 });
-  }
-
-  // contamination_crisis — pristine
-  if (personality.id === 'pristine' && stats.cleanliness < 20) {
-    candidates.push({ type: 'contamination_crisis', priority: 2 });
-  }
-
-  // breakdown — anxious + 3 стата < 30
-  if (personality.id === 'anxious') {
-    const lowStats = (['hunger', 'happiness', 'energy', 'health', 'cleanliness', 'bond'] as StatKey[])
-      .filter(s => stats[s] < 30).length;
-    if (lowStats >= 3) {
-      candidates.push({ type: 'breakdown', priority: 1 });
-    }
-  }
-
-  if (isChaosSurgeActive(personality, counters, context)) {
-    candidates.push({ type: 'chaos_surge', priority: getStatePriority('chaos_surge') });
-  }
+  const ruleContext = {
+    stats,
+    personality,
+    flags,
+    counters,
+    syncContext: context,
+    currentState,
+    enteredAt,
+    now: getContextNow(context),
+    avgStats: avgStats(stats),
+  };
+  const candidates = getGameplayStateCandidates(ruleContext);
 
   if (candidates.length === 0) return null;
 
   // Победитель — с наименьшим priority числом (1 = наивысший)
   candidates.sort((a, b) => a.priority - b.priority || a.type.localeCompare(b.type));
   const winner = candidates[0].type;
-  if (winner === 'stoic_peak') counters.stoicPeakUsed = true;
-  if (winner === 'enlightenment') {
-    counters.enlightenmentActive = true;
-    counters.enlightenmentStart ??= getContextNow(context).toISOString();
-  }
+  applyGameplayStateEnterEffects(winner, ruleContext);
   return winner;
 }
 
@@ -1069,36 +975,8 @@ function getStatePriority(state: EmergentStateType): number {
   return EMERGENT_STATE_MAP.get(state)?.priority ?? 999;
 }
 
-function recentFeedCount(counters: BehavioralCounters, nowMs: number): number {
-  return pruneRecentFeeds(counters.recentFeedTimestamps ?? [], nowMs).length;
-}
-
 function pruneRecentFeeds(timestamps: string[], nowMs: number): string[] {
   return timestamps.filter(timestamp => nowMs - new Date(timestamp).getTime() <= FEAST_FRENZY_FEED_WINDOW_MS);
-}
-
-function isChaosSurgeActive(
-  personality: PersonalityDefinition,
-  counters: BehavioralCounters,
-  context: PersonalityRuntimeContext = {},
-): boolean {
-  if (!personality.specialRules?.randomizeDailySeed) return false;
-  if (!personality.emergentTriggers.some(trigger => trigger.stateType === 'chaos_surge')) return false;
-
-  const now = getContextNow(context);
-  const minutesSinceMidnight = now.getHours() * 60 + now.getMinutes();
-  const bucket = Math.floor(minutesSinceMidnight / CHAOS_SURGE_INTERVAL_MINUTES);
-  const minuteInBucket = minutesSinceMidnight % CHAOS_SURGE_INTERVAL_MINUTES;
-  const dateKey = Number(now.toISOString().slice(0, 10).replace(/-/g, ''));
-  const seed = Math.max(1, Math.floor(counters.chaosDailySeed * 1_000_000_000) + dateKey + bucket);
-  const rng = seededRandom(seed);
-  const duration =
-    CHAOS_SURGE_MIN_DURATION_MINUTES +
-    Math.floor(rng() * (CHAOS_SURGE_MAX_DURATION_MINUTES - CHAOS_SURGE_MIN_DURATION_MINUTES + 1));
-  const maxStart = CHAOS_SURGE_INTERVAL_MINUTES - duration;
-  const start = Math.floor(rng() * (maxStart + 1));
-
-  return minuteInBucket >= start && minuteInBucket < start + duration;
 }
 
 // Эффекты флагов на restore (аддитивные)

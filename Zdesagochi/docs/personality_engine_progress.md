@@ -172,12 +172,12 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 | Field | Current Value |
 |---|---|
 | Current Goal | Довести движок до usable offline-first MVP |
-| Current Step | Post-MVP hardening — Data-driven states / system influences |
-| Why This Step | MVP-1..3 закрыли usable offline-first loop; следующий риск — hardcoded gameplay state/system influence rules |
+| Current Step | Post-MVP backend replay/validation |
+| Why This Step | MVP-1/MVP-2/MVP-3 закрыты; следующий риск — server-authoritative sync должен использовать тот же command outcome |
 | Current Vector | Правильный: делаем `applyPersonalityCommand()` единым источником результата действия |
-| Next Step | M3 — Data-driven emergent states |
-| Why Next | `computeEmergentState()` всё ещё содержит personality-specific branches, которые сложнее балансировать и переносить |
-| Required Verification | `npm test`, `npm run build`, targeted `rg` checks when relevant |
+| Next Step | Backend replay/validation adapter |
+| Why Next | Offline shell готов локально; backend должен валидировать/replay commands без расхождения с клиентским движком |
+| Required Verification | `npm test`, `npm run build`, `npm run simulate:balance`, targeted `rg` checks when relevant |
 
 ---
 
@@ -185,33 +185,34 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Закрыт MVP-3 — Minimum Explainability.
+Закрыт M7 — Final docs/code audit.
 
 ### Why
 
-До этого command result уже содержал domain events, но offline layer сохранял только snapshot и pending commands. После reload/debug нельзя было получить компактный ответ “почему изменилась эта команда”.
+До этого большой `PERSONALITY_EVOLUTION_SYSTEM.md` местами описывал старый runtime path (`OfflinePetSave` + `MockApi`), хотя фактический код уже использует `PetService`, `LocalSave`, `SyncQueue` и `ExplainabilityLog`.
 
 ### Impact
 
-Добавлен `ExplainabilityLog`, который сохраняет compact command/result/events history рядом с offline command path.
+Добавлен final audit artifact `docs/reports/personality_engine_final_audit.md`.
 
-`PetService` теперь после каждого command result пишет pending command в `SyncQueue`, snapshot в `LocalSave`, а explainability record в `ExplainabilityLog`. Для UI/debug есть selector `ExplainabilityLog.select()` и pure helper `explainCommandRecord()`.
+Ключевые stale claims в `PERSONALITY_EVOLUTION_SYSTEM.md` обновлены: `OfflinePetSave` помечен как legacy/helper, product path описан как `PetService` + `LocalSave` + `SyncQueue` + `ServerApi` + `ExplainabilityLog`, а deferred backend/LiveOps/Monte Carlo work явно вынесен за MVP scope.
 
 ### Verification
 
 - `npm test` — passed.
 - `npx tsc --noEmit` — passed.
-- `npm run build` — passed.
-- Unit test: `explainability selector summarizes command result events`.
-- Integration test: `MockApi persists local save and sync queue without gameplay logic` now verifies saved explanation details.
+- `npm run build` — passed with existing Vite chunk-size warning.
+- `npm run simulate:balance` — passed.
+- Audit report: `docs/reports/personality_engine_final_audit.md`.
+- Balance report: `docs/reports/personality_balance_report.md`.
 
 ### Next
 
-M3 — Data-driven emergent states.
+Backend replay/validation adapter.
 
 ### Why Next
 
-MVP loop now has full command outcome, offline shell, and saved explainability. Следующий blocker уже не MVP, а hardening: убрать hardcoded gameplay state/system influence rules.
+Offline-first MVP scope закрыт локально. Следующий blocker — server-authoritative sync/replay.
 
 ---
 
@@ -291,9 +292,11 @@ MVP loop now has full command outcome, offline shell, and saved explainability. 
   - `docs/personality_engine_decisions.md`;
   - this progress log.
 
-### Current Step
+### Historical Snapshot
 
-MVP-1 — Full Command Outcome.
+This section is retained as the original MVP-1 work log. The current dashboard in section 5 is the active source of truth.
+
+MVP-1 — Full Command Outcome. Done.
 
 Goal:
 
@@ -329,7 +332,7 @@ MVP-1 concrete tasks:
 6. Move `use_item`.
 7. Add replay/full outcome regression tests.
 
-### Next Step
+### Historical Next Step
 
 Start with:
 
@@ -349,12 +352,14 @@ Latest known verification:
 
 ```bash
 npm test
+npx tsc --noEmit
 npm run build
+npm run simulate:balance
 ```
 
 Status:
 
-- passed after adding `validatePersonalitySpecialRules()`;
+- passed after M7 final audit;
 - Vite chunk size warning remains non-blocking.
 
 Latest cleanup check:
@@ -381,13 +386,12 @@ Status:
 
 ## 11. Open Risks
 
-1. `PersonalityEngine.ts` still has hardcoded personality IDs.
-2. `mockApi.ts` still calculates full gameplay/economy outcome.
-3. `PetCommandResult` does not yet own full stat/xp/coin outcome.
-4. System influences in registry are not applied by a generic sync pass.
-5. Domain events are not durable/complete enough for explainability.
-6. UI/product layer does not yet expose the full evolution system.
-7. Simulation reports do not exist yet.
+1. Backend replay/validation adapter is not implemented yet.
+2. Server-side economy/inventory/rewards confirmation is not implemented yet.
+3. Generic `system:*` / `env:*` registry sync pass is not implemented yet.
+4. Action/passive/decay rule registries are still partial; some behavior remains hardcoded.
+5. UI/product layer does not yet expose the full evolution system.
+6. Balance proof is deterministic for core scenarios; broader Monte Carlo/edge-case reports are still needed.
 
 ---
 

@@ -16,9 +16,9 @@
 | Missing | Функции по сути еще нет |
 | Unknown | Нужна отдельная проверка, сейчас нельзя честно оценить |
 
-Текущая честная оценка всего движка: **45-50% готовности**.
+Текущая честная оценка всего движка: **70-75% готовности** для local/offline-first personality engine.
 
-Главная причина: ядро эволюции уже есть, но gameplay/outcome/data-driven часть еще не доведена до целевой архитектуры.
+Главная причина: MVP-1/MVP-2/MVP-3 закрыты, balance proof и final audit artifact есть. Оставшийся вес — backend-authoritative sync, LiveOps, broader simulations и product UI polish.
 
 ---
 
@@ -26,16 +26,15 @@
 
 | Приоритет | Что делать | Что это разблокирует | Что будет заблокировано, если не сделать |
 |---|---|---|---|
-| 1 | Command outcome: команда должна возвращать stats/XP/coins/blocked/events | Удаление gameplay logic из `mockApi`, нормальный offline replay, будущий backend sync | `mockApi` останется псевдо-сервером, backend придется копировать клиентскую логику |
-| 2 | Разрезать `mockApi` на LocalSave + SyncQueue + ServerApi + PetService | Offline-first игра с синхронизацией при появлении интернета | Игра останется завязана на временный mock слой |
-| 3 | Data-driven emergent states | Добавление новых характеров/состояний через data | `PersonalityEngine` продолжит знать конкретные personality IDs |
-| 4 | System influences + events | Полная объяснимость и registry-driven lifecycle | Часть изменений характера останется не объясненной событиями |
-| 5 | Simulation reports + final audit | Доказанный баланс и совпадение docs/code | Нельзя честно сказать, что движок готов |
+| 1 | Backend replay/validation adapter | Server-authoritative sync using the same command outcome | Нельзя безопасно включать competitive economy/social sync |
+| 2 | Generic `system:*` / `env:*` influence pass | Registry-driven lifecycle beyond auto-sleep | Часть system/env поведения останется hardcoded |
+| 3 | Action/passive/decay registries | Добавление новых правил без правки engine code | Новые характеры всё ещё могут требовать code branches |
+| 4 | Broader Monte Carlo simulation reports | Доказанный баланс на распределениях и edge cases | Детерминированный proof есть, но редкие сценарии не покрыты |
+| 5 | Product UI polish: TraitRadar/NPC/explanation cards | Полный игровой UX поверх готового engine | Engine готов, но часть UX останется inline/minimal |
 
-Решение: **сначала Command outcome**.
+Решение: **сначала backend replay/validation**, если цель — online/server-authoritative MVP.
 
-Причина простая: если сейчас заняться только data-driven states, `mockApi` все равно останется местом, где считаются stats/XP/coins. Это не приблизит offline/sync к финальной архитектуре.  
-Data-driven states важны, но они не заменяют `mockApi`. Их нужно делать после command outcome или как следующий крупный milestone.
+Причина простая: offline/local engine уже считает command outcome и сохраняет explainability. Следующий архитектурный риск — чтобы backend не копировал и не расходился с client command semantics.
 
 ---
 
@@ -44,13 +43,13 @@ Data-driven states важны, но они не заменяют `mockApi`. Их
 | Блок | Готовность | Честное состояние |
 |---|---:|---|
 | Trait evolution core | 70% | Движение по 6D trait vector, formation, proposal, accept/reject, regression работают и покрыты тестами |
-| Gameplay emergent states | 55% | Состояния есть и часть хорошо протестирована, но условия активации еще hardcoded в `PersonalityEngine` |
-| Data-driven rules | 30% | Influence registry и pattern rules есть, но gameplay conditions/passives/actions еще не вынесены в registry |
-| Command pipeline | 75% | `applyPersonalityCommand()` возвращает full command outcome для основных pet actions: stats/XP/coins/blocked/modifiers/meta/events |
+| Gameplay emergent states | 70% | Состояния есть, activation/retention правила вынесены в `GAMEPLAY_STATE_RULES`, regression-тесты проходят |
+| Data-driven rules | 45% | Influence registry, pattern rules и gameplay state rules есть; passives/actions еще не полностью registry-driven |
+| Command pipeline | 80% | `applyPersonalityCommand()` возвращает full command outcome для основных pet actions и владеет sync auto-sleep system influence |
 | Mock/backend parity | 65% | `mockApi` больше не считает gameplay outcome основных действий; PetService/LocalSave/SyncQueue/ServerApi есть, но настоящий backend sync еще не реализован |
 | Events/explainability | 70% | Есть `gameplay_outcome_applied` events, outcome fields и сохраненная ExplainabilityLog history для UI/debug |
-| Balance/simulation proof | 10% | Тесты есть, но simulation reports по скорости и балансу почти отсутствуют |
-| Documentation/code alignment | 55% | Главные расхождения описаны, часть закрыта, но `PERSONALITY_EVOLUTION_SYSTEM.md` еще не полностью совпадает с кодом |
+| Balance/simulation proof | 55% | Есть reproducible balance report artifact для formation/evolution/shadow/singularity/memories; нужны более широкие Monte Carlo/edge-case прогоны |
+| Documentation/code alignment | 75% | Final audit artifact есть; ключевые stale claims в `PERSONALITY_EVOLUTION_SYSTEM.md` обновлены, но большой spec остаётся частично историческим |
 
 ---
 
@@ -66,19 +65,19 @@ Data-driven states важны, но они не заменяют `mockApi`. Их
 | Evolution proposal | Ready | `checkEvolution()`; тесты `checkEvolution creates proposal after stable target zone`, `respects hysteresis`, `clears target` | Нужно проверить UX и narrative selection в реальном UI |
 | Accept/reject evolution | Ready | `acceptEvolution()`, `rejectEvolution()`; тесты `acceptEvolution records stable evolution and rare memory`, `rejectEvolution clears proposal without changing personality` | Нет полного product flow audit |
 | Void / identity crisis | Partial | `handleVoidState()`; тест `void state enters identity_crisis after threshold` | Нужно проверить interaction с stateLayers и UI |
-| Singularity | Ready/Partial | `detectSingularity()`, `checkSingularity()`, `collapseSingularity()`; тест `singularity intercepts checkEvolution and collapses into one active zone` | Механика есть, но rarity/balance не доказаны simulation reports |
+| Singularity | Ready/Partial | `detectSingularity()`, `checkSingularity()`, `collapseSingularity()`; тест `singularity intercepts checkEvolution and collapses into one active zone`; balance report | Механика есть, deterministic rarity/collapse proof есть; нужен broader Monte Carlo |
 | Shadow form | Ready/Partial | `checkShadowForm()`, `addCatharsisProgress()`; тест `shadow form enters from trauma and exits through catharsis cooldown` | Нужно проверить полный catharsis UX и события |
 | Core Memories | Partial | `addCoreMemory()`, threshold crossing tests, memory generator | Есть память, но explainability не покрывает все gameplay changes |
 | Memory text generation | Partial | `memoryTextGenerator.ts`, templates, sanitizer | AI/device mode не проверен как product feature |
 | Weekly drift | Partial | `checkWeeklyDrift()`; тест `weekly drift requires seven snapshots and uses directional cooldown` | Не ясно, насколько это видно игроку и правильно сбалансировано |
 | Sleep lifecycle | Ready/Partial | `onStartSleep()`, `onWakeFromSleep()`, `checkVarianceHardReset()`; тесты `sleep lifecycle resets confused only after natural 4h sleep`, `variance hard reset requires last full sleep timestamp`, MVP outcome integration test | Sleep/wake command outcome есть; product UX/debug explainability еще минимальные |
-| Offline save | Ready | `createOfflinePetSave()`, `save/load/deleteOfflinePetSave()`; тесты offline storage | Это storage layer, не полный gameplay replay |
-| Offline command log | Ready/Partial | `appendOfflineCommand()`, `getUnsyncedCommands()`, `markCommandsSynced()`; тесты idempotency/sync window/compaction | Журнал команд работает; нужен отдельный SyncQueue service для product offline-first |
+| Offline save | Ready | `LocalSave`, `PetService`; legacy `createOfflinePetSave()`, `save/load/deleteOfflinePetSave()`; тесты offline storage | Backend canonical sync еще не реализован |
+| Offline command log | Ready | `SyncQueue`, `appendOfflineCommand()`, `getUnsyncedCommands()`, `markCommandsSynced()`; тесты idempotency/sync window/compaction | Backend confirmation/replay adapter еще нужен |
 | Personality command replay | Ready/Partial | `replayPersonalityCommands()`; тесты replay sync math и `personality command replay preserves full gameplay outcome` | Replay core outcome есть; нужна интеграция с будущим sync queue/server confirm |
 | `applyPersonalityCommand()` entrypoint | Ready/Partial | `commandHandlers.ts`; тесты feed/use_item/sync/replay/MVP action integration | Владеет основным command outcome; дальше нужно вынести оставшиеся hardcoded gameplay rules в registry |
 | Influence cooldowns in commands | Ready | `canApplyInfluenceAtSync()`, command handler cooldown tests | Нет крупного риска |
 | Food item fallback | Ready | `use_item` command with `itemKind`; тесты food fallback и item precedence | Нет крупного риска |
-| `mockApi` as adapter | Partial | Основные actions вызывают `applyPersonalityCommand()`; targeted `rg` не находит старые outcome calculators | Нужно заменить compatibility shell на PetService/LocalSave/SyncQueue/ServerApi |
+| `mockApi` as adapter | Ready/Partial | Основные actions вызывают `PetService`/`applyPersonalityCommand()`; command path вынесен из mock gameplay logic | Compatibility shell всё ещё держит UI-facing economy/quests/achievements |
 | Base stat deltas for actions | Ready/Partial | `getBaseActionResult()` в command handler; MVP integration test | Дальше нужно сделать data-driven registry, но это не блокирует MVP-2 |
 | XP/coins outcome | Ready/Partial | `PetCommandResult.xpDelta/coinDelta`, level-up coin bonus, MVP integration test | Нужно сохранить explainability history и server contract |
 | Action modifiers | Partial | `applyActionModifiers()`; tests active layers, `perfect_balance` XP-only, MVP outcome test | Модификаторы применяются в command outcome; часть personality-specific logic hardcoded и позже уйдет в registry |
@@ -95,15 +94,15 @@ Data-driven states важны, но они не заменяют `mockApi`. Их
 | State layers | Ready | `stateLayers.ts`; tests `state layers keep cognitive and evolution states...`, `legacy emergentState...` | UI должен дальше читать active states consistently |
 | Action blockers | Partial | `isActionBlocked()`; test `action blockers scan all active state layers by priority` | Full command outcome должен возвращать blocked result |
 | Special rules validator | Ready | `validatePersonalitySpecialRules()`; tests expose deferred/adapter-owned and reject unknown keys | Validator не реализует сами deferred rules; он только делает их видимыми |
-| Data-driven gameplay conditions | Missing | Есть только план в docs | Следующий главный этап: `emergentConditions` schema + migration |
+| Data-driven gameplay conditions | Ready/Partial | `GAMEPLAY_STATE_RULES`, `getGameplayStateCandidates()` | Ordinary gameplay states вынесены; broader rule schema для actions/passives/decay ещё нужна |
 | Data-driven action rules | Missing | Нет action rule registry | Нужно после emergent conditions или вместе с command outcome |
 | Data-driven passive rules | Missing | Нет passive effect registry | Нужно вынести `computeNaturalPassives()` |
 | System/environment influences | Missing/Partial | Registry содержит system/env influences | Generic sync pass не подключен |
 | Global balance patch | Partial | `validateBalancePatch()`, `getIntensityMultiplier()`; tests | Нет полноценной telemetry/update pipeline |
 | Domain events | Partial | `DomainEvent`, command result events | Events не покрывают все important gameplay changes |
 | Backend parity | Missing/Partial | Команды serializable, replay частичный | Backend еще должен использовать тот же full command outcome |
-| Simulation reports | Missing | Нет report artifacts | Нужны formation/evolution/shadow/singularity/memory distribution reports |
-| Final doc/code audit | Missing | Есть gap analysis | Нужен финальный проход по `PERSONALITY_EVOLUTION_SYSTEM.md` после крупных refactors |
+| Simulation reports | Ready/Partial | `npm run simulate:balance`; `docs/reports/personality_balance_report.md` | Deterministic core proof есть; нужны Monte Carlo/edge-case distributions |
+| Final doc/code audit | Ready/Partial | `docs/reports/personality_engine_final_audit.md`; targeted updates in `PERSONALITY_EVOLUTION_SYSTEM.md` | Большой v5 spec остаётся reference/historical документом, не единственным source of truth |
 
 ---
 
@@ -113,11 +112,11 @@ Data-driven states важны, но они не заменяют `mockApi`. Их
 |---|---|---|
 | M1. Command outcome | `applyPersonalityCommand()` возвращает stats/xp/coins/blocked/appliedModifiers; `mockApi` использует этот результат | Replay/backend/mock считают одно и то же; это главный blocker для замены `mockApi` |
 | M2. Split mockApi | Done — вместо `mockApi` как псевдо-сервера есть LocalSave, SyncQueue, ServerApi и PetService; gameplay logic там не живет | Offline остается, online sync становится нормальным |
-| M3. Data-driven emergent states | `computeEmergentState()` больше не содержит personality-specific activation branches для обычных gameplay states | Новый характер/состояние можно добавить через data |
-| M4. System influences | `system:*` и `env:*` influences применяются generic sync pass | Registry реально управляет долгосрочным поведением |
+| M3. Data-driven emergent states | Done — `computeEmergentState()` больше не содержит personality-specific activation branches для обычных gameplay states | Новый характер/состояние можно добавить через data |
+| M4. System influences | Partial — auto-sleep теперь command-owned system outcome; generic `system:*` / `env:*` registry pass еще не реализован | Registry реально управляет долгосрочным поведением |
 | M5. Events/explainability | Done — важные state/trait/outcome changes создают domain events, а offline command/result history сохраняется в ExplainabilityLog | Игрок и разработчик понимают, почему характер изменился |
-| M6. Simulation reports | Есть отчеты по скорости formation/evolution/shadow/singularity/memories | Баланс доказан, а не угадан |
-| M7. Final audit | `PERSONALITY_EVOLUTION_SYSTEM.md` совпадает с кодом или явно помечает deferred | Нет ложных обещаний |
+| M6. Simulation reports | Done — есть reproducible report по скорости formation/evolution/shadow/singularity/memories | Баланс доказан, а не угадан |
+| M7. Final audit | Done — final audit report создан, ключевые stale sections в `PERSONALITY_EVOLUTION_SYSTEM.md` обновлены, deferred work явно перечислен | Нет ложных обещаний по MVP scope |
 
 ---
 

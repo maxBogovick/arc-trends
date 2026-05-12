@@ -130,6 +130,9 @@ export async function applyPersonalityCommand(
       coinBalance: options.coinBalance ?? 0,
       applySyncDecay: true,
     });
+    if (gameplayOutcome.meta.autoSleepStarted) {
+      events.push({ type: 'sleep_started', at: command.at, commandId: command.commandId });
+    }
     const prevVector = cloneTraitVector(nextPet.traitVector);
     applyRegression(nextPet);
     recordDailyTraitSnapshot(nextPet, now);
@@ -317,6 +320,15 @@ function applyGameplayCommand(
       const key = stat as StatKey;
       pet.stats[key] = clampStat(pet.stats[key] + (value ?? 0));
     }
+
+    if (!pet.isAsleep && personality.autoSleep.enabled && pet.stats.energy <= personality.autoSleep.energyThreshold) {
+      if (context.rng() < personality.autoSleep.probability) {
+        pet.isAsleep = true;
+        onStartSleep(pet, { now: context.now, rng: context.rng });
+        outcome.meta.autoSleepStarted = true;
+        outcome.appliedModifiers.push({ source: 'base', id: 'system:auto_sleep', description: 'Auto sleep started during sync' });
+      }
+    }
   }
 
   if (actionType) {
@@ -325,7 +337,11 @@ function applyGameplayCommand(
       rng: context.rng,
       coinBalance: context.coinBalance,
     });
+    const systemMeta = outcome.meta;
+    const systemModifiers = outcome.appliedModifiers;
     Object.assign(outcome, actionOutcome);
+    outcome.meta = { ...systemMeta, ...actionOutcome.meta };
+    outcome.appliedModifiers = [...systemModifiers, ...actionOutcome.appliedModifiers];
     if (outcome.blockedAction) {
       return outcome;
     }

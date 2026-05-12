@@ -1186,6 +1186,29 @@ await testAsync('personality command sync applies gameplay decay mood history an
   assert.equal(result.pet.behavioralCounters.lastStatsSnapshot?.hunger !== undefined, true);
 });
 
+await testAsync('personality command sync owns auto sleep system influence', async () => {
+  const pet = makePet({
+    personality: 'drowsy',
+    isAsleep: false,
+    stats: { hunger: 80, happiness: 80, energy: 20, health: 80, cleanliness: 80, bond: 80 },
+    lastUpdated: '2026-05-04T00:00:00.000Z',
+  });
+
+  const result = await applyPersonalityCommand(pet, {
+    type: 'sync',
+    at: '2026-05-04T00:10:00.000Z',
+    commandId: 'cmd-sync-auto-sleep',
+  }, {
+    rng: () => 0,
+  });
+
+  assert.equal(result.pet.isAsleep, true);
+  assert.notEqual(result.pet.sleepStartedAt, null);
+  assert.equal(result.meta?.autoSleepStarted, true);
+  assert.equal(result.events.some(event => event.type === 'sleep_started'), true);
+  assert.equal(result.appliedModifiers.some(modifier => modifier.id === 'system:auto_sleep'), true);
+});
+
 await testAsync('personality command replay uses deterministic rng for singularity collapse', async () => {
   const pet = makePet({
     formationComplete: true,

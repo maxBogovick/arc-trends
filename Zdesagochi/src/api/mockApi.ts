@@ -19,7 +19,6 @@ import { calcMoodWithBias, createDefaultCounters } from '../personality/Personal
 import {
   addCatharsisProgress,
   recordLegacy,
-  onStartSleep,
   createInitialTraitVector,
 } from '../personality/TraitEvolutionEngine';
 import {
@@ -671,21 +670,13 @@ export class MockApiService implements ApiService {
   async syncPet() {
     await delay(rand(80, 160));
     traitSyncCounter++;
-    const personality = getPersonality(S.pet.personality);
     const now = mockNow();
     const lastUpdated = new Date(S.pet.lastUpdated);
     const elapsedMinutes = Math.max(0, (now.getTime() - lastUpdated.getTime()) / 60000);
     const prevStage = S.pet.stage;
 
-    await applyMockPersonalityCommand({ type: 'sync', at: now.toISOString() });
-
-    if (!S.pet.isAsleep && personality.autoSleep.enabled && S.pet.stats.energy <= personality.autoSleep.energyThreshold) {
-      if (mockRng() < personality.autoSleep.probability) {
-        S.pet.isAsleep = true;
-        onStartSleep(S.pet, { now, rng: mockRng });
-        addEvent('sleep', 'Задремал сам', '😴');
-      }
-    }
+    const result = await applyMockPersonalityCommand({ type: 'sync', at: now.toISOString() });
+    if (result.meta?.autoSleepStarted) addEvent('sleep', 'Задремал сам', '😴');
 
     S.pet.ageHours += elapsedMinutes / 60;
 

@@ -23,20 +23,25 @@
 
 - `commandHandlers.ts` — главный доменный orchestrator для `PetCommand`.
 - `stateLayers.ts` — общий источник активных emergent states по слоям `gameplay`, `evolution`, `cognitive`.
-- `mockApi.ts` — UI/mock adapter: экономика, XP, inventory, achievements, quests, local persistence.
+- `PetService` / `LocalSave` / `SyncQueue` / `ServerApi` — offline shell и будущий online command contract.
+- `mockApi.ts` — UI/mock compatibility adapter: economy/inventory/achievements/quests/events shell.
 
 Ключевой прогресс:
 
 - P0-баги из аудита закрыты.
 - `applyPersonalityCommand()` уже вызывает gameplay pipeline: counters, flags, mood, decay, passives, gameplay state layers.
-- `mockApi` переведен на thin-wrapper подход для основных personality-команд.
+- `mockApi` delegates основную command path в `PetService`.
 - `stateLayers` уже предотвращает перетирание gameplay/evolution/cognitive states.
-- Offline command log и replay уже работают для personality-side логики.
+- Offline shell работает через `LocalSave` + `SyncQueue`, а legacy command log/replay остаются для personality-side helpers/tests.
+- Explainability history сохраняет command/result/events.
+- Есть deterministic balance report.
 
 Текущая проверка:
 
 - `npm test` проходит.
+- `npx tsc --noEmit` проходит.
 - `npm run build` проходит.
+- `npm run simulate:balance` проходит.
 - Есть Vite warning про chunk > 500 kB. Это не ошибка personality engine.
 
 ---
@@ -158,7 +163,7 @@
 - targeted `rg` по `src/api/mockApi.ts` не находит старые gameplay outcome calculators;
 - `npm test` и `npm run build` проходят.
 
-Следующий шаг: MVP-2/P4 — разрезать `mockApi` на PetService, LocalSave, SyncQueue и ServerApi contract.
+Следующий шаг: backend replay/validation adapter поверх уже готовых PetService, LocalSave, SyncQueue и ServerApi contract.
 
 ---
 
@@ -215,23 +220,23 @@
 
 ---
 
-### P4. Split `mockApi` into offline-first services
+### P4. Split `mockApi` into offline-first services — DONE
 
 Цель: заменить `mockApi` как псевдо-server на понятные слои.
 
 Задачи:
 
-1. `PetService` — принимает UI action и вызывает command engine.
-2. `LocalSave` — хранит pet/account/inventory локально.
-3. `SyncQueue` — хранит pending commands offline.
-4. `ServerApi` — отправляет commands при наличии интернета.
-5. `mockApi` удалить или оставить только как test/dev fixture.
+1. `PetService` — принимает UI action и вызывает command engine. Done.
+2. `LocalSave` — хранит pet/account/inventory локально. Done.
+3. `SyncQueue` — хранит pending commands offline. Done.
+4. `ServerApi` — command contract для будущей отправки на backend. Done.
+5. `mockApi` оставить как compatibility shell для текущего UI/dev runtime. Done.
 
 Критерий готовности:
 
 - игра работает offline через LocalSave + SyncQueue;
-- при интернете pending commands уходят в ServerApi;
-- gameplay logic не живет в persistence/sync слоях.
+- gameplay logic не живет в persistence/sync слоях;
+- backend submit/confirm остается следующим server-side этапом.
 
 ---
 
@@ -395,11 +400,11 @@ Reports:
 
 ### Sprint 2 — Data-driven conditions
 
-1. Спроектировать `emergentConditions` schema.
-2. Добавить validator.
-3. Перенести 2-3 состояния как pilot.
-4. Перенести остальные состояния.
-5. Убрать hardcoded `personality.id ===` из `computeEmergentState`.
+1. Спроектировать `emergentConditions` schema. Done: `GAMEPLAY_STATE_RULES`.
+2. Добавить validator. Deferred: пока покрыто typed registry + regression tests.
+3. Перенести 2-3 состояния как pilot. Done.
+4. Перенести остальные состояния. Done.
+5. Убрать hardcoded `personality.id ===` из `computeEmergentState`. Done.
 
 Почему не все сразу:
 
@@ -411,7 +416,7 @@ Reports:
 2. Создать LocalSave без gameplay logic. Done.
 3. Создать SyncQueue для pending commands. Done.
 4. Описать ServerApi command contract. Done.
-5. После offline shell вернуться к `applyEligibleSystemInfluences()` и generic `onApply` lifecycle hooks.
+5. После offline shell вернуться к `applyEligibleSystemInfluences()` и generic `onApply` lifecycle hooks. Partial: auto-sleep перенесен в command sync outcome; generic pass еще впереди.
 
 Почему здесь:
 
@@ -430,10 +435,12 @@ Reports:
 
 ### Sprint 5 — Balance / backend
 
-1. Simulation reports.
-2. Backend replay adapter.
-3. Remote registry endpoint.
-4. Global balance pipeline.
+1. Simulation reports. Done: `npm run simulate:balance` writes `docs/reports/personality_balance_report.md`.
+2. Final audit. Done: `docs/reports/personality_engine_final_audit.md`.
+3. Backend replay adapter.
+4. Remote registry endpoint.
+5. Global balance pipeline.
+6. Broader Monte Carlo simulation reports.
 
 ---
 

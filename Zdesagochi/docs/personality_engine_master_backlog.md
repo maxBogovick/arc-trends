@@ -446,6 +446,6 @@ MVP считается готовым, когда выполнено:
 
 Делать именно это:
 
-1. `M3. Data-driven emergent states` — убрать personality-specific activation branches из `computeEmergentState()`.
-2. `M4. System influences` — вынести `system:*` / `env:*` influences в generic sync pass.
-3. `M6. Simulation reports` — проверить скорость formation/evolution/shadow/singularity/memories.
+1. `Backend replay/validation adapter` — переигрывать или валидировать `SyncQueue` commands тем же command outcome contract.
+2. `M4. System influences` — вынести оставшиеся `system:*` / `env:*` influences в generic sync pass.
+3. `Broader balance proof` — добавить Monte Carlo/edge-case simulation reports поверх deterministic M6 report.

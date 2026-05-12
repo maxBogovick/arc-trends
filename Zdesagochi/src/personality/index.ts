@@ -4,6 +4,7 @@ export * from './personalities';
 export * from './emergentStates';
 export * from './stateLayers';
 export * from './patternRules';
+export * from './gameplayStateRules';
 export * from './PersonalityEngine';
 export * from './TraitEvolutionEngine';
 export * from './personalityTraitMap';

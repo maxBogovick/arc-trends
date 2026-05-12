@@ -1051,16 +1051,22 @@ singularityZones:      PersonalityId[];
 ### Phase A.1 — Offline-first Core Contract
 - [x] `PetCommand` — структурные команды с идемпотентным `commandId`
 - [x] `DomainEvent` — машинно-читаемые события для replay/sync
-- [x] `OfflinePetSave` — snapshot + append-only command log + sync cursor
+- [x] `OfflinePetSave` — legacy/helper storage для personality replay tests
+- [x] `PetService` — product command path поверх command engine
+- [x] `LocalSave` — pet/account/coins/inventory/cooldowns snapshot
+- [x] `SyncQueue` — pending command queue с dedupe по `commandId`
+- [x] `ServerApi` — contract для будущего server command submit/result fetch
+- [x] `ExplainabilityLog` — persisted command/result/events history
 - [x] Serializable `influenceCooldowns` для replay-friendly cooldown state
 - [x] `PERSONALITY_ENGINE_VERSION` и `STATIC_REGISTRY_VERSION`
 - [x] Pure helpers для append/deduplicate/getUnsynced/markSynced
 - [x] Personality-side command handler для trait/sleep/sync эффектов
 - [x] Replay helper для последовательного применения command log
 - [x] Persist adapter contract для offline-сохранения
-- [x] Mock runtime сохраняет/восстанавливает offline snapshot + command log
-- [ ] Full command handler для gameplay stats/economy/inventory/rewards
-- [x] Browser/mock persist adapter подключён для pet snapshot + command log
+- [x] Mock runtime delegates command path to `PetService`
+- [x] Command handler для core gameplay stats/XP/coins/blockers основных pet actions
+- [x] Browser/mock persist adapter подключён для `LocalSave` + `SyncQueue` + `ExplainabilityLog`
+- [ ] Full backend parity для economy/inventory/rewards confirmation
 - [ ] Backend replay/validation adapter
 
 ### Phase A — Фундамент
@@ -1073,13 +1079,13 @@ singularityZones:      PersonalityId[];
 - [x] Добавить поля в Pet и Account
 - [x] Unit-тесты
 
-### Phase B — Интеграция в MockApi
+### Phase B — Command / Mock integration
 - [x] `applyInfluence()` во всех базовых actions/items/env (с `getIntensityMultiplier()`)
 - [x] `RegisteredInfluence.conditions` реально блокируют применение influence
 - [x] Deterministic runtime context для command replay (`now` + `rng`)
-- [x] `applyRegression()` + `checkEvolution()` в `syncPet()`
+- [x] `applyRegression()` + `checkEvolution()` через command/PetService sync path
 - [x] `checkSingularity()` + `collapseSingularity()`
-- [x] `onStartSleep()` / `onWakeFromSleep()` с min-sleep-duration
+- [x] `onStartSleep()` / `onWakeFromSleep()` с min-sleep-duration через command handler
 - [x] `checkVarianceHardReset()` (48h fallback)
 - [x] `identity_crisis` через voidSyncs
 - [x] `shadow_form`: double-barrier, `triggerCatharsis()`
@@ -1136,7 +1142,10 @@ singularityZones:      PersonalityId[];
 - Singularity как первый gate `checkEvolution()` и единственный быстрый путь метаморфозы;
 - `shadow_form`, catharsis, cooldown, `confused` sleep lifecycle;
 - Core Memories: threshold crossing, weekly drift, rare/common cap;
-- MockApi integration для базового ухода, items/env, sleep lifecycle, sync;
+- command handler + PetService integration для базового ухода, items/env, sleep lifecycle, sync;
+- data-driven `GAMEPLAY_STATE_RULES` для ordinary gameplay emergent states;
+- offline shell: `LocalSave`, `SyncQueue`, `ServerApi`, `ExplainabilityLog`;
+- simulation balance report для formation/evolution/shadow/singularity/memories;
 - New Life в новом теле: `/api/pet/new-life`, `legacyVector`, `memoryGuardian`, Guardian hints;
 - EvolutionProposal accept/reject flow: API, mock, store, UI, command handler, tests;
 - inline UI для formation, proposal, singularity, catharsis, confused, memory guardian.
@@ -1145,8 +1154,9 @@ singularityZones:      PersonalityId[];
 
 - NPC/social: `applyNpcVisit()`, `npcPets.ts`, `NpcVisitPanel.tsx`;
 - `TraitRadar.tsx` и выделение inline UI-блоков в отдельные компоненты при необходимости;
-- full offline command handler для economy/inventory/rewards;
-- backend replay/validation adapter;
+- backend replay/validation adapter и server confirmation для economy/inventory/rewards;
+- generic `system:*` / `env:*` influence sync pass; сейчас command layer владеет auto-sleep, но не всей registry-driven lifecycle логикой;
+- более широкий Monte Carlo balance proof за пределами core deterministic scenarios;
 - LiveOps backend: `/api/influence-registry`, server validation, GlobalBalancePatch расчёт, CMS;
 - Tiny AI hardening и A/B metrics;
 - Phase G gameplay features: training, discipline, cosmetic influence, multiplayer.
@@ -1194,7 +1204,7 @@ Backend/future adapter:
 
 ### Offline storage contract
 
-Минимально хранить:
+Legacy personality helper хранит:
 
 ```typescript
 interface OfflinePetSave {
@@ -1206,6 +1216,8 @@ interface OfflinePetSave {
   savedAt: string;
 }
 ```
+
+Current product/offline shell path хранит отдельно `LocalSave` для canonical local snapshot, `SyncQueue` для pending commands и `ExplainabilityLog` для command/result/events history. `OfflinePetSave` остаётся полезным для replay helpers и старых personality-side tests, но не является единственным runtime storage contract.
 
 Команды должны быть идемпотентными и иметь стабильный `commandId`.
 
