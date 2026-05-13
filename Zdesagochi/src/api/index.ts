@@ -14,6 +14,14 @@ export { RealApiService } from './realApi';
 export { LocalSave, DEFAULT_LOCAL_SAVE_KEY, inventoryEntriesToMap } from './localSave';
 export { SyncQueue, DEFAULT_SYNC_QUEUE_KEY } from './syncQueue';
 export {
+  DEFAULT_OFFLINE_PET_SAVE_KEY,
+  createBrowserOfflineStorage,
+  deleteOfflinePetSave,
+  loadOfflinePetSave,
+  saveOfflinePetSave,
+  trySaveOfflinePetSave,
+} from './offlineStorage';
+export {
   ExplainabilityLog,
   DEFAULT_EXPLAINABILITY_LOG_KEY,
   DEFAULT_EXPLAINABILITY_LOG_LIMIT,
@@ -22,8 +30,11 @@ export {
 } from './explainability';
 export { PetService } from './petService';
 export { BackendReplayServerApi } from './backendReplayServer';
+export { appPersonalityEngine } from './personalityEngineAdapter';
+export { fromPersonalityState, toPersonalityState } from './personalityPetAdapter';
 export type { LocalInventoryEntry, LocalSaveSnapshot, LocalSaveState, LocalSaveLoadResult } from './localSave';
 export type { SyncQueueLoadResult } from './syncQueue';
+export type { OfflineKeyValueStorage, OfflinePetSaveLoadResult, OfflinePetSaveResult } from './offlineStorage';
 export type { CommandExplanation, ExplainabilityLogLoadResult, ExplainabilityRecord } from './explainability';
 export type {
   ServerApi,

@@ -1,4 +1,4 @@
-import type { Pet } from '../api/types';
+import type { PersonalityState } from './coreState';
 import { EMERGENT_STATE_MAP } from './emergentStates';
 import type { ActiveEmergentState, EmergentStateLayer, EmergentStateType } from './types';
 
@@ -12,7 +12,7 @@ export function getEmergentStateLayer(type: EmergentStateType): EmergentStateLay
 }
 
 export function setLayeredEmergentState(
-  pet: Pet,
+  pet: PersonalityState,
   type: EmergentStateType,
   enteredAt: string,
 ): void {
@@ -30,7 +30,7 @@ export function setLayeredEmergentState(
 }
 
 export function clearLayeredEmergentState(
-  pet: Pet,
+  pet: PersonalityState,
   type: EmergentStateType,
 ): void {
   const layer = getEmergentStateLayer(type);
@@ -44,7 +44,7 @@ export function clearLayeredEmergentState(
   syncLegacyEmergentState(pet);
 }
 
-export function clearEmergentStateLayer(pet: Pet, layer: EmergentStateLayer): void {
+export function clearEmergentStateLayer(pet: PersonalityState, layer: EmergentStateLayer): void {
   if (pet.stateLayers?.[layer]) delete pet.stateLayers[layer];
   syncLegacyEmergentState(pet);
 }
@@ -53,18 +53,18 @@ export function isEvolutionManagedState(state: EmergentStateType | null | undefi
   return state ? EVOLUTION_STATES.has(state) : false;
 }
 
-export function getActiveEmergentStates(pet: Pet): ActiveEmergentState[] {
+export function getActiveEmergentStates(pet: PersonalityState): ActiveEmergentState[] {
   syncLayeredStatesFromLegacy(pet);
   return Object.values(pet.stateLayers ?? {})
     .flatMap(states => normalizeLayerValue(states))
     .sort((a, b) => getPriority(a.type) - getPriority(b.type));
 }
 
-export function getActiveEmergentStateTypes(pet: Pet): EmergentStateType[] {
+export function getActiveEmergentStateTypes(pet: PersonalityState): EmergentStateType[] {
   return getActiveEmergentStates(pet).map(state => state.type);
 }
 
-export function syncLayeredStatesFromLegacy(pet: Pet): void {
+export function syncLayeredStatesFromLegacy(pet: PersonalityState): void {
   pet.stateLayers ??= {};
   normalizeAllLayers(pet);
 
@@ -104,7 +104,7 @@ export function syncLayeredStatesFromLegacy(pet: Pet): void {
   syncLegacyEmergentState(pet);
 }
 
-export function syncLegacyEmergentState(pet: Pet): void {
+export function syncLegacyEmergentState(pet: PersonalityState): void {
   normalizeAllLayers(pet);
   const active = Object.values(pet.stateLayers ?? {}).flatMap(states => normalizeLayerValue(states));
   const primary = active
@@ -114,14 +114,14 @@ export function syncLegacyEmergentState(pet: Pet): void {
   pet.emergentStateEnteredAt = primary?.enteredAt;
 }
 
-function getLayerStates(pet: Pet, layer: EmergentStateLayer): ActiveEmergentState[] {
+function getLayerStates(pet: PersonalityState, layer: EmergentStateLayer): ActiveEmergentState[] {
   pet.stateLayers ??= {};
   const states = normalizeLayerValue(pet.stateLayers[layer]);
   pet.stateLayers[layer] = states;
   return states;
 }
 
-function normalizeAllLayers(pet: Pet): void {
+function normalizeAllLayers(pet: PersonalityState): void {
   pet.stateLayers ??= {};
   for (const layer of Object.keys(pet.stateLayers) as EmergentStateLayer[]) {
     const states = normalizeLayerValue(pet.stateLayers[layer]);

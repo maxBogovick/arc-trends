@@ -9,6 +9,7 @@
 > Каноничный gap-analysis относительно `PERSONALITY_EVOLUTION_SYSTEM.md`: `docs/personality_engine_v5_gap_analysis.md`.
 > Инженерные правила движения по roadmap: `docs/personality_engine_coding_rules.md`.
 > Полный master backlog: `docs/personality_engine_master_backlog.md`.
+> План выделения движка в библиотеку: `docs/personality_engine_library_extraction_playbook.md`.
 
 ---
 

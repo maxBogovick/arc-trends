@@ -6,10 +6,9 @@ import type {
   ServerCommandRejectReason,
   ServerRejectedCommand,
 } from './serverApi';
-import type { InfluenceCooldownState, PetCommand, PetCommandResult } from '../personality';
-import type { PersonalityCommandHandlerOptions } from '../personality/commandHandlers';
-import { applyPersonalityCommand } from '../personality';
-import { cloneData } from '../personality/clone';
+import type { InfluenceCooldownState, PersonalityRuntime, PetCommand, PetCommandResult } from '../../packages/personality-core/src';
+import { appPersonalityEngine } from './personalityEngineAdapter';
+import { fromPersonalityState, toPersonalityState } from './personalityPetAdapter';
 
 export interface BackendReplayServerState {
   pet: Pet;
@@ -23,9 +22,9 @@ export interface BackendReplayServerState {
 export interface BackendReplayServerOptions {
   initialState: BackendReplayServerState;
   normalizePet?: (pet: Pet) => Pet;
-  getIntensityMultiplier?: PersonalityCommandHandlerOptions['getIntensityMultiplier'];
-  memoryTextGenerator?: PersonalityCommandHandlerOptions['memoryTextGenerator'];
-  rng?: PersonalityCommandHandlerOptions['rng'];
+  getIntensityMultiplier?: PersonalityRuntime['getIntensityMultiplier'];
+  memoryTextGenerator?: PersonalityRuntime['memoryTextGenerator'];
+  rng?: PersonalityRuntime['rng'];
 }
 
 export class BackendReplayServerApi implements ServerApi {
@@ -36,7 +35,7 @@ export class BackendReplayServerApi implements ServerApi {
   private currentSync: number;
   private lastAcceptedCommandId: string | null;
   private readonly acceptedCommandIds = new Set<string>();
-  private readonly results: PetCommandResult[] = [];
+  private readonly results: PetCommandResult<Pet>[] = [];
 
   constructor(private readonly options: BackendReplayServerOptions) {
     this.pet = clonePet(options.initialState.pet);
@@ -89,16 +88,21 @@ export class BackendReplayServerApi implements ServerApi {
 
       try {
         if (command.type === 'sync') this.currentSync++;
-        const result = await applyPersonalityCommand(this.pet, command, {
+        const personalityState = toPersonalityState(this.pet, this.account, this.coins);
+        const stateResult = await appPersonalityEngine.applyCommand(personalityState, command, {
           currentSync: this.currentSync,
           influenceCooldowns: this.influenceCooldowns,
-          coinBalance: this.coins,
           getIntensityMultiplier: this.options.getIntensityMultiplier,
           memoryTextGenerator: this.options.memoryTextGenerator,
           rng: this.options.rng,
         });
 
-        this.pet = this.normalizePet(result.pet);
+        const pet = this.normalizePet(fromPersonalityState(stateResult.pet, this.pet));
+        const result: PetCommandResult<Pet> = {
+          ...stateResult,
+          pet,
+        };
+        this.pet = pet;
         this.coins += result.coinDelta;
         this.influenceCooldowns = result.influenceCooldowns;
         this.lastAcceptedCommandId = command.commandId;
@@ -118,7 +122,7 @@ export class BackendReplayServerApi implements ServerApi {
     };
   }
 
-  async fetchCommandResults(sinceCommandId: string | null): Promise<PetCommandResult[]> {
+  async fetchCommandResults(sinceCommandId: string | null): Promise<PetCommandResult<Pet>[]> {
     if (!sinceCommandId) return [...this.results];
 
     const index = this.results.findIndex(result => result.command.commandId === sinceCommandId);
@@ -196,4 +200,9 @@ function clonePet(pet: Pet): Pet {
 
 function cloneAccount(account: Account): Account {
   return cloneData(account);
+}
+
+function cloneData<T>(value: T): T {
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value)) as T;
 }

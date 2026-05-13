@@ -1,4 +1,4 @@
-import type { OfflinePetSave } from './commands';
+import type { OfflinePetSave } from '../../packages/personality-core/src';
 
 export const DEFAULT_OFFLINE_PET_SAVE_KEY = 'zdesagochi:offline-pet-save:v1';
 

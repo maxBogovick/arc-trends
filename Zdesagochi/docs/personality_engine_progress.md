@@ -171,13 +171,13 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 | Field | Current Value |
 |---|---|
-| Current Goal | Довести движок до usable offline-first MVP |
-| Current Step | Post-MVP production backend transport/storage |
-| Why This Step | Command outcome, offline queue, backend replay adapter и generic system/env pass есть; следующий риск — настоящий durable/secure sync |
-| Current Vector | Правильный: делаем `applyPersonalityCommand()` единым источником результата действия |
-| Next Step | Production backend transport/storage |
-| Why Next | In-memory replay adapter доказывает semantics, но real backend transport/storage/auth ещё не подключены |
-| Required Verification | `npm test`, `npm run build`, `npm run simulate:balance`, targeted `rg` checks when relevant |
+| Current Goal | Выделить движок характера в переиспользуемую библиотеку |
+| Current Step | Library extraction — Iteration 5: Versioning and docs |
+| Why This Step | Core/preset boundary и app-side storage/sync adapters отделены; следующий blocker — public schema/version/migration/docs для external consumers |
+| Current Vector | Правильный: strangler extraction без rewrite, без изменения gameplay balance |
+| Next Step | Add schema versioning, migration entrypoint, public quickstart/replay guarantee docs |
+| Why Next | Core API уже отделен от app/storage; external use needs stable versioned state contract and docs |
+| Required Verification | `npm test`, `npx tsc --noEmit`, `npm run build`, `npm run simulate:balance`, boundary `rg` checks |
 
 ---
 
@@ -185,35 +185,49 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Закрыт generic `system:*` / `env:*` sync pass.
+Закрыта Library extraction — Iteration 4: Storage and sync adapters.
 
 ### Why
 
-До этого registry содержал system/environment influences, но на `sync` реально применялся только ручной auto-sleep path. Из-за этого среда и состояние питомца не влияли на характер единым data-driven способом.
+После Iteration 3 core/preset package-like boundary был отделен от app `Pet`, но legacy `src/personality/offlineStorage.ts` все еще экспортировал browser/localStorage surface из personality module. Storage/sync/backend adapters должны жить app-side.
 
 ### Impact
 
-Добавлен `applyEligibleSystemInfluences()` на sync path.
+Добавлены и подключены:
 
-Теперь eligible `system:*` / `env:*` influences из registry проходят через общие conditions/cooldowns и `applyInfluence()`. Подключены условия `stat_below`, `session_gap_hours`, `same_room_hours`; `system:starvation`, `system:inactivity_long`, `system:consistent_week`, `env:same_room_48h` стали data-driven sync influences.
+- Moved offline storage helpers from `src/personality/offlineStorage.ts` to `src/api/offlineStorage.ts`.
+- Removed `offlineStorage` from `src/personality/index.ts` public exports.
+- `LocalSave`, `SyncQueue`, `ExplainabilityLog`, `ServerApi`, `BackendReplayServerApi`, `PetService` now use package-like core API for command/result/version types.
+- `BackendReplayServerApi` now uses `appPersonalityEngine` + app `Pet` adapter instead of direct `applyPersonalityCommand()`.
+- Added `src/api/personalityEngineAdapter.ts` as the shared app-side engine instance.
+- Exported storage helpers/types from `src/api/index.ts`.
 
-Добавлены domain events `influence_applied` и `influence_condition_skipped`; cooldown skip уже пишет `influence_cooldown_skipped`.
+Review fixes after implementation:
+
+- removed duplicate app engine singletons from `PetService` and `BackendReplayServerApi`;
+- removed app adapter dependency on internal `src/personality/clone`;
+- switched `personalityPetAdapter` to public package-like `PersonalityState` type;
+- removed direct `../personality` imports from storage/sync/backend replay service files.
+
+Gameplay constants, registry data and balance logic не менялись.
 
 ### Verification
 
 - `npm test` — passed.
 - `npx tsc --noEmit` — passed.
-- `npm run build` — passed with existing Vite chunk-size warning.
-- `npm run simulate:balance` — passed.
-- Tests: `personality command sync applies eligible system influences from registry`, `personality command sync records skipped system influence conditions and cooldowns`, `personality command sync applies eligible environment influences from registry`.
+- `npm run build` — passed; existing Vite chunk-size warning remains non-blocking.
+- `npm run simulate:balance` — passed and refreshed `docs/reports/personality_balance_report.md`.
+- Boundary `rg` check:
+  - `src/personality`, `packages/personality-core`, and `packages/personality-pet-preset` no longer contain `createBrowserOfflineStorage`, `localStorage`, `OfflineKeyValueStorage`, `saveOfflinePetSave`, or `loadOfflinePetSave`;
+  - `BackendReplayServerApi`, `ServerApi`, `LocalSave`, `SyncQueue`, `ExplainabilityLog`, and `PetService` no longer import `../personality` or call `applyPersonalityCommand` directly.
 
 ### Next
 
-Production backend transport/storage.
+Library extraction — Iteration 5: Versioning and docs.
 
 ### Why Next
 
-Local/offline and in-memory server semantics are now aligned. Следующий blocker — real durable/secure backend sync.
+Core/preset package-like boundary is storage-agnostic and app adapters own storage/sync. Следующий blocker — add versioned state schema, migration entrypoint, quickstart docs, and replay guarantee docs so external consumers have a stable contract.
 
 ---
 
@@ -360,7 +374,7 @@ npm run simulate:balance
 
 Status:
 
-- passed after M7 final audit;
+- passed after Library extraction Iteration 4;
 - Vite chunk size warning remains non-blocking.
 
 Latest cleanup check:
@@ -393,6 +407,8 @@ Status:
 4. Action/passive/decay rule registries are still partial; some behavior remains hardcoded.
 5. UI/product layer does not yet expose the full evolution system.
 6. Balance proof is deterministic for core scenarios; broader Monte Carlo/edge-case reports are still needed.
+7. Physical implementations still mostly live under `src/personality`; package-like exports are clean but not yet true package source ownership.
+8. Public schema version and migration entrypoint are not implemented yet.
 
 ---
 

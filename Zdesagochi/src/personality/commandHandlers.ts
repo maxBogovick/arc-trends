@@ -1,5 +1,5 @@
-import type { Pet, PetMood } from '../api/types';
 import type { AppliedModifier, DomainEvent, InfluenceCooldownState, PetCommand, PetCommandResult } from './commands';
+import type { PersonalityMood, PersonalityState } from './coreState';
 import { PERSONALITY_ENGINE_VERSION, STATIC_REGISTRY_VERSION } from './engineVersion';
 import { BASE_ACTION_RULES } from './actionRules';
 import { getInfluenceRegistry, getIntensityMultiplier as getGlobalIntensityMultiplier } from './influenceRegistry';
@@ -52,25 +52,25 @@ export interface PersonalityCommandReplayOptions extends Omit<PersonalityCommand
   initialSync?: number;
 }
 
-export interface PersonalityCommandReplayResult {
-  pet: Pet;
+export interface PersonalityCommandReplayResult<TState extends PersonalityState = PersonalityState> {
+  pet: TState;
   events: DomainEvent[];
-  commandResults: PetCommandResult[];
+  commandResults: PetCommandResult<TState>[];
   influenceCooldowns: InfluenceCooldownState;
   currentSync: number;
   engineVersion: string;
   registryVersion: string;
 }
 
-export async function replayPersonalityCommands(
-  pet: Pet,
+export async function replayPersonalityCommands<TState extends PersonalityState>(
+  pet: TState,
   commands: PetCommand[],
   options: PersonalityCommandReplayOptions = {},
-): Promise<PersonalityCommandReplayResult> {
+): Promise<PersonalityCommandReplayResult<TState>> {
   let currentPet = clonePet(pet);
   let currentSync = options.initialSync ?? 0;
   let influenceCooldowns = { ...(options.influenceCooldowns ?? {}) };
-  const commandResults: PetCommandResult[] = [];
+  const commandResults: PetCommandResult<TState>[] = [];
   const events: DomainEvent[] = [];
 
   for (const command of commands) {
@@ -99,11 +99,11 @@ export async function replayPersonalityCommands(
   };
 }
 
-export async function applyPersonalityCommand(
-  pet: Pet,
+export async function applyPersonalityCommand<TState extends PersonalityState>(
+  pet: TState,
   command: PetCommand,
   options: PersonalityCommandHandlerOptions = {},
-): Promise<PetCommandResult> {
+): Promise<PetCommandResult<TState>> {
   const nextPet = clonePet(pet);
   const now = new Date(command.at);
   const events: DomainEvent[] = [];
@@ -275,7 +275,7 @@ function createEmptyGameplayOutcome(): GameplayOutcome {
 }
 
 function applyGameplayCommand(
-  pet: Pet,
+  pet: PersonalityState,
   command: PetCommand,
   context: {
     now: Date;
@@ -315,7 +315,7 @@ function applyGameplayCommand(
       if (pet.stats.cleanliness < 30) {
         decayed.health = clampStat(decayed.health - 0.5 * elapsedMinutes);
       }
-      pet.stats = decayed as Pet['stats'];
+      pet.stats = decayed;
     } else {
       const restoreBonus = personality.restoreBonus.sleep?.energy ?? 0;
       pet.stats.energy = clampStat(pet.stats.energy + (5 + restoreBonus) * (elapsedMinutes / 15));
@@ -378,7 +378,7 @@ function applyGameplayCommand(
     pet.stats as Record<StatKey, number>,
     personality,
     pet.isAsleep,
-  ) as PetMood;
+  ) as PersonalityMood;
   pet.mood = currentMood;
   if (actionType === 'sync') {
     updateMoodStreaks(pet, currentMood);
@@ -418,7 +418,7 @@ function applyGameplayCommand(
 }
 
 function applyActionOutcome(
-  pet: Pet,
+  pet: PersonalityState,
   command: PetCommand,
   actionType: ActionType,
   context: { now: Date; rng: () => number; coinBalance: number },
@@ -504,7 +504,7 @@ function applyActionOutcome(
 }
 
 function getBaseActionResult(
-  pet: Pet,
+  pet: PersonalityState,
   command: PetCommand,
   actionType: ActionType,
   context: { rng: () => number },
@@ -574,7 +574,7 @@ function getPlayScore(command: Extract<PetCommand, { type: 'play' }>, rng: () =>
     : Math.floor(40 + rng() * 180);
 }
 
-function getSpecialBlockedAction(pet: Pet, command: PetCommand, actionType: ActionType): BlockedAction | null {
+function getSpecialBlockedAction(pet: PersonalityState, command: PetCommand, actionType: ActionType): BlockedAction | null {
   const personality = getPersonality(pet.personality);
   if (command.type !== 'wake' && command.type !== 'sync' && pet.isAsleep) {
     return { actionType, reason: 'Питомец спит!', alternativeHint: 'Разбуди питомца' };
@@ -604,7 +604,7 @@ function getSpecialBlockedAction(pet: Pet, command: PetCommand, actionType: Acti
 }
 
 function applySpecialOutcomeModifiers(
-  pet: Pet,
+  pet: PersonalityState,
   command: PetCommand,
   actionType: ActionType,
   outcome: GameplayOutcome,
@@ -644,14 +644,14 @@ function applySpecialOutcomeModifiers(
   }
 }
 
-function applyStatDeltas(pet: Pet, statDeltas: Partial<Record<StatKey, number>>): void {
+function applyStatDeltas(pet: PersonalityState, statDeltas: Partial<Record<StatKey, number>>): void {
   for (const [stat, value] of Object.entries(statDeltas)) {
     const key = stat as StatKey;
     pet.stats[key] = clampStat(pet.stats[key] + (value ?? 0));
   }
 }
 
-function applyXp(pet: Pet, amount: number): number {
+function applyXp(pet: PersonalityState, amount: number): number {
   let xp = pet.xp + Math.max(0, amount);
   let { level, xpToNext } = pet;
   let levelBonusCoins = 0;
@@ -701,7 +701,7 @@ function toGameplayAction(command: PetCommand): ActionType | null {
   }
 }
 
-function updateMoodStreaks(pet: Pet, mood: PetMood): void {
+function updateMoodStreaks(pet: PersonalityState, mood: PersonalityMood): void {
   if (mood === 'sad') {
     pet.behavioralCounters.consecutiveBadMoodSyncs++;
   } else {
@@ -725,7 +725,7 @@ function clampStat(value: number): number {
 }
 
 async function applyCommandInfluence(
-  pet: Pet,
+  pet: PersonalityState,
   command: PetCommand,
   options: PersonalityCommandHandlerOptions,
   ctx: Parameters<typeof applyInfluence>[2],
@@ -740,7 +740,7 @@ async function applyCommandInfluence(
 }
 
 async function applyEligibleSystemInfluences(
-  pet: Pet,
+  pet: PersonalityState,
   command: PetCommand,
   options: PersonalityCommandHandlerOptions,
   ctx: Parameters<typeof applyInfluence>[2],
@@ -777,7 +777,7 @@ async function applyEligibleSystemInfluences(
 }
 
 async function applyRegisteredInfluence(
-  pet: Pet,
+  pet: PersonalityState,
   influenceId: string,
   command: PetCommand,
   options: PersonalityCommandHandlerOptions,
@@ -852,7 +852,7 @@ function createDeterministicRng(seedText: string): () => number {
 }
 
 function getInfluenceIdForCommand(
-  pet: Pet,
+  pet: PersonalityState,
   command: PetCommand,
   registry: RegisteredInfluence[] = getInfluenceRegistry(),
 ): string | null {
@@ -889,11 +889,11 @@ function getInfluenceIdForCommand(
 function collectStateEvents(args: {
   events: DomainEvent[];
   command: PetCommand;
-  pet: Pet;
+  pet: PersonalityState;
   beforeVector: TraitVector;
   beforeMemoryIds: Set<string>;
-  beforeEmergentState: Pet['emergentState'];
-  beforeProposal: Pet['evolutionProposal'];
+  beforeEmergentState: PersonalityState['emergentState'];
+  beforeProposal: PersonalityState['evolutionProposal'];
 }): void {
   const { events, command, pet, beforeVector, beforeMemoryIds, beforeEmergentState, beforeProposal } = args;
 
@@ -960,6 +960,6 @@ function cloneTraitVector(vector: TraitVector): TraitVector {
   return { ...vector };
 }
 
-function clonePet(pet: Pet): Pet {
+function clonePet<TState extends PersonalityState>(pet: TState): TState {
   return cloneData(pet);
 }

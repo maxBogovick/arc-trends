@@ -2,9 +2,10 @@ import type { Account, Pet } from './types';
 import { ExplainabilityLog } from './explainability';
 import { LocalSave, inventoryEntriesToMap } from './localSave';
 import { SyncQueue } from './syncQueue';
-import type { InfluenceCooldownState, OfflineKeyValueStorage, PetCommand, PetCommandResult } from '../personality';
-import type { PersonalityCommandHandlerOptions } from '../personality/commandHandlers';
-import { applyPersonalityCommand, createBrowserOfflineStorage } from '../personality';
+import type { InfluenceCooldownState, PersonalityRuntime, PetCommand, PetCommandResult } from '../../packages/personality-core/src';
+import { createBrowserOfflineStorage, type OfflineKeyValueStorage } from './offlineStorage';
+import { appPersonalityEngine } from './personalityEngineAdapter';
+import { fromPersonalityState, toPersonalityState } from './personalityPetAdapter';
 import type { ServerApi, ServerCommandAck } from './serverApi';
 
 export type PetCommandDraft = PetCommand extends infer Command
@@ -23,8 +24,8 @@ export interface PetServiceState {
 
 export interface PetServiceRuntime {
   currentSync: number;
-  getIntensityMultiplier: NonNullable<PersonalityCommandHandlerOptions['getIntensityMultiplier']>;
-  memoryTextGenerator: NonNullable<PersonalityCommandHandlerOptions['memoryTextGenerator']>;
+  getIntensityMultiplier: NonNullable<PersonalityRuntime['getIntensityMultiplier']>;
+  memoryTextGenerator: NonNullable<PersonalityRuntime['memoryTextGenerator']>;
   rng: () => number;
 }
 
@@ -69,7 +70,7 @@ export class PetService {
     });
   }
 
-  async applyCommand(commandDraft: PetCommandDraft): Promise<PetCommandResult> {
+  async applyCommand(commandDraft: PetCommandDraft): Promise<PetCommandResult<Pet>> {
     if (this.options.autoHydrate !== false) this.hydrate();
     const state = this.options.getState();
     const command = {
@@ -78,17 +79,21 @@ export class PetService {
     } as PetCommand;
     const runtime = this.options.getRuntime();
 
-    const result = await applyPersonalityCommand(state.pet, command, {
+    const personalityState = toPersonalityState(state.pet, state.account, state.coins);
+    const stateResult = await appPersonalityEngine.applyCommand(personalityState, command, {
       currentSync: runtime.currentSync,
       influenceCooldowns: state.influenceCooldowns,
-      coinBalance: state.coins,
       getIntensityMultiplier: runtime.getIntensityMultiplier,
       memoryTextGenerator: runtime.memoryTextGenerator,
       rng: runtime.rng,
     });
 
-    const pet = this.options.normalizePet(result.pet);
-    const coins = state.coins + result.coinDelta;
+    const pet = this.options.normalizePet(fromPersonalityState(stateResult.pet, state.pet));
+    const result: PetCommandResult<Pet> = {
+      ...stateResult,
+      pet,
+    };
+    const coins = state.coins + stateResult.coinDelta;
     this.options.setState({
       pet,
       coins,

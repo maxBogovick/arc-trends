@@ -13,6 +13,16 @@ import { SyncQueue } from '../src/api/syncQueue';
 import { ExplainabilityLog, explainCommandRecord } from '../src/api/explainability';
 import { BackendReplayServerApi } from '../src/api/backendReplayServer';
 import { PetService, type PetServiceState } from '../src/api/petService';
+import { fromPersonalityState, toPersonalityState } from '../src/api/personalityPetAdapter';
+import {
+  deleteOfflinePetSave,
+  loadOfflinePetSave,
+  saveOfflinePetSave,
+  trySaveOfflinePetSave,
+  type OfflineKeyValueStorage,
+} from '../src/api/offlineStorage';
+import { createPersonalityEngine } from '../packages/personality-core/src';
+import { zdesagochiPetPreset } from '../packages/personality-pet-preset/src';
 import type { BehavioralCounters, BehavioralFlag, MoodSnapshot, TraitVector } from '../src/personality/types';
 import {
   applyActionModifiers,
@@ -72,14 +82,10 @@ import {
   applyPersonalityCommand,
   appendOfflineCommand,
   createOfflinePetSave,
-  deleteOfflinePetSave,
   getUnsyncedCommands,
-  loadOfflinePetSave,
   markCommandsSynced,
   replayPersonalityCommands,
-  saveOfflinePetSave,
-  trySaveOfflinePetSave,
-  type OfflineKeyValueStorage,
+  applyPersonalityStateCommand,
   type PetCommand,
 } from '../src/personality';
 
@@ -249,6 +255,185 @@ test('offline save captures snapshot with engine and registry versions', () => {
   assert.equal(save.engineVersion, PERSONALITY_ENGINE_VERSION);
   assert.equal(save.registryVersion, STATIC_REGISTRY_VERSION);
   assert.equal(save.savedAt, '2026-05-04T00:00:00.000Z');
+});
+
+test('personality pet adapter roundtrips engine-owned fields', () => {
+  const pet = makePet({
+    mood: 'sad' as PetMood,
+    stats: { hunger: 20, happiness: 35, energy: 45, health: 55, cleanliness: 65, bond: 75 },
+    ageHours: 72,
+    level: 4,
+    xp: 140,
+    xpToNext: 250,
+    isAsleep: true,
+    equippedRoomId: 'moon-room',
+    personality: 'paranoid',
+    behavioralFlags: [{
+      type: 'food_anxiety',
+      activatedAt: '2026-05-04T02:00:00.000Z',
+      severity: 2,
+      healProgress: 30,
+      lastHealAction: '2026-05-04T03:00:00.000Z',
+    }] as BehavioralFlag[],
+    emergentState: 'confused',
+    emergentStateEnteredAt: '2026-05-04T04:00:00.000Z',
+    behavioralCounters: {
+      ...createDefaultCounters(),
+      sessionGapHours: 9,
+      playCountToday: 3,
+      paranoidPhase: 'trusted',
+      bondActionsInPhase: 5,
+    } as BehavioralCounters,
+    moodHistory: [{ timestamp: '2026-05-04T05:00:00.000Z', mood: 'sad', avgStats: 49 }],
+    traitVector: { vitality: 42, sociality: 38, order: 61, appetite: 30, caution: 88, curiosity: 24 },
+    dailyTraitBudget: { caution: 4, appetite: 2 },
+    currentTargetZone: 'paranoid',
+    ticksInTargetZone: 6,
+    voidSyncs: 2,
+    dailyTraitSnapshots: [{
+      date: '2026-05-04',
+      vector: { vitality: 42, sociality: 38, order: 61, appetite: 30, caution: 88, curiosity: 24 },
+    }],
+    coreMemories: [{
+      id: 'memory-1',
+      timestamp: '2026-05-04T06:00:00.000Z',
+      tier: 'rare',
+      emoji: '!',
+      text: 'Boundary memory',
+      category: 'system',
+      traitKey: 'caution',
+      direction: 'up',
+      personalityHint: 'paranoid',
+    }],
+    lastMemoryTimestamp: { caution_up: '2026-05-04T06:00:00.000Z' },
+    visitedZones: ['paranoid', 'stoic'],
+    evolutionProposal: {
+      targetPersonalityId: 'stoic',
+      readiness: 71,
+      depth: 0.25,
+      proposedAt: '2026-05-04T07:00:00.000Z',
+      coreMemoryIds: ['memory-1'],
+      narrativeText: 'Boundary proposal',
+    },
+    evolutionHistory: [{
+      fromPersonalityId: 'playful',
+      toPersonalityId: 'paranoid',
+      evolvedAt: '2026-05-04T08:00:00.000Z',
+      trigger: 'manual',
+      coreMemoryIds: ['memory-1'],
+    }],
+    formationComplete: true,
+    formationProgress: 200,
+    traumaLevel: 12,
+    catharsisProgress: 34,
+    catharsisAchieved: true,
+    traumaCooldownUntil: '2026-05-14T00:00:00.000Z',
+    dailyVectorVariance: 11,
+    confusedState: true,
+    sleepStartedAt: '2026-05-04T01:00:00.000Z',
+    lastSleepTimestamp: '2026-05-03T21:00:00.000Z',
+    ticksInSingularity: 3,
+    singularityZones: ['paranoid', 'stoic', 'sage'],
+  });
+  setLayeredEmergentState(pet, 'confused', '2026-05-04T04:00:00.000Z');
+  const account: Account = {
+    legacyVector: { vitality: 51, sociality: 52, order: 53, appetite: 54, caution: 55, curiosity: 56 },
+    legacyCoefficient: 0.2,
+    legacyGeneration: 2,
+  };
+
+  const state = toPersonalityState(pet, account, 123);
+  const roundtripped = fromPersonalityState(state, makePet({ name: 'Shell Name', color: '#abc' }));
+
+  assert.deepEqual(roundtripped.stats, pet.stats);
+  assert.equal(roundtripped.personality, pet.personality);
+  assert.deepEqual(roundtripped.traitVector, pet.traitVector);
+  assert.deepEqual(roundtripped.behavioralCounters, pet.behavioralCounters);
+  assert.deepEqual(roundtripped.behavioralFlags, pet.behavioralFlags);
+  assert.equal(roundtripped.emergentState, pet.emergentState);
+  assert.deepEqual(roundtripped.stateLayers, pet.stateLayers);
+  assert.equal(roundtripped.evolutionProposal?.targetPersonalityId, 'stoic');
+  assert.deepEqual(roundtripped.evolutionHistory, pet.evolutionHistory);
+  assert.deepEqual(roundtripped.coreMemories, pet.coreMemories);
+  assert.equal(roundtripped.isAsleep, true);
+  assert.equal(roundtripped.sleepStartedAt, pet.sleepStartedAt);
+  assert.equal(roundtripped.lastSleepTimestamp, pet.lastSleepTimestamp);
+  assert.equal(roundtripped.name, 'Shell Name');
+  assert.equal(roundtripped.color, '#abc');
+  assert.equal(state.coinBalance, 123);
+  assert.deepEqual(state.legacy?.legacyVector, account.legacyVector);
+});
+
+testAsync('personality state command wrapper keeps app pet compatibility path', async () => {
+  const pet = makePet({ stats: { hunger: 70, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 } });
+  const state = toPersonalityState(pet, undefined, 10);
+  const result = await applyPersonalityStateCommand(state, {
+    type: 'feed',
+    foodId: 'apple',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-state-feed',
+  });
+
+  assert.equal(result.command.commandId, 'cmd-state-feed');
+  assert.equal(result.pet.stats.hunger > state.stats.hunger, true);
+  assert.equal(result.coinDelta >= 0, true);
+});
+
+testAsync('personality engine instance applies command from zdesagochi preset', async () => {
+  const engine = createPersonalityEngine(zdesagochiPetPreset);
+  const issues = engine.validateConfig();
+  assert.deepEqual(issues.filter(issue => issue.severity === 'error'), []);
+
+  const state = toPersonalityState(makePet({
+    stats: { hunger: 70, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  }), undefined, 10);
+  const result = await engine.applyCommand(state, {
+    type: 'feed',
+    foodId: 'apple',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-engine-feed',
+  });
+
+  assert.equal(result.command.commandId, 'cmd-engine-feed');
+  assert.equal(result.pet.stats.hunger > state.stats.hunger, true);
+  assert.ok(engine.explain(result).length > 0);
+
+  const { replay } = engine;
+  const replayResult = await replay(state, [{
+    type: 'feed',
+    foodId: 'apple',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-engine-feed-replay',
+  }]);
+  assert.equal(replayResult.commandResults.length, 1);
+  assert.equal(replayResult.pet.stats.hunger > state.stats.hunger, true);
+});
+
+testAsync('personality engine accepts a tiny custom preset for command influence', async () => {
+  const engine = createPersonalityEngine({
+    id: 'tiny-test-preset',
+    name: 'Tiny Test Preset',
+    influenceRegistry: [{
+      id: 'action:feed',
+      category: 'action',
+      label: 'Tiny Feed',
+      traitDeltas: { curiosity: 10 },
+      cooldownSyncs: 0,
+    }],
+    getIntensityMultiplier: () => 1,
+  });
+  const state = toPersonalityState(makePet({
+    stats: { hunger: 60, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  }));
+  const result = await engine.applyCommand(state, {
+    type: 'feed',
+    foodId: 'apple',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-custom-feed',
+  });
+
+  assert.equal(result.pet.traitVector.curiosity > state.traitVector.curiosity, true);
+  assert.ok(result.events.some(event => event.type === 'influence_applied' && event.influenceId === 'action:feed'));
 });
 
 test('offline command log is idempotent by commandId', () => {

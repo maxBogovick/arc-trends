@@ -259,3 +259,207 @@ Tradeoff:
 ### Next
 
 Начать M2/P3: расширить `PetCommandResult` и перенести base action result calculation из `mockApi` в command/gameplay layer.
+
+---
+
+## DEC-0004: Introduce PersonalityState before package extraction
+
+Status: accepted  
+Date: 2026-05-13  
+Related files: `src/personality/coreState.ts`, `src/personality/engineFacade.ts`, `src/api/personalityPetAdapter.ts`, `src/api/petService.ts`  
+Related roadmap item: Library extraction — Iteration 1
+
+### Context
+
+The personality engine still uses app `Pet` as its operational state. That makes the future library boundary unsafe because app-only fields, storage assumptions, and API contracts can leak into the reusable core.
+
+### Decision
+
+Introduce `PersonalityState` inside `src/personality/coreState.ts`, keep app `Pet` conversion in `src/api/personalityPetAdapter.ts`, and route `PetService` through:
+
+```text
+Pet -> PersonalityState -> applyPersonalityStateCommand() -> Pet
+```
+
+Keep the existing `applyPersonalityCommand(pet, command, options)` as the compatibility path for legacy callers during strangler extraction.
+
+### Why
+
+This separates the public state shape of the future core from the app API contract without rewriting gameplay logic, moving packages, or changing balance numbers.
+
+### Alternatives
+
+- Move files into `packages/` immediately: rejected, because the import boundary is not clean enough yet.
+- Put the app adapter in `src/personality`: rejected, because it would keep app `Pet` inside future core.
+- Rewrite command handlers around the new state in one step: rejected, because it would be a larger behavioral-risk refactor than Iteration 1 needs.
+
+### Consequences
+
+The app has a real adapter path now, and future extraction can target `PersonalityState` instead of app `Pet`. Some legacy `src/personality` files still import `src/api/types`; those are known follow-up work for later iterations.
+
+### Verification
+
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+- Boundary `rg` checks for app API imports in `src/personality`.
+
+### Next
+
+Add `createPersonalityEngine(config)` and `zdesagochiPetPreset` so core behavior can be configured through a preset before any package move.
+
+---
+
+## DEC-0005: Use engine factory and preset before package-like extraction
+
+Status: accepted  
+Date: 2026-05-13  
+Related files: `src/personality/engineFactory.ts`, `src/personality/zdesagochiPetPreset.ts`, `src/api/petService.ts`  
+Related roadmap item: Library extraction — Iteration 2
+
+### Context
+
+After `PersonalityState` was introduced, app code could enter the command path through a state adapter. The next problem was construction: consumers still needed to know which default registries, validators, versions, and runtime hooks belonged together.
+
+### Decision
+
+Add `createPersonalityEngine(config)` and keep the Zdesagochi defaults behind `zdesagochiPetPreset`. Route `PetService` through an engine instance created from that preset.
+
+The engine exposes:
+
+- `applyCommand(state, command, runtime?)`;
+- `replay(state, commands, runtime?)`;
+- `explain(result)`;
+- `validateConfig()`.
+
+### Why
+
+This moves the public entrypoint toward the target consumer shape:
+
+```text
+createPersonalityEngine(zdesagochiPetPreset).applyCommand(state, command)
+```
+
+without moving files into `packages/` yet and without changing gameplay balance.
+
+### Alternatives
+
+- Keep app code calling `applyPersonalityStateCommand()` directly: rejected, because it does not prove preset-driven construction.
+- Move packages now: rejected, because legacy app `Pet` imports still exist in `src/personality`.
+- Build a plugin system: rejected, because the current target is a virtual pet / companion engine, not a generic extension framework.
+
+### Consequences
+
+The app now uses the same factory/preset shape future consumers will use. Some default imports remain inside legacy command/gameplay implementation; Iteration 3 must create a stricter package-like boundary and continue separating pure exports from app adapters.
+
+### Verification
+
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+- Boundary `rg` checks for app API imports in new core/factory/preset files.
+
+### Next
+
+Create the package-like boundary for pure core/preset exports without npm publishing, then move/re-export only code that does not import app API, storage, sync, backend replay, or browser APIs.
+
+---
+
+## DEC-0006: Add package-like re-export boundary before moving implementations
+
+Status: accepted  
+Date: 2026-05-13  
+Related files: `packages/personality-core/src/index.ts`, `packages/personality-pet-preset/src/index.ts`, `src/personality/commands.ts`, `src/personality/commandHandlers.ts`, `src/personality/TraitEvolutionEngine.ts`, `src/personality/stateLayers.ts`, `src/api/petService.ts`  
+Related roadmap item: Library extraction — Iteration 3
+
+### Context
+
+The engine factory and preset existed, but implementation still lived under `src/personality`, and several legacy core files imported app `Pet` / `Account` from `src/api/types`. Moving implementation files directly into packages would have been risky while those imports existed.
+
+### Decision
+
+Create package-like `packages/personality-core/src` and `packages/personality-pet-preset/src` entrypoints as controlled re-export surfaces. Before exposing them, remove app API type imports from `src/personality` by using structural core types:
+
+- `PersonalityState`;
+- `PersonalityAccount`;
+- generic `PetCommandResult<TState>`;
+- generic replay results.
+
+Route `PetService` through the package-like engine/preset imports while keeping storage/browser adapters app-side.
+
+### Why
+
+This gives the app the same import shape that a future package consumer will use, while avoiding a large file move and preserving gameplay behavior.
+
+### Alternatives
+
+- Move all implementation files into `packages/` immediately: rejected, because storage and legacy app imports needed cleanup first.
+- Re-export all of `src/personality`: rejected, because that would expose browser storage and legacy helpers as public core API.
+- Keep package boundary only in docs: rejected, because app imports would not prove the boundary.
+
+### Consequences
+
+Core/preset package-like surfaces now exist and do not import app API types or storage/sync/backend adapters. Implementation still mostly lives in `src/personality`, so the next iteration should move or isolate storage adapters and then continue physical extraction.
+
+### Verification
+
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+- `rg` checks confirm no `src/api/types` imports in `packages/personality-core`, `packages/personality-pet-preset`, or `src/personality`.
+
+### Next
+
+Move browser/local storage surface out of the personality public module and keep storage/sync/backend adapters on the app side before deeper physical package extraction.
+
+---
+
+## DEC-0007: Keep storage and sync adapters app-side
+
+Status: accepted  
+Date: 2026-05-13  
+Related files: `src/api/offlineStorage.ts`, `src/api/localSave.ts`, `src/api/syncQueue.ts`, `src/api/explainability.ts`, `src/api/backendReplayServer.ts`, `src/api/personalityEngineAdapter.ts`, `src/personality/index.ts`  
+Related roadmap item: Library extraction — Iteration 4
+
+### Context
+
+The package-like core surface was clean, but `src/personality/offlineStorage.ts` still exported browser `localStorage` helpers through the legacy personality module. Backend replay and storage/sync services also imported command types and command execution through `../personality`, which kept infrastructure close to core internals.
+
+### Decision
+
+Move offline storage helpers to `src/api/offlineStorage.ts`, remove storage from `src/personality/index.ts`, and keep storage/sync/backend replay adapters app-side. App infrastructure now imports command/result/version types through `packages/personality-core/src`.
+
+`BackendReplayServerApi` now uses the public app engine path:
+
+```text
+app Pet -> toPersonalityState() -> appPersonalityEngine.applyCommand() -> fromPersonalityState()
+```
+
+### Why
+
+The future core package must be storage-agnostic and browser-agnostic. Keeping `localStorage`, local save, sync queue, explainability persistence, and backend replay under `src/api` makes the separation explicit without changing gameplay behavior.
+
+### Alternatives
+
+- Export storage helpers from core: rejected, because browser/local storage is infrastructure, not pure engine behavior.
+- Keep backend replay calling `applyPersonalityCommand()` directly: rejected, because it bypasses the public engine/preset boundary.
+- Move storage to a published package now: rejected, because package API/versioning is not stable yet.
+
+### Consequences
+
+Core/preset package-like surfaces can be imported without storage/sync/backend modules. The app still has offline-first flow through `LocalSave`, `SyncQueue`, `ExplainabilityLog`, and `BackendReplayServerApi`.
+
+### Verification
+
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+- Boundary `rg` checks confirm storage/browser symbols are absent from `src/personality` and package-like core/preset surfaces.
+
+### Next
+
+Add schema versioning, migration entrypoint, public quickstart, and replay guarantee docs so the clean core boundary becomes a stable external consumer contract.

@@ -1,4 +1,4 @@
-import type { Account, Pet } from '../api/types';
+import type { PersonalityAccount, PersonalityNamedState, PersonalityState } from './coreState';
 import { getIntensityMultiplier } from './influenceRegistry';
 import { TemplateGenerator, type MemoryTextGenerator } from './memoryTextGenerator';
 import { PERSONALITIES } from './personalities';
@@ -129,7 +129,7 @@ export function depthOfImmersion(vector: TraitVector, personalityId: Personality
 }
 
 export function applyInfluence(
-  pet: Pet,
+  pet: PersonalityState,
   influence: RegisteredInfluence,
   ctx: TraitEvolutionContext = {},
 ): ApplyInfluenceResult {
@@ -172,7 +172,7 @@ export function applyInfluence(
   return { prevVector, budgetedDelta, applied: true };
 }
 
-export function applyRegression(pet: Pet): void {
+export function applyRegression(pet: PersonalityState): void {
   const home = PERSONALITY_TRAIT_MAP[pet.personality as PersonalityId]?.position;
   if (!home) return;
 
@@ -185,7 +185,7 @@ export function applyRegression(pet: Pet): void {
   }
 }
 
-export function recordDailyTraitSnapshot(pet: Pet, now: Date, maxSnapshots = 30): boolean {
+export function recordDailyTraitSnapshot(pet: PersonalityState, now: Date, maxSnapshots = 30): boolean {
   const date = now.toISOString().slice(0, 10);
   const lastSnapshot = pet.dailyTraitSnapshots[pet.dailyTraitSnapshots.length - 1];
 
@@ -201,7 +201,7 @@ export function recordDailyTraitSnapshot(pet: Pet, now: Date, maxSnapshots = 30)
 }
 
 export function updateFormationProgress(
-  pet: Pet,
+  pet: PersonalityState,
   influence: RegisteredInfluence,
   budgetedDelta: Partial<TraitVector>,
   ctx: TraitEvolutionContext = {},
@@ -219,7 +219,7 @@ export function updateFormationProgress(
   }
 }
 
-export function completeFormation(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+export function completeFormation(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   const starter = PERSONALITIES
     .map(p => ({ id: p.id, depth: depthOfImmersion(pet.traitVector, p.id, 0) }))
     .reduce((best, candidate) => (candidate.depth > best.depth ? candidate : best));
@@ -238,7 +238,7 @@ export function completeFormation(pet: Pet, ctx: TraitEvolutionContext = {}): vo
   }, ctx);
 }
 
-export function checkEvolution(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+export function checkEvolution(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   if (checkSingularity(pet, ctx)) return;
   if (checkShadowForm(pet, ctx)) return;
 
@@ -289,7 +289,7 @@ export function checkEvolution(pet: Pet, ctx: TraitEvolutionContext = {}): void 
   };
 }
 
-export function acceptEvolution(pet: Pet, ctx: TraitEvolutionContext = {}): boolean {
+export function acceptEvolution(pet: PersonalityState, ctx: TraitEvolutionContext = {}): boolean {
   const proposal = pet.evolutionProposal;
   if (!proposal) return false;
 
@@ -326,7 +326,7 @@ export function acceptEvolution(pet: Pet, ctx: TraitEvolutionContext = {}): bool
   return true;
 }
 
-export function rejectEvolution(pet: Pet): boolean {
+export function rejectEvolution(pet: PersonalityState): boolean {
   if (!pet.evolutionProposal) return false;
 
   pet.evolutionProposal = undefined;
@@ -339,7 +339,7 @@ export interface SingularityState {
   zones: PersonalityId[];
 }
 
-export function detectSingularity(pet: Pet): SingularityState | null {
+export function detectSingularity(pet: PersonalityState): SingularityState | null {
   const inside = PERSONALITIES
     .map(p => ({ id: p.id, depth: depthOfImmersion(pet.traitVector, p.id, pet.ageHours) }))
     .filter(x => x.depth > 0)
@@ -351,7 +351,7 @@ export function detectSingularity(pet: Pet): SingularityState | null {
   return { zones: inside.slice(0, 3).map(x => x.id) };
 }
 
-export function checkSingularity(pet: Pet, ctx: TraitEvolutionContext = {}): boolean {
+export function checkSingularity(pet: PersonalityState, ctx: TraitEvolutionContext = {}): boolean {
   const state = detectSingularity(pet);
 
   if (!state) {
@@ -383,7 +383,7 @@ export function checkSingularity(pet: Pet, ctx: TraitEvolutionContext = {}): boo
   return true;
 }
 
-export function collapseSingularity(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+export function collapseSingularity(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   if (!pet.singularityZones.length) return;
 
   const fromPersonalityId = pet.personality as PersonalityId;
@@ -417,13 +417,13 @@ export function collapseSingularity(pet: Pet, ctx: TraitEvolutionContext = {}): 
   }, ctx);
 }
 
-export function canEnterShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): boolean {
+export function canEnterShadowForm(pet: PersonalityState, ctx: TraitEvolutionContext = {}): boolean {
   const now = getNow(ctx);
   if (pet.traumaCooldownUntil && now < new Date(pet.traumaCooldownUntil)) return false;
   return pet.traumaLevel >= SHADOW_FORM_TRAUMA_THRESHOLD;
 }
 
-export function checkShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): boolean {
+export function checkShadowForm(pet: PersonalityState, ctx: TraitEvolutionContext = {}): boolean {
   if (pet.emergentState === 'shadow_form') return true;
   if (!canEnterShadowForm(pet, ctx)) return false;
 
@@ -435,7 +435,7 @@ export function checkShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): bool
   return true;
 }
 
-export function exitShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+export function exitShadowForm(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   clearLayeredEmergentState(pet, 'shadow_form');
   pet.traumaLevel = 0;
   pet.catharsisProgress = 0;
@@ -445,7 +445,7 @@ export function exitShadowForm(pet: Pet, ctx: TraitEvolutionContext = {}): void 
   pet.traumaCooldownUntil = cooldown.toISOString();
 }
 
-export function triggerCatharsis(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+export function triggerCatharsis(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   const firstCatharsis = !pet.catharsisAchieved;
   exitShadowForm(pet, ctx);
   pet.catharsisAchieved = true;
@@ -461,7 +461,7 @@ export function triggerCatharsis(pet: Pet, ctx: TraitEvolutionContext = {}): voi
 }
 
 export function addCatharsisProgress(
-  pet: Pet,
+  pet: PersonalityState,
   amount: number,
   ctx: TraitEvolutionContext = {},
 ): boolean {
@@ -475,10 +475,10 @@ export function addCatharsisProgress(
 }
 
 export function recordLegacy(
-  account: Account,
-  pet: Pet,
+  account: PersonalityAccount,
+  pet: PersonalityNamedState,
   ctx: TraitEvolutionContext = {},
-): Account {
+): PersonalityAccount {
   const nextVector = account.legacyVector
     ? TRAIT_KEYS.reduce((acc, key) => {
         acc[key] = pet.traitVector[key] * LEGACY_BLEND_RATIO
@@ -518,7 +518,7 @@ export function recordLegacy(
   return account;
 }
 
-function createGuardianGuidance(pet: Pet): string[] {
+function createGuardianGuidance(pet: PersonalityState): string[] {
   const guidance: string[] = [];
 
   if (pet.traumaLevel >= 50 || pet.catharsisAchieved) {
@@ -548,7 +548,7 @@ function createGuardianGuidance(pet: Pet): string[] {
   return guidance.slice(0, 3);
 }
 
-export function handleVoidState(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+export function handleVoidState(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   pet.currentTargetZone = null;
   pet.ticksInTargetZone = 0;
   pet.evolutionProposal = undefined;
@@ -559,7 +559,7 @@ export function handleVoidState(pet: Pet, ctx: TraitEvolutionContext = {}): void
   }
 }
 
-export function updateConfusedState(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+export function updateConfusedState(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   pet.confusedState = pet.dailyVectorVariance >= CONFUSED_VARIANCE_THRESHOLD;
   if (pet.confusedState) {
     setLayeredEmergentState(pet, 'confused', getNow(ctx).toISOString());
@@ -568,12 +568,12 @@ export function updateConfusedState(pet: Pet, ctx: TraitEvolutionContext = {}): 
   }
 }
 
-export function onStartSleep(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+export function onStartSleep(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   pet.sleepStartedAt = getNow(ctx).toISOString();
 }
 
 export function onWakeFromSleep(
-  pet: Pet,
+  pet: PersonalityState,
   naturalWake: boolean,
   ctx: TraitEvolutionContext = {},
 ): void {
@@ -592,7 +592,7 @@ export function onWakeFromSleep(
   pet.sleepStartedAt = null;
 }
 
-export function checkVarianceHardReset(pet: Pet, ctx: TraitEvolutionContext = {}): void {
+export function checkVarianceHardReset(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   if (!pet.lastSleepTimestamp) return;
 
   const hoursSinceSleep = (
@@ -607,7 +607,7 @@ export function checkVarianceHardReset(pet: Pet, ctx: TraitEvolutionContext = {}
 }
 
 export async function checkThresholdCrossings(
-  pet: Pet,
+  pet: PersonalityState,
   prevVector: TraitVector,
   ctx: TraitEvolutionContext = {},
 ): Promise<void> {
@@ -644,7 +644,7 @@ export async function checkThresholdCrossings(
   }
 }
 
-export async function checkWeeklyDrift(pet: Pet, ctx: TraitEvolutionContext = {}): Promise<void> {
+export async function checkWeeklyDrift(pet: PersonalityState, ctx: TraitEvolutionContext = {}): Promise<void> {
   if (pet.dailyTraitSnapshots.length < 7) return;
 
   const weekAvg = computeWeeklyAverage(pet.dailyTraitSnapshots.slice(-7).map(snapshot => snapshot.vector));
@@ -688,7 +688,7 @@ export async function checkWeeklyDrift(pet: Pet, ctx: TraitEvolutionContext = {}
 }
 
 export function addCoreMemory(
-  pet: Pet,
+  pet: PersonalityState,
   memory: Omit<CoreMemory, 'id' | 'timestamp'>,
   ctx: TraitEvolutionContext = {},
 ): CoreMemory {
@@ -714,14 +714,14 @@ export function computeWeeklyAverage(vectors: TraitVector[]): TraitVector {
   }, {} as TraitVector);
 }
 
-function selectRelevantMemories(pet: Pet, targetPersonalityId: PersonalityId): string[] {
+function selectRelevantMemories(pet: PersonalityState, targetPersonalityId: PersonalityId): string[] {
   return pet.coreMemories
     .filter(memory => memory.tier === 'rare' || memory.personalityHint === targetPersonalityId)
     .slice(0, 3)
     .map(memory => memory.id);
 }
 
-function createEvolutionProposalText(pet: Pet, targetPersonalityId: PersonalityId): string {
+function createEvolutionProposalText(pet: PersonalityState, targetPersonalityId: PersonalityId): string {
   const target = PERSONALITIES.find(p => p.id === targetPersonalityId);
   const rareCount = pet.coreMemories.filter(memory => memory.tier === 'rare').length;
   const name = target?.name ?? targetPersonalityId;
@@ -746,7 +746,7 @@ function getMemoryTextGenerator(ctx: TraitEvolutionContext): MemoryTextGenerator
 
 function computeIntensity(
   influence: RegisteredInfluence,
-  pet: Pet,
+  pet: PersonalityState,
   ctx: TraitEvolutionContext,
 ): number {
   return (influence.intensityRules ?? []).reduce((value, rule) => {
@@ -755,7 +755,7 @@ function computeIntensity(
 }
 
 export function canApplyInfluence(
-  pet: Pet,
+  pet: PersonalityState,
   influence: RegisteredInfluence,
   ctx: TraitEvolutionContext = {},
 ): boolean {
@@ -763,7 +763,7 @@ export function canApplyInfluence(
 }
 
 export function getBlockedInfluenceConditions(
-  pet: Pet,
+  pet: PersonalityState,
   influence: RegisteredInfluence,
   ctx: TraitEvolutionContext = {},
 ): InfluenceCondition[] {
@@ -772,7 +772,7 @@ export function getBlockedInfluenceConditions(
 
 export function matchesInfluenceCondition(
   condition: InfluenceCondition,
-  pet: Pet,
+  pet: PersonalityState,
   ctx: TraitEvolutionContext,
 ): boolean {
   const params = condition.params;

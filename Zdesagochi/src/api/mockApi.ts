@@ -13,7 +13,8 @@ import type {
   BehavioralFlag, BehavioralCounters, MoodSnapshot,
   TraitVector,
 } from '../personality/types';
-import type { InfluenceCooldownState, OfflineKeyValueStorage, PetCommand } from '../personality';
+import type { InfluenceCooldownState, PetCommand } from '../../packages/personality-core/src';
+import type { OfflineKeyValueStorage } from './offlineStorage';
 import { PetService, type PetCommandDraft } from './petService';
 import { calcMoodWithBias, createDefaultCounters } from '../personality/PersonalityEngine';
 import {
@@ -27,9 +28,9 @@ import {
 import { createMemoryTextGenerator } from '../personality/memoryTextGenerator';
 import { getPersonality, getPersonalityBySkin } from '../personality/personalities';
 import {
-  createBrowserOfflineStorage,
   syncLayeredStatesFromLegacy,
 } from '../personality';
+import { createBrowserOfflineStorage } from './offlineStorage';
 
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
 

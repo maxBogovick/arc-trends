@@ -1,0 +1,111 @@
+import type { Account, Pet } from './types';
+import type { PersonalityState } from '../../packages/personality-core/src';
+
+export function toPersonalityState(
+  appPet: Pet,
+  account?: Account,
+  coins?: number,
+): PersonalityState {
+  return cloneData({
+    mood: appPet.mood,
+    stats: appPet.stats,
+    ageHours: appPet.ageHours,
+    level: appPet.level,
+    xp: appPet.xp,
+    xpToNext: appPet.xpToNext,
+    isAsleep: appPet.isAsleep,
+    equippedRoomId: appPet.equippedRoomId,
+    lastUpdated: appPet.lastUpdated,
+    personality: appPet.personality,
+    behavioralFlags: appPet.behavioralFlags,
+    emergentState: appPet.emergentState,
+    emergentStateEnteredAt: appPet.emergentStateEnteredAt,
+    stateLayers: appPet.stateLayers,
+    behavioralCounters: appPet.behavioralCounters,
+    moodHistory: appPet.moodHistory,
+    traitVector: appPet.traitVector,
+    dailyTraitBudget: appPet.dailyTraitBudget,
+    currentTargetZone: appPet.currentTargetZone,
+    ticksInTargetZone: appPet.ticksInTargetZone,
+    voidSyncs: appPet.voidSyncs,
+    dailyTraitSnapshots: appPet.dailyTraitSnapshots,
+    coreMemories: appPet.coreMemories,
+    lastMemoryTimestamp: appPet.lastMemoryTimestamp,
+    visitedZones: appPet.visitedZones,
+    evolutionProposal: appPet.evolutionProposal,
+    evolutionHistory: appPet.evolutionHistory,
+    formationComplete: appPet.formationComplete,
+    formationProgress: appPet.formationProgress,
+    traumaLevel: appPet.traumaLevel,
+    catharsisProgress: appPet.catharsisProgress,
+    catharsisAchieved: appPet.catharsisAchieved,
+    traumaCooldownUntil: appPet.traumaCooldownUntil,
+    dailyVectorVariance: appPet.dailyVectorVariance,
+    confusedState: appPet.confusedState,
+    sleepStartedAt: appPet.sleepStartedAt,
+    lastSleepTimestamp: appPet.lastSleepTimestamp,
+    ticksInSingularity: appPet.ticksInSingularity,
+    singularityZones: appPet.singularityZones,
+    coinBalance: coins,
+    legacy: account
+      ? {
+          legacyVector: account.legacyVector,
+          legacyCoefficient: account.legacyCoefficient,
+          legacyGeneration: account.legacyGeneration,
+        }
+      : undefined,
+  });
+}
+
+export function fromPersonalityState(
+  personalityState: PersonalityState,
+  appPet: Pet,
+): Pet {
+  return cloneData({
+    ...appPet,
+    mood: personalityState.mood,
+    stats: personalityState.stats,
+    ageHours: personalityState.ageHours,
+    level: personalityState.level,
+    xp: personalityState.xp,
+    xpToNext: personalityState.xpToNext,
+    isAsleep: personalityState.isAsleep,
+    equippedRoomId: personalityState.equippedRoomId,
+    lastUpdated: personalityState.lastUpdated,
+    personality: personalityState.personality,
+    behavioralFlags: personalityState.behavioralFlags,
+    emergentState: personalityState.emergentState,
+    emergentStateEnteredAt: personalityState.emergentStateEnteredAt,
+    stateLayers: personalityState.stateLayers,
+    behavioralCounters: personalityState.behavioralCounters,
+    moodHistory: personalityState.moodHistory,
+    traitVector: personalityState.traitVector,
+    dailyTraitBudget: personalityState.dailyTraitBudget,
+    currentTargetZone: personalityState.currentTargetZone,
+    ticksInTargetZone: personalityState.ticksInTargetZone,
+    voidSyncs: personalityState.voidSyncs,
+    dailyTraitSnapshots: personalityState.dailyTraitSnapshots,
+    coreMemories: personalityState.coreMemories,
+    lastMemoryTimestamp: personalityState.lastMemoryTimestamp,
+    visitedZones: personalityState.visitedZones,
+    evolutionProposal: personalityState.evolutionProposal,
+    evolutionHistory: personalityState.evolutionHistory,
+    formationComplete: personalityState.formationComplete,
+    formationProgress: personalityState.formationProgress,
+    traumaLevel: personalityState.traumaLevel,
+    catharsisProgress: personalityState.catharsisProgress,
+    catharsisAchieved: personalityState.catharsisAchieved,
+    traumaCooldownUntil: personalityState.traumaCooldownUntil,
+    dailyVectorVariance: personalityState.dailyVectorVariance,
+    confusedState: personalityState.confusedState,
+    sleepStartedAt: personalityState.sleepStartedAt,
+    lastSleepTimestamp: personalityState.lastSleepTimestamp,
+    ticksInSingularity: personalityState.ticksInSingularity,
+    singularityZones: personalityState.singularityZones,
+  });
+}
+
+function cloneData<T>(value: T): T {
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value)) as T;
+}

@@ -1,4 +1,4 @@
-import type { Pet } from '../api/types';
+import type { PersonalityState } from './coreState';
 import type {
   ActionType,
   BlockedAction,
@@ -57,8 +57,8 @@ export interface AppliedModifier {
   description: string;
 }
 
-export interface PetCommandResult {
-  pet: Pet;
+export interface PetCommandResult<TState extends PersonalityState = PersonalityState> {
+  pet: TState;
   events: DomainEvent[];
   command: PetCommand;
   influenceCooldowns: InfluenceCooldownState;
@@ -73,7 +73,7 @@ export interface PetCommandResult {
 }
 
 export interface OfflinePetSave {
-  petSnapshot: Pet;
+  petSnapshot: PersonalityState;
   commandLog: PetCommand[];
   lastSyncedCommandId: string | null;
   influenceCooldowns: InfluenceCooldownState;
@@ -83,7 +83,7 @@ export interface OfflinePetSave {
 }
 
 export function createOfflinePetSave(
-  petSnapshot: Pet,
+  petSnapshot: PersonalityState,
   savedAt: string,
   options: {
     commandLog?: PetCommand[];

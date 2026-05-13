@@ -1,4 +1,4 @@
-import type { AppliedModifier, DomainEvent, PetCommand, PetCommandResult } from '../personality';
+import type { AppliedModifier, DomainEvent, PetCommand, PetCommandResult } from '../../packages/personality-core/src';
 
 export const DEFAULT_EXPLAINABILITY_LOG_KEY = 'zdesagochi:explainability-log:v1';
 export const DEFAULT_EXPLAINABILITY_LOG_LIMIT = 100;
