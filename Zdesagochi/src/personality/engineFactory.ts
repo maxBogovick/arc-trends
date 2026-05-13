@@ -4,6 +4,7 @@ import type {
   PersonalityRuntime,
   PersonalityState,
 } from './coreState';
+import { PERSONALITY_STATE_SCHEMA_VERSION } from './engineVersion';
 import { applyPersonalityStateCommand, type PersonalityStateCommandResult } from './engineFacade';
 
 export interface PersonalityEngineValidationIssue {
@@ -32,6 +33,7 @@ export interface PersonalityReplayResult {
   commandResults: PersonalityStateCommandResult[];
   influenceCooldowns: PersonalityInfluenceCooldownState;
   currentSync: number;
+  schemaVersion: number;
   engineVersion?: string;
   registryVersion?: string;
 }
@@ -89,6 +91,7 @@ export function createPersonalityEngine(config: PersonalityEngineConfig): Person
       commandResults,
       influenceCooldowns,
       currentSync,
+      schemaVersion: currentState.schemaVersion ?? PERSONALITY_STATE_SCHEMA_VERSION,
       engineVersion: replayRuntime.engineVersion,
       registryVersion: replayRuntime.registryVersion,
     };

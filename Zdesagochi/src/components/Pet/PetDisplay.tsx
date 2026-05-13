@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Pet, PetMood } from '../../api';
 import { getSkin, type SkinDefinition, type EyeStyle, type OverlayStyle } from '../../data/skins';
 import { type BodyShapeId } from '../../data/bodyShapes';
@@ -9,11 +9,16 @@ import { getAura } from '../../data/auras';
 import { usePetStore } from '../../store/petStore';
 import { PetAura } from './PetAura';
 import { HeadShape, EarsShape, BodyShape, ArmsShape, LegsShape, TailShape, NoseShape, MouthShape, OutfitShape } from './ModularBody';
+import type { BehaviorMode } from './usePetBehaviorState';
 
 interface Props {
   pet: Pet;
   moodOverride?: PetMood;
   size?: number;
+  behaviorMode?: BehaviorMode;
+  sceneInteractionType?: string;
+  facingRight?: boolean;
+  mouseInRoom?: boolean;
   overrideState?: {
     gradientDirection?: 'radial' | 'vertical' | 'horizontal' | 'diagonal' | 'diagonal_reverse';
     equippedNoseId?: NoseId;
@@ -49,13 +54,13 @@ function getMouthPath(mood: PetMood, cy: number, hw: number): string {
   const cx = 100;
   switch (mood) {
     case 'ecstatic': return `M ${cx - hw} ${cy} Q ${cx} ${cy + 26} ${cx + hw} ${cy}`;
-    case 'happy':    return `M ${cx - hw + 4} ${cy} Q ${cx} ${cy + 18} ${cx + hw - 4} ${cy}`;
-    case 'content':  return `M ${cx - hw + 8} ${cy + 2} Q ${cx} ${cy + 13} ${cx + hw - 8} ${cy + 2}`;
-    case 'sad':      return `M ${cx - hw + 6} ${cy + 12} Q ${cx} ${cy - 8} ${cx + hw - 6} ${cy + 12}`;
-    case 'tired':    return `M ${cx - hw + 10} ${cy + 5} L ${cx + hw - 10} ${cy + 5}`;
-    case 'sick':     return `M ${cx - hw + 5} ${cy + 8} Q ${cx - 12} ${cy - 2} ${cx} ${cy + 6} Q ${cx + 12} ${cy + 14} ${cx + hw - 5} ${cy + 4}`;
+    case 'happy': return `M ${cx - hw + 4} ${cy} Q ${cx} ${cy + 18} ${cx + hw - 4} ${cy}`;
+    case 'content': return `M ${cx - hw + 8} ${cy + 2} Q ${cx} ${cy + 13} ${cx + hw - 8} ${cy + 2}`;
+    case 'sad': return `M ${cx - hw + 6} ${cy + 12} Q ${cx} ${cy - 8} ${cx + hw - 6} ${cy + 12}`;
+    case 'tired': return `M ${cx - hw + 10} ${cy + 5} L ${cx + hw - 10} ${cy + 5}`;
+    case 'sick': return `M ${cx - hw + 5} ${cy + 8} Q ${cx - 12} ${cy - 2} ${cx} ${cy + 6} Q ${cx + 12} ${cy + 14} ${cx + hw - 5} ${cy + 4}`;
     case 'sleeping': return `M ${cx - hw + 10} ${cy + 2} Q ${cx} ${cy + 12} ${cx + hw - 10} ${cy + 2}`;
-    default:         return `M ${cx - hw + 8} ${cy + 2} Q ${cx} ${cy + 13} ${cx + hw - 8} ${cy + 2}`;
+    default: return `M ${cx - hw + 8} ${cy + 2} Q ${cx} ${cy + 13} ${cx + hw - 8} ${cy + 2}`;
   }
 }
 
@@ -77,8 +82,11 @@ function EyeNormal({ cx, cy, color, mood }: EyeProps) {
     );
   return (
     <g>
-      <motion.ellipse cx={cx} cy={cy} rx={12} ry={13} fill="white"
-        animate={{ ry: [13, 13, 13, 0.5, 13] }} transition={{ duration: 4, repeat: Infinity, repeatDelay: 2 }} />
+      {/* scaleY wrapper avoids Framer Motion setting ry="undefined" on SVG element */}
+      <motion.g style={{ transformOrigin: `${cx}px ${cy}px` }}
+        animate={{ scaleY: [1, 1, 1, 0.04, 1] }} transition={{ duration: 4, repeat: Infinity, repeatDelay: 2 }}>
+        <ellipse cx={cx} cy={cy} rx={12} ry={13} fill="white" />
+      </motion.g>
       <ellipse cx={cx + off * 0.4} cy={cy + 1} rx={7} ry={7} fill={color} />
       <circle cx={cx + off} cy={cy - 3} r={2.5} fill="white" />
     </g>
@@ -109,8 +117,10 @@ function EyeSpiral({ cx, cy, color }: EyeProps) {
         style={{ transformOrigin: `${cx}px ${cy}px` }}>
         <circle cx={cx} cy={cy} r={5} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="8 4" opacity={0.7} />
       </motion.g>
-      <motion.circle cx={cx} cy={cy} r={2.5} fill={color}
-        animate={{ scale: [1, 1.5, 1], opacity: [1, 0.4, 1] }} transition={{ duration: 1.5, repeat: Infinity }} />
+      <motion.g style={{ transformOrigin: `${cx}px ${cy}px` }}
+        animate={{ scale: [1, 1.5, 1], opacity: [1, 0.4, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
+        <circle cx={cx} cy={cy} r={2.5} fill={color} />
+      </motion.g>
     </g>
   );
 }
@@ -119,8 +129,10 @@ function EyeSlit({ cx, cy, color }: EyeProps) {
   return (
     <g>
       <ellipse cx={cx} cy={cy} rx={13} ry={11} fill="#1A0500" />
-      <motion.ellipse cx={cx} cy={cy} rx={3.5} ry={10} fill={color}
-        animate={{ rx: [3.5, 2.5, 3.5] }} transition={{ duration: 3, repeat: Infinity }} />
+      <motion.g style={{ transformOrigin: `${cx}px ${cy}px` }}
+        animate={{ scaleX: [1, 0.71, 1] }} transition={{ duration: 3, repeat: Infinity }}>
+        <ellipse cx={cx} cy={cy} rx={3.5} ry={10} fill={color} />
+      </motion.g>
       <ellipse cx={cx} cy={cy} rx={2} ry={6} fill="rgba(255,200,0,0.55)" />
     </g>
   );
@@ -155,8 +167,10 @@ function EyeCross({ cx, cy, color }: EyeProps) {
       <circle cx={cx} cy={cy} r={12} fill="rgba(0,0,0,0.5)" />
       <line x1={cx - 11} y1={cy} x2={cx + 11} y2={cy} stroke={color} strokeWidth={2.5} strokeLinecap="round" />
       <line x1={cx} y1={cy - 11} x2={cx} y2={cy + 11} stroke={color} strokeWidth={2.5} strokeLinecap="round" />
-      <motion.circle cx={cx} cy={cy} r={3} fill={color}
-        animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 1.8, repeat: Infinity }} />
+      <motion.g style={{ transformOrigin: `${cx}px ${cy}px` }}
+        animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 1.8, repeat: Infinity }}>
+        <circle cx={cx} cy={cy} r={3} fill={color} />
+      </motion.g>
       <circle cx={cx} cy={cy} r={12} fill="none" stroke={color} strokeWidth={1.2} opacity={0.5} />
     </g>
   );
@@ -184,9 +198,11 @@ function EyeLens({ cx, cy, color }: EyeProps) {
     <g>
       <circle cx={cx} cy={cy} r={13} fill="#001020" />
       {[11, 8, 5, 2].map((r, i) => (
-        <motion.circle key={r} cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={1.5}
-          opacity={0.3 + i * 0.15}
-          animate={{ r: [r, r + 1.2, r] }} transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }} />
+        /* scale wrapper avoids Framer Motion setting r="undefined" on SVG element */
+        <motion.g key={r} style={{ transformOrigin: `${cx}px ${cy}px` }}
+          animate={{ scale: [1, 1 + 1.2 / r, 1] }} transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }}>
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={1.5} opacity={0.3 + i * 0.15} />
+        </motion.g>
       ))}
       <circle cx={cx} cy={cy} r={2} fill={color} />
     </g>
@@ -221,9 +237,10 @@ function EyeCute({ cx, cy, color, mood }: EyeProps) {
     );
   return (
     <g>
-      <motion.circle cx={cx} cy={cy} r={14} fill="white"
-        animate={{ scaleY: [1, 1, 1, 0.07, 1] }} transition={{ duration: 3.5, repeat: Infinity, repeatDelay: 1.5 }}
-        style={{ transformOrigin: `${cx}px ${cy}px` }} />
+      <motion.g style={{ transformOrigin: `${cx}px ${cy}px` }}
+        animate={{ scaleY: [1, 1, 1, 0.07, 1] }} transition={{ duration: 3.5, repeat: Infinity, repeatDelay: 1.5 }}>
+        <circle cx={cx} cy={cy} r={14} fill="white" />
+      </motion.g>
       <circle cx={cx + off * 0.3} cy={cy + 2} r={9} fill={color} />
       <circle cx={cx + off * 0.3 - 2} cy={cy - 3} r={3} fill="white" />
       <circle cx={cx + off * 0.3 + 3} cy={cy + 3} r={1.5} fill="white" opacity={0.7} />
@@ -241,7 +258,7 @@ function EyePixel({ cx, cy, color }: EyeProps) {
   return (
     <g>
       {/* 3×3 pixel grid eye */}
-      {[[-1,0],[0,-1],[1,0],[0,1],[0,0],[-1,-1],[1,-1],[-1,1],[1,1]].map(([dx, dy], i) => (
+      {[[-1, 0], [0, -1], [1, 0], [0, 1], [0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]].map(([dx, dy], i) => (
         <rect key={i}
           x={cx + dx * px - px / 2} y={cy + dy * px - px / 2}
           width={px} height={px}
@@ -284,7 +301,7 @@ function EyeWink({ cx, cy, color, mood }: EyeProps) {
 
 function Eyes({ eyeStyle, eyeColor, head, mood }: { eyeStyle: EyeStyle; eyeColor: string; head: ReturnType<typeof getHead>; mood: PetMood }) {
   const positions: EyeProps[] = [
-    { ...head.eyeLeft,  color: eyeColor, mood },
+    { ...head.eyeLeft, color: eyeColor, mood },
     { ...head.eyeRight, color: eyeColor, mood },
   ];
   return (
@@ -292,20 +309,20 @@ function Eyes({ eyeStyle, eyeColor, head, mood }: { eyeStyle: EyeStyle; eyeColor
       {positions.map((p, i) => {
         const k = i;
         switch (eyeStyle) {
-          case 'led':      return <EyeLED      key={k} {...p} />;
-          case 'spiral':   return <EyeSpiral   key={k} {...p} />;
-          case 'slit':     return <EyeSlit     key={k} {...p} />;
-          case 'crystal':  return <EyeCrystal  key={k} {...p} />;
-          case 'bubble':   return <EyeBubble   key={k} {...p} />;
-          case 'cross':    return <EyeCross    key={k} {...p} />;
-          case 'star':     return <EyeStar     key={k} {...p} />;
-          case 'lens':     return <EyeLens     key={k} {...p} />;
+          case 'led': return <EyeLED key={k} {...p} />;
+          case 'spiral': return <EyeSpiral key={k} {...p} />;
+          case 'slit': return <EyeSlit key={k} {...p} />;
+          case 'crystal': return <EyeCrystal key={k} {...p} />;
+          case 'bubble': return <EyeBubble key={k} {...p} />;
+          case 'cross': return <EyeCross key={k} {...p} />;
+          case 'star': return <EyeStar key={k} {...p} />;
+          case 'lens': return <EyeLens key={k} {...p} />;
           case 'hologram': return <EyeHologram key={k} {...p} />;
-          case 'cute':     return <EyeCute     key={k} {...p} />;
-          case 'pixel':    return <EyePixel    key={k} {...p} />;
-          case 'closed':   return <EyeClosed   key={k} {...p} />;
-          case 'wink':     return <EyeWink     key={k} {...p} />;
-          default:         return <EyeNormal   key={k} {...p} />;
+          case 'cute': return <EyeCute key={k} {...p} />;
+          case 'pixel': return <EyePixel key={k} {...p} />;
+          case 'closed': return <EyeClosed key={k} {...p} />;
+          case 'wink': return <EyeWink key={k} {...p} />;
+          default: return <EyeNormal key={k} {...p} />;
         }
       })}
     </>
@@ -338,9 +355,9 @@ function Overlay({ skin }: { skin: SkinDefinition }) {
     );
     case 'frost': return (
       <g opacity={0.38} stroke={c} fill="none" strokeWidth={1}>
-        {([[55,50,14],[150,60,10],[70,140,9],[135,148,11],[100,38,7]] as const).map(([cx, cy, r], idx) => (
+        {([[55, 50, 14], [150, 60, 10], [70, 140, 9], [135, 148, 11], [100, 38, 7]] as const).map(([cx, cy, r], idx) => (
           <g key={idx}>
-            {[0,1,2,3,4,5].map(i => {
+            {[0, 1, 2, 3, 4, 5].map(i => {
               const a = (i * Math.PI * 2) / 6;
               return <line key={i} x1={cx} y1={cy} x2={cx + r * Math.cos(a)} y2={cy + r * Math.sin(a)} />;
             })}
@@ -350,10 +367,12 @@ function Overlay({ skin }: { skin: SkinDefinition }) {
     );
     case 'bubbles': return (
       <g>
-        {([[52,58,6],[148,62,5],[65,140,7],[140,145,6],[100,38,5],[80,155,4]] as const).map(([cx, cy, r], i) => (
-          <motion.circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={c} strokeWidth={1.2} opacity={0.4}
-            animate={{ cy: [cy, cy-8, cy], scale: [1, 1.12, 1] }}
-            transition={{ duration: 2 + i * 0.4, repeat: Infinity, delay: i * 0.3 }} />
+        {([[52, 58, 6], [148, 62, 5], [65, 140, 7], [140, 145, 6], [100, 38, 5], [80, 155, 4]] as const).map(([cx, cy, r], i) => (
+          <motion.g key={i} style={{ transformOrigin: `${cx}px ${cy}px` }}
+            animate={{ y: [0, -8, 0], scale: [1, 1.12, 1] }}
+            transition={{ duration: 2 + i * 0.4, repeat: Infinity, delay: i * 0.3 }}>
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={c} strokeWidth={1.2} opacity={0.4} />
+          </motion.g>
         ))}
       </g>
     );
@@ -371,7 +390,7 @@ function Overlay({ skin }: { skin: SkinDefinition }) {
     );
     case 'stars': return (
       <g>
-        {([[55,55],[148,50],[65,145],[140,142],[100,35],[78,160],[128,158]] as const).map(([cx, cy], i) => (
+        {([[55, 55], [148, 50], [65, 145], [140, 142], [100, 35], [78, 160], [128, 158]] as const).map(([cx, cy], i) => (
           <motion.text key={i} x={cx} y={cy} fontSize={8} fill={c} textAnchor="middle"
             animate={{ opacity: [0.2, 0.65, 0.2], scale: [0.8, 1.3, 0.8] }}
             transition={{ duration: 2 + i * 0.3, repeat: Infinity, delay: i * 0.4 }}>
@@ -383,19 +402,22 @@ function Overlay({ skin }: { skin: SkinDefinition }) {
     case 'void': return (
       <g opacity={0.32}>
         {[0, 1, 2].map(i => (
-          <motion.ellipse key={i} cx={100} cy={100} rx={30 + i * 20} ry={20 + i * 15}
-            fill="none" stroke={c} strokeWidth={0.8}
-            animate={{ rx: [30 + i * 20, 36 + i * 20, 30 + i * 20], opacity: [0.4, 0.1, 0.4] }}
-            transition={{ duration: 3 + i, repeat: Infinity, delay: i * 0.5 }} />
+          <motion.g key={i} style={{ transformOrigin: '100px 100px' }}
+            animate={{ scaleX: [1, 1.18, 1], opacity: [0.4, 0.1, 0.4] }}
+            transition={{ duration: 3 + i, repeat: Infinity, delay: i * 0.5 }}>
+            <ellipse cx={100} cy={100} rx={30 + i * 20} ry={20 + i * 15} fill="none" stroke={c} strokeWidth={0.8} />
+          </motion.g>
         ))}
       </g>
     );
     case 'bioluminescence': return (
       <g>
-        {([[55,70,5],[150,75,4],[70,130,6],[135,135,5],[100,50,4],[82,160,3],[118,162,3]] as const).map(([cx, cy, r], i) => (
-          <motion.circle key={i} cx={cx} cy={cy} r={r} fill={c}
-            animate={{ opacity: [0.08, 0.55, 0.08], r: [r, r + 1.5, r] }}
-            transition={{ duration: 1.5 + i * 0.4, repeat: Infinity, delay: i * 0.3 }} />
+        {([[55, 70, 5], [150, 75, 4], [70, 130, 6], [135, 135, 5], [100, 50, 4], [82, 160, 3], [118, 162, 3]] as const).map(([cx, cy, r], i) => (
+          <motion.g key={i} style={{ transformOrigin: `${cx}px ${cy}px` }}
+            animate={{ opacity: [0.08, 0.55, 0.08], scale: [1, 1 + 1.5 / r, 1] }}
+            transition={{ duration: 1.5 + i * 0.4, repeat: Infinity, delay: i * 0.3 }}>
+            <circle cx={cx} cy={cy} r={r} fill={c} />
+          </motion.g>
         ))}
       </g>
     );
@@ -417,7 +439,7 @@ function LevelAccessory({ level }: { level: number }) {
   if (level >= 21) return <text x="100" y="22" fontSize="22" textAnchor="middle">🪽</text>;
   if (level >= 16) return <text x="100" y="24" fontSize="20" textAnchor="middle">😇</text>;
   if (level >= 11) return <text x="100" y="24" fontSize="18" textAnchor="middle">👑</text>;
-  if (level >= 6)  return <text x="100" y="26" fontSize="16" textAnchor="middle">🎩</text>;
+  if (level >= 6) return <text x="100" y="26" fontSize="16" textAnchor="middle">🎩</text>;
   return null;
 }
 
@@ -438,40 +460,77 @@ function useGlitch(enabled: boolean) {
   return xy;
 }
 
+// ─── Idle quirk hook ──────────────────────────────────────────────────────────
+
+type IdleQuirkType = 'spin' | 'squat' | 'jump' | 'arms_up' | 'head_tilt';
+
+function useIdleQuirk(active: boolean, hasArms: boolean): IdleQuirkType | null {
+  const [quirk, setQuirk] = useState<IdleQuirkType | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!active) {
+      setQuirk(null);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      return;
+    }
+
+    const schedule = () => {
+      // Fire once per ~60 seconds (45–75s window)
+      const delay = 45_000 + Math.random() * 30_000;
+      timerRef.current = setTimeout(() => {
+        const pool: IdleQuirkType[] = ['squat', 'jump', 'head_tilt'];
+        if (hasArms) pool.push('arms_up');
+        const picked = pool[Math.floor(Math.random() * pool.length)];
+        setQuirk(picked);
+        timerRef.current = setTimeout(() => {
+          setQuirk(null);
+          schedule(); // schedule next quirk
+        }, 1400);
+      }, delay);
+    };
+
+    schedule();
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [active, hasArms]);
+
+  return quirk;
+}
+
 // ─── PetDisplay ──────────────────────────────────────────────────────────────
 
-export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Props) {
+export function PetDisplay({ pet, moodOverride, size = 220, behaviorMode, sceneInteractionType, facingRight = true, mouseInRoom = false, overrideState }: Props) {
   const store = usePetStore();
 
-  const gradientDirection   = overrideState?.gradientDirection   ?? store.gradientDirection;
-  const equippedNoseId      = (overrideState?.equippedNoseId      ?? store.equippedNoseId)      as NoseId;
+  const gradientDirection = overrideState?.gradientDirection ?? store.gradientDirection;
+  const equippedNoseId = (overrideState?.equippedNoseId ?? store.equippedNoseId) as NoseId;
   const equippedMouthStyleId = (overrideState?.equippedMouthStyleId ?? store.equippedMouthStyleId) as MouthStyleId;
-  const equippedSkinId      = overrideState?.equippedSkinId      ?? store.equippedSkinId;
-  const equippedBodyId      = overrideState?.equippedBodyId      ?? store.equippedBodyId;
-  const equippedHeadId      = overrideState?.equippedHeadId      ?? store.equippedHeadId;
-  const equippedEarsId      = overrideState?.equippedEarsId      ?? store.equippedEarsId;
-  const equippedBodyPartId  = overrideState?.equippedBodyPartId  ?? store.equippedBodyPartId;
-  const equippedLimbsId     = overrideState?.equippedLimbsId     ?? store.equippedLimbsId;
-  const equippedArmsId      = (overrideState?.equippedArmsId      ?? store.equippedArmsId)      as ArmsId;
-  const equippedLegsId      = (overrideState?.equippedLegsId      ?? store.equippedLegsId)      as LegsId;
-  const equippedTailId      = overrideState?.equippedTailId      ?? store.equippedTailId;
-  const partColors          = overrideState?.partColors          ?? store.partColors;
-  const gradientEnabled     = overrideState?.gradientEnabled     ?? store.gradientEnabled;
-  const equippedOutfitId    = (overrideState?.equippedOutfitId   ?? store.equippedOutfitId) as import('../../data/petParts').OutfitId;
-  const outfitColor         = overrideState?.outfitColor         ?? store.outfitColor;
-  const outfitColor2        = overrideState?.outfitColor2        ?? store.outfitColor2;
-  const petColorOverride    = overrideState?.petColorOverride    ?? store.petColorOverride;
-  const petMorph            = overrideState?.petMorph           ?? store.petMorph;
-  const equippedAuraId      = overrideState?.equippedAuraId      ?? store.equippedAuraId;
+  const equippedSkinId = overrideState?.equippedSkinId ?? store.equippedSkinId;
+  const equippedBodyId = overrideState?.equippedBodyId ?? store.equippedBodyId;
+  const equippedHeadId = overrideState?.equippedHeadId ?? store.equippedHeadId;
+  const equippedEarsId = overrideState?.equippedEarsId ?? store.equippedEarsId;
+  const equippedBodyPartId = overrideState?.equippedBodyPartId ?? store.equippedBodyPartId;
+  const equippedLimbsId = overrideState?.equippedLimbsId ?? store.equippedLimbsId;
+  const equippedArmsId = (overrideState?.equippedArmsId ?? store.equippedArmsId) as ArmsId;
+  const equippedLegsId = (overrideState?.equippedLegsId ?? store.equippedLegsId) as LegsId;
+  const equippedTailId = overrideState?.equippedTailId ?? store.equippedTailId;
+  const partColors = overrideState?.partColors ?? store.partColors;
+  const gradientEnabled = overrideState?.gradientEnabled ?? store.gradientEnabled;
+  const equippedOutfitId = (overrideState?.equippedOutfitId ?? store.equippedOutfitId) as import('../../data/petParts').OutfitId;
+  const outfitColor = overrideState?.outfitColor ?? store.outfitColor;
+  const outfitColor2 = overrideState?.outfitColor2 ?? store.outfitColor2;
+  const petColorOverride = overrideState?.petColorOverride ?? store.petColorOverride;
+  const petMorph = overrideState?.petMorph ?? store.petMorph;
+  const equippedAuraId = overrideState?.equippedAuraId ?? store.equippedAuraId;
   const equippedAccessories = overrideState?.equippedAccessories ?? store.equippedAccessories;
-  const accessoryConfigs    = overrideState?.accessoryConfigs   ?? store.accessoryConfigs;
-  const eyeStyleOverride    = overrideState?.eyeStyleOverride   ?? store.eyeStyleOverride;
-  const eyeColorOverride    = overrideState?.eyeColorOverride   ?? store.eyeColorOverride;
-  const overlayOverride     = overrideState?.overlayOverride    ?? store.overlayOverride;
-  
-  const setAccessoryConfig  = store.setAccessoryConfig;
-  const recordHistory       = store.recordHistory;
-  const isEditor            = store.activeTab === 'editor';
+  const accessoryConfigs = overrideState?.accessoryConfigs ?? store.accessoryConfigs;
+  const eyeStyleOverride = overrideState?.eyeStyleOverride ?? store.eyeStyleOverride;
+  const eyeColorOverride = overrideState?.eyeColorOverride ?? store.eyeColorOverride;
+  const overlayOverride = overrideState?.overlayOverride ?? store.overlayOverride;
+
+  const setAccessoryConfig = store.setAccessoryConfig;
+  const recordHistory = store.recordHistory;
+  const isEditor = store.activeTab === 'editor';
 
   const renderAccessory = (slot: 'head' | 'face' | 'back' | 'neck' | 'clothing', behind: boolean) => {
     const id = equippedAccessories[slot];
@@ -480,13 +539,13 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
     if (!acc || id.startsWith('none') || config.behind !== behind) return null;
 
     let bx = 100, by = 0, bs = 26;
-    if (slot === 'head')     { by = 14;  bs = 26; }
-    if (slot === 'face')     { by = 86;  bs = 30; }
-    if (slot === 'neck')     { by = 126; bs = 22; }
+    if (slot === 'head') { by = 14; bs = 26; }
+    if (slot === 'face') { by = 86; bs = 30; }
+    if (slot === 'neck') { by = 126; bs = 22; }
     if (slot === 'clothing') { by = 152; bs = 48; }
     if (slot === 'back') {
       if (behind) { bx = 100; by = 130; bs = 52; }
-      else        { bx = 162; by = 112; bs = 28; }
+      else { bx = 162; by = 112; bs = 28; }
     }
 
     return (
@@ -512,10 +571,10 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
     ...baseSkin,
     eyeStyle: (eyeStyleOverride as EyeStyle) ?? baseSkin.eyeStyle,
     eyeColor: eyeColorOverride ?? baseSkin.eyeColor,
-    overlay:  (overlayOverride  as OverlayStyle) ?? baseSkin.overlay,
+    overlay: (overlayOverride as OverlayStyle) ?? baseSkin.overlay,
   };
-  const head  = getHead(equippedHeadId);
-  const aura  = getAura(equippedAuraId);
+  const head = getHead(equippedHeadId);
+  const aura = getAura(equippedAuraId);
   // Keep for backwards compat with any code still reading equippedBodyId
   void equippedBodyId;
 
@@ -528,26 +587,230 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
     return () => clearInterval(t);
   }, [skin.animStyle]);
 
+  // Wake-up stretch: detect isAsleep false→true transition
+  const [wakingUp, setWakingUp] = useState(false);
+  const prevAsleepRef = useRef(pet?.isAsleep);
+  useEffect(() => {
+    if (prevAsleepRef.current && !pet?.isAsleep) {
+      setWakingUp(true);
+      const t = setTimeout(() => setWakingUp(false), 1600);
+      return () => clearTimeout(t);
+    }
+    prevAsleepRef.current = pet?.isAsleep;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pet?.isAsleep]);
+
   const effectiveMood = moodOverride ?? pet?.mood ?? 'happy';
-  const baseGlow  = skin.animStyle === 'rainbow' ? `hsl(${hue},90%,60%)` : skin.colors.glow;
+  const baseGlow = skin.animStyle === 'rainbow' ? `hsl(${hue},90%,60%)` : skin.colors.glow;
   const baseBody1 = skin.animStyle === 'rainbow' ? `hsl(${hue},65%,72%)` : skin.colors.body1;
   const baseBody2 = skin.animStyle === 'rainbow' ? `hsl(${(hue + 120) % 360},65%,50%)` : skin.colors.body2;
 
-  const glowColor = petColorOverride?.glow  ?? baseGlow;
-  const body1     = petColorOverride?.body1 ?? baseBody1;
-  const body2     = petColorOverride?.body2 ?? baseBody2;
+  const glowColor = petColorOverride?.glow ?? baseGlow;
+  const body1 = petColorOverride?.body1 ?? baseBody1;
+  const body2 = petColorOverride?.body2 ?? baseBody2;
 
-  const floatAnim = pet?.isAsleep
-    ? { y: [0, -4, 0] as number[], transition: { duration: 4, repeat: Infinity, ease: 'easeInOut' as const } }
-    : skin.animStyle === 'pulse'
-    ? { scale: [1, 1.04, 1] as number[], transition: { duration: 1.8, repeat: Infinity, ease: 'easeInOut' as const } }
-    : skin.animStyle === 'wobble'
-    ? { rotate: [0, 2, -2, 0] as number[], transition: { duration: 1.2, repeat: Infinity, ease: 'easeInOut' as const } }
-    : skin.animStyle === 'wave'
-    ? { y: [0, -8, 2, -8, 0] as number[], transition: { duration: 4, repeat: Infinity, ease: 'easeInOut' as const } }
-    : skin.animStyle === 'spark'
-    ? { y: [0, -14, -10, -14, 0] as number[], transition: { duration: 0.7, repeat: Infinity, ease: 'easeInOut' as const } }
-    : { y: [0, -10, 0] as number[], transition: { duration: 3, repeat: Infinity, ease: 'easeInOut' as const } };
+  const facing = facingRight ? 1 : -1;
+
+  const hasLegs = equippedLegsId !== 'none' && !!equippedLegsId;
+  const hasArms = (equippedArmsId !== 'none' && !!equippedArmsId) || (equippedLimbsId !== 'none' && !!equippedLimbsId);
+
+  const isIdleMode = (behaviorMode === 'idle' || !behaviorMode) && !pet?.isAsleep;
+  const idleQuirk = useIdleQuirk(isIdleMode && !mouseInRoom, hasArms);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const floatAnim: any = (() => {
+    // Wake-up stretch has highest priority — runs right after sleeping ends
+    if (wakingUp) {
+      return {
+        scaleY: 1, y: 0, rotate: 0, x: 0,
+        transition: { duration: 1.4, ease: [0.34, 1.56, 0.64, 1] },
+      };
+    }
+
+    // Grabbed: squish down then pop up
+    if (behaviorMode === 'being_grabbed') {
+      return {
+        scaleY: [1, 0.68, 1.08, 1],
+        y: [0, 6, -10, 0],
+        transition: { duration: 0.28, ease: 'easeOut' },
+      };
+    }
+
+    // Carried: lifted, gentle breathe
+    if (behaviorMode === 'carried') {
+      return {
+        y: -30,
+        scaleY: [1, 1.03, 1],
+        transition: {
+          y:      { duration: 0.3, ease: 'easeOut' },
+          scaleY: { duration: 1.4, repeat: Infinity, ease: 'easeInOut' },
+        },
+      };
+    }
+
+    // Landing: wide squash on impact, stretch back up
+    if (behaviorMode === 'landing') {
+      return {
+        y: [0, 8, -4, 0],
+        scaleY: [0.62, 1.14, 0.96, 1],
+        transition: { duration: 0.6, ease: 'easeOut' },
+      };
+    }
+
+    // Sleeping: shrink + rotate onto bed (facing handled by CSS wrapper)
+    if (pet?.isAsleep || behaviorMode === 'sleeping') {
+      return {
+        rotate: 90,
+        scaleX: 0.32,
+        scaleY: 0.32,
+        y: 113,
+        x: facing * -42,
+        transition: {
+          y:      { duration: 0.55, ease: 'easeInOut', delay: 1.8 },
+          scaleX: { duration: 0.55, ease: 'easeInOut', delay: 1.8 },
+          scaleY: { duration: 0.55, ease: 'easeInOut', delay: 1.8 },
+          rotate: { duration: 0.7,  ease: 'easeInOut', delay: 2.2 },
+        },
+      };
+    }
+
+    // Patrol: walking bounce
+    if (behaviorMode === 'patrol') {
+      return {
+        y: [0, -7, 0, -7, 0],
+        scaleY: [1, 1.04, 0.96, 1.04, 1],
+        transition: { duration: 1.2, repeat: Infinity, ease: 'easeInOut' },
+      };
+    }
+
+    // Playing: big bouncy jumps
+    if (behaviorMode === 'playing') {
+      return {
+        y: [0, -48, 0, -30, 0, -16, 0],
+        scaleY: [1, 0.88, 1.14, 0.91, 1.07, 0.97, 1],
+        transition: { duration: 1.9, repeat: Infinity, ease: 'easeInOut' },
+      };
+    }
+
+    // Eating: lean down to food, bob back up
+    if (behaviorMode === 'eating') {
+      return {
+        y: [0, -4, 20, 8, 20, 0],
+        scaleY: [1, 1.05, 0.88, 0.98, 0.9, 1],
+        transition: { duration: 1.2, repeat: Infinity, ease: 'easeInOut' },
+      };
+    }
+
+    // Cleaning: vigorous vertical scrub
+    if (behaviorMode === 'cleaning') {
+      return {
+        y: [0, -9, 0, -9, 0],
+        scaleY: [1, 1.06, 0.94, 1.06, 0.94],
+        transition: { duration: 1.0, repeat: Infinity, ease: 'easeInOut' },
+      };
+    }
+
+    // Medicine: recoil back then settle
+    if (behaviorMode === 'medicine') {
+      return {
+        y: [0, -10, 4, -5, 0],
+        scaleY: [1, 1.08, 0.94, 1.04, 1],
+        transition: { duration: 1.6, repeat: 2, repeatDelay: 1.2, ease: 'easeOut' },
+      };
+    }
+
+    // Scene interactions
+    if (behaviorMode === 'scene_interact') {
+      switch (sceneInteractionType) {
+        case 'sit_furniture':
+          return { y: 16, scaleY: 0.85, transition: { duration: 0.8, ease: 'easeOut' } };
+        case 'dance_music':
+          return {
+            y: [0, -14, 0],
+            scaleY: [1, 1.06, 1],
+            transition: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' },
+          };
+        case 'bounce_bed':
+          return {
+            y: [0, -40, 0, -24, 0, -10, 0],
+            scaleY: [1, 0.86, 1.14, 0.9, 1.06, 0.98, 1],
+            transition: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' },
+          };
+        case 'smell_plant':
+          return {
+            x: facing * 16,
+            scaleY: [1, 1.04, 1],
+            transition: { x: { duration: 0.7, ease: 'easeInOut' }, scaleY: { duration: 2, repeat: Infinity } },
+          };
+        case 'stare_special':
+        case 'stare_flame':
+          return {
+            y: -8,
+            scaleY: [1, 1.03, 1],
+            transition: { y: { duration: 0.5, ease: 'easeOut' }, scaleY: { duration: 3, repeat: Infinity } },
+          };
+        case 'watch_screen':
+          return {
+            y: [0, -3, 0],
+            transition: { y: { duration: 4.5, repeat: Infinity, ease: 'easeInOut' } },
+          };
+        case 'play_console':
+          return {
+            y: [0, -6, 0, -6, 0],
+            scaleY: [1, 1.04, 0.96, 1.04, 1],
+            transition: { duration: 0.72, repeat: Infinity, ease: 'easeInOut' },
+          };
+        case 'push_cactus':
+          return {
+            x: [0, facing * 22, facing * 10, facing * 22, 0],
+            transition: { duration: 1.5, repeat: Infinity, ease: 'easeInOut' },
+          };
+        case 'hug_trophy':
+          return {
+            y: -5,
+            x: facing * 10,
+            scaleY: [1, 1.04, 1],
+            transition: { x: { duration: 0.5 }, y: { duration: 0.5 }, scaleY: { duration: 1.8, repeat: Infinity } },
+          };
+        default:
+          return { y: [0, -7, 0], transition: { duration: 2.5, repeat: Infinity, ease: 'easeInOut' } };
+      }
+    }
+
+    // Owner present — pet freezes at attention
+    if (mouseInRoom && isIdleMode) {
+      return {
+        y: 0,
+        scaleY: [1, 1.015, 1],
+        transition: {
+          y:      { duration: 0 },
+          scaleY: { duration: 3.5, repeat: Infinity, ease: 'easeInOut' },
+        },
+      };
+    }
+
+    // Idle quirks — fire once per ~60 seconds
+    if (idleQuirk === 'squat') {
+      return { y: [0, 18, 18, 0], scaleY: [1, 0.72, 0.72, 1], transition: { duration: 0.95, ease: 'easeInOut', times: [0, 0.35, 0.65, 1] } };
+    }
+    if (idleQuirk === 'jump') {
+      return { y: [0, -50, 6, 0], scaleY: [1, 1.08, 0.8, 1.12, 1], transition: { duration: 0.9, ease: 'easeOut' } };
+    }
+    // arms_up and head_tilt: body stays still, sub-elements handle animation
+
+    // Skin animStyle
+    if (skin.animStyle === 'pulse')  return { scale: [1, 1.04, 1], transition: { scale: { duration: 1.8, repeat: Infinity } } };
+    if (skin.animStyle === 'wobble') return { scaleX: [1.04, 0.96, 1.04], scaleY: [0.96, 1.04, 0.96], transition: { duration: 1.2, repeat: Infinity } };
+    if (skin.animStyle === 'wave')   return { y: [0, -8, 2, -8, 0], transition: { y: { duration: 4, repeat: Infinity } } };
+    if (skin.animStyle === 'spark')  return { y: [0, -14, -10, -14, 0], transition: { y: { duration: 0.7, repeat: Infinity } } };
+
+    // Subtle idle breathing — almost still between quirks
+    if (effectiveMood === 'ecstatic') return { y: [0, -4, 0], scaleY: [1, 1.015, 1], transition: { y: { duration: 3.0, repeat: Infinity, ease: 'easeInOut' }, scaleY: { duration: 3.0, repeat: Infinity } } };
+    if (effectiveMood === 'sad')      return { y: [0, -2, 0], transition: { y: { duration: 5.0, repeat: Infinity, ease: 'easeInOut' } } };
+    if (effectiveMood === 'tired')    return { y: [0, -1, 0], transition: { y: { duration: 6.0, repeat: Infinity, ease: 'easeInOut' } } };
+    if (effectiveMood === 'sick')     return { y: [0, -2, 0], scaleY: [1, 0.988, 1], transition: { y: { duration: 4.0, repeat: Infinity }, scaleY: { duration: 3.0, repeat: Infinity } } };
+    return { y: [0, -3, 0], scaleY: [1, 1.012, 1], transition: { y: { duration: 4.5, repeat: Infinity, ease: 'easeInOut' }, scaleY: { duration: 4.5, repeat: Infinity } } };
+  })();
 
   const gradId = `bg_${skin.id}`;
   const colors = { body1, body2, glow: glowColor, cheek: petColorOverride?.cheek ?? skin.colors.cheek };
@@ -569,16 +832,18 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
     return () => clearTimeout(t);
   }, [equippedSkinId, equippedHeadId, equippedEarsId, equippedBodyPartId, equippedArmsId, equippedLegsId, equippedTailId, JSON.stringify(equippedAccessories), petColorOverride]);
 
-  const morphStyle: React.CSSProperties = (petMorph.scale !== 1 || petMorph.width !== 1 || petMorph.height !== 1)
-    ? { transform: `scale(${petMorph.scale}) scaleX(${petMorph.width}) scaleY(${petMorph.height})` }
-    : {};
-  const headSc   = petMorph.headScale  ?? 1;
-  const earsSc   = petMorph.earsScale  ?? 1;
-  const limbsSc  = petMorph.limbsScale ?? 1;
-  const squishSc = petMorph.squish     ?? 1;
+  const morphScale = (petMorph.scale !== 1 || petMorph.width !== 1 || petMorph.height !== 1)
+    ? `scale(${petMorph.scale}) scaleX(${petMorph.width}) scaleY(${petMorph.height})`
+    : '';
+  // facing applied as instant CSS — never animated by Framer Motion
+  const containerTransform = [morphScale, `scaleX(${facing})`].filter(Boolean).join(' ');
+  const headSc = petMorph.headScale ?? 1;
+  const earsSc = petMorph.earsScale ?? 1;
+  const limbsSc = petMorph.limbsScale ?? 1;
+  const squishSc = petMorph.squish ?? 1;
 
   return (
-    <div className="relative" style={{ ...morphStyle, isolation: 'isolate' }}>
+    <div className="relative" style={{ transform: containerTransform, isolation: 'isolate' }}>
       <PetAura aura={aura} />
       <motion.div
         className="relative"
@@ -587,7 +852,13 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
       >
         <svg viewBox="0 0 200 200" width={size} height={size}
           data-pet-export="true"
-          style={{ filter: equippedSkinId === 'default' ? 'none' : `drop-shadow(0 0 28px ${glowColor}99) drop-shadow(0 4px 14px ${glowColor}55)`, overflow: 'visible' }}>
+          style={{
+            filter: [
+              equippedSkinId !== 'default' ? `drop-shadow(0 0 28px ${glowColor}99) drop-shadow(0 4px 14px ${glowColor}55)` : null,
+              effectiveMood === 'sick' ? 'hue-rotate(80deg) saturate(1.4) brightness(0.92)' : null,
+            ].filter(Boolean).join(' ') || undefined,
+            overflow: 'visible',
+          }}>
           <defs>
             {gradientDirection === 'radial' ? (
               <radialGradient id={gradId} cx="76" cy="60" r="130" gradientUnits="userSpaceOnUse">
@@ -606,9 +877,9 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
               </linearGradient>
             )}
             <linearGradient id="rainbow_grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%"   stopColor="#FF0080" />
-              <stop offset="33%"  stopColor="#00FF80" />
-              <stop offset="66%"  stopColor="#0080FF" />
+              <stop offset="0%" stopColor="#FF0080" />
+              <stop offset="33%" stopColor="#00FF80" />
+              <stop offset="66%" stopColor="#0080FF" />
               <stop offset="100%" stopColor="#FF0080" />
             </linearGradient>
           </defs>
@@ -620,54 +891,84 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
 
           {/* Modular pet body — layers from back to front */}
           <g transform={`translate(175,150) scale(${limbsSc}) translate(-175,-150)`}>
-            <TailShape  id={equippedTailId}  gradId={gradId} c={colors} overrideFill={getFill('tail')} />
+            <TailShape id={equippedTailId} gradId={gradId} c={colors} overrideFill={getFill('tail')} />
           </g>
           <g transform={`translate(100,190) scale(${limbsSc},${squishSc}) translate(-100,-190)`}>
-            <LegsShape id={equippedLegsId} gradId={gradId} c={colors} overrideFill={getFill('legs')} />
+            {behaviorMode === 'carried' && hasLegs ? (
+              <motion.g
+                style={{ transformBox: 'fill-box', transformOrigin: 'center top' }}
+                animate={{ rotate: [-22, 22, -22] }}
+                transition={{ duration: 0.62, repeat: Infinity, ease: 'easeInOut' }}>
+                <LegsShape id={equippedLegsId} gradId={gradId} c={colors} overrideFill={getFill('legs')} />
+              </motion.g>
+            ) : (
+              <LegsShape id={equippedLegsId} gradId={gradId} c={colors} overrideFill={getFill('legs')} />
+            )}
           </g>
           <g transform={`translate(100,150) scale(${limbsSc},${squishSc}) translate(-100,-150)`}>
-            <ArmsShape id={equippedArmsId !== 'none' ? equippedArmsId : (equippedLimbsId as ArmsId)} gradId={gradId} c={colors} overrideFill={getFill('arms')} />
-          </g>
-          <g transform={`translate(100,45) scale(${earsSc}) translate(-100,-45)`}>
-            <EarsShape  id={equippedEarsId}  gradId={gradId} c={colors} overrideFill={getFill('ears')} />
+            {(behaviorMode === 'carried' && hasArms) ? (
+              <motion.g
+                style={{ transformBox: 'fill-box', transformOrigin: 'center top' }}
+                animate={{ rotate: [26, -26, 26] }}
+                transition={{ duration: 0.47, repeat: Infinity, ease: 'easeInOut' }}>
+                <ArmsShape id={equippedArmsId !== 'none' ? equippedArmsId : (equippedLimbsId as ArmsId)} gradId={gradId} c={colors} overrideFill={getFill('arms')} />
+              </motion.g>
+            ) : (idleQuirk === 'arms_up' && hasArms) ? (
+              <motion.g
+                style={{ transformBox: 'fill-box', transformOrigin: 'center top' }}
+                animate={{ rotate: [0, -75, -75, 0] }}
+                transition={{ duration: 1.1, ease: 'easeInOut', times: [0, 0.3, 0.65, 1] }}>
+                <ArmsShape id={equippedArmsId !== 'none' ? equippedArmsId : (equippedLimbsId as ArmsId)} gradId={gradId} c={colors} overrideFill={getFill('arms')} />
+              </motion.g>
+            ) : (
+              <ArmsShape id={equippedArmsId !== 'none' ? equippedArmsId : (equippedLimbsId as ArmsId)} gradId={gradId} c={colors} overrideFill={getFill('arms')} />
+            )}
           </g>
           <g transform={`translate(100,152) scale(${squishSc},1) translate(-100,-152)`}>
-            <BodyShape  id={equippedBodyPartId} gradId={gradId} c={colors} overrideFill={getFill('body')} />
+            <BodyShape id={equippedBodyPartId} gradId={gradId} c={colors} overrideFill={getFill('body')} />
           </g>
           <OutfitShape id={equippedOutfitId} primary={outfitColor} secondary={outfitColor2} />
 
-          <g transform={`translate(100,80) scale(${headSc}) translate(-100,-80)`}>
-            <HeadShape  id={equippedHeadId}  gradId={gradId} c={colors} overrideFill={getFill('head')} />
-          </g>
-          <Overlay skin={skin} />
+          {/* Head cluster — wrapped for head_tilt quirk */}
+          <motion.g
+            animate={idleQuirk === 'head_tilt' ? { x: [0, 10, -10, 8, -8, 0] } : { x: 0 }}
+            transition={idleQuirk === 'head_tilt' ? { duration: 0.7, ease: 'easeInOut' } : { duration: 0.2 }}
+          >
+            <g transform={`translate(100,45) scale(${earsSc}) translate(-100,-45)`}>
+              <EarsShape id={equippedEarsId} gradId={gradId} c={colors} overrideFill={getFill('ears')} />
+            </g>
+            <g transform={`translate(100,80) scale(${headSc}) translate(-100,-80)`}>
+              <HeadShape id={equippedHeadId} gradId={gradId} c={colors} overrideFill={getFill('head')} />
+            </g>
+            <Overlay skin={skin} />
 
-          {/* Nose */}
-          {equippedNoseId !== 'none' && (
-            <NoseShape id={equippedNoseId} cy={head.mouthCy - 14} color={skin.eyeColor} />
-          )}
+            {/* Nose */}
+            {equippedNoseId !== 'none' && (
+              <NoseShape id={equippedNoseId} cy={head.mouthCy - 14} color={skin.eyeColor} />
+            )}
 
-          <Eyes eyeStyle={skin.eyeStyle} eyeColor={skin.eyeColor} head={head} mood={effectiveMood} />
+            <Eyes eyeStyle={skin.eyeStyle} eyeColor={skin.eyeColor} head={head} mood={effectiveMood} />
 
-          {/* Mouth */}
-          {equippedMouthStyleId === 'auto' ? (
-            mouthPath && (
-              <motion.path
-                d={mouthPath}
-                stroke={['led','hologram'].includes(skin.eyeStyle) ? skin.eyeColor : 'white'}
-                strokeWidth="3.5" fill="none" strokeLinecap="round"
-                animate={{ d: mouthPath }} transition={{ duration: 0.4 }}
+            {/* Mouth */}
+            {equippedMouthStyleId === 'auto' ? (
+              mouthPath && (
+                <path
+                  d={mouthPath}
+                  stroke={['led', 'hologram'].includes(skin.eyeStyle) ? skin.eyeColor : 'white'}
+                  strokeWidth="3.5" fill="none" strokeLinecap="round"
+                />
+              )
+            ) : (
+              <MouthShape
+                id={equippedMouthStyleId}
+                cy={head.mouthCy}
+                hw={head.mouthHW}
+                strokeColor={['led', 'hologram'].includes(skin.eyeStyle) ? skin.eyeColor : 'white'}
               />
-            )
-          ) : (
-            <MouthShape
-              id={equippedMouthStyleId}
-              cy={head.mouthCy}
-              hw={head.mouthHW}
-              strokeColor={['led','hologram'].includes(skin.eyeStyle) ? skin.eyeColor : 'white'}
-            />
-          )}
+            )}
 
-          <LevelAccessory level={pet.level} />
+            <LevelAccessory level={pet.level} />
+          </motion.g>
 
           {/* Clothing (behind body) */}
           {renderAccessory('clothing', true)}
@@ -721,8 +1022,8 @@ export function PetDisplay({ pet, moodOverride, size = 220, overrideState }: Pro
                       fontSize={14}
                       textAnchor="middle"
                       initial={{ x: 100, y: 100, scale: 0 }}
-                      animate={{ 
-                        x: 100 + Math.cos(angle) * dist, 
+                      animate={{
+                        x: 100 + Math.cos(angle) * dist,
                         y: 100 + Math.sin(angle) * dist,
                         scale: [0, 1.5, 0],
                         rotate: [0, 90, 180]

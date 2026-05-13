@@ -1,6 +1,6 @@
 import type { AppliedModifier, DomainEvent, InfluenceCooldownState, PetCommand, PetCommandResult } from './commands';
 import type { PersonalityMood, PersonalityState } from './coreState';
-import { PERSONALITY_ENGINE_VERSION, STATIC_REGISTRY_VERSION } from './engineVersion';
+import { PERSONALITY_ENGINE_VERSION, PERSONALITY_STATE_SCHEMA_VERSION, STATIC_REGISTRY_VERSION } from './engineVersion';
 import { BASE_ACTION_RULES } from './actionRules';
 import { getInfluenceRegistry, getIntensityMultiplier as getGlobalIntensityMultiplier } from './influenceRegistry';
 import { createMemoryTextGenerator, type MemoryTextGenerator } from './memoryTextGenerator';
@@ -60,6 +60,7 @@ export interface PersonalityCommandReplayResult<TState extends PersonalityState 
   currentSync: number;
   engineVersion: string;
   registryVersion: string;
+  schemaVersion: number;
 }
 
 export async function replayPersonalityCommands<TState extends PersonalityState>(
@@ -94,6 +95,7 @@ export async function replayPersonalityCommands<TState extends PersonalityState>
     commandResults,
     influenceCooldowns,
     currentSync,
+    schemaVersion: PERSONALITY_STATE_SCHEMA_VERSION,
     engineVersion: options.engineVersion ?? PERSONALITY_ENGINE_VERSION,
     registryVersion: options.registryVersion ?? STATIC_REGISTRY_VERSION,
   };
@@ -247,6 +249,7 @@ export async function applyPersonalityCommand<TState extends PersonalityState>(
     blockedAction: gameplayOutcome.blockedAction,
     appliedModifiers: gameplayOutcome.appliedModifiers,
     meta: gameplayOutcome.meta,
+    schemaVersion: nextPet.schemaVersion ?? PERSONALITY_STATE_SCHEMA_VERSION,
     engineVersion: options.engineVersion ?? PERSONALITY_ENGINE_VERSION,
     registryVersion: options.registryVersion ?? STATIC_REGISTRY_VERSION,
   };

@@ -57,6 +57,7 @@ export interface PersonalityAccount {
 }
 
 export interface PersonalityState {
+  schemaVersion?: number;
   mood: PersonalityMood;
   stats: PersonalityStats;
   ageHours: number;

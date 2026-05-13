@@ -463,3 +463,46 @@ Core/preset package-like surfaces can be imported without storage/sync/backend m
 ### Next
 
 Add schema versioning, migration entrypoint, public quickstart, and replay guarantee docs so the clean core boundary becomes a stable external consumer contract.
+
+---
+
+## DEC-0008: Version state snapshots before physical package extraction
+
+Status: accepted  
+Date: 2026-05-13  
+Related files: `src/personality/engineVersion.ts`, `src/personality/stateMigration.ts`, `src/personality/commands.ts`, `src/personality/engineFactory.ts`, `packages/personality-core/src/index.ts`, `docs/personality-library/api.md`, `docs/personality-library/quickstart.md`, `docs/personality-library/replay-guarantee.md`  
+Related roadmap item: Library extraction — Iteration 5
+
+### Context
+
+The core and preset package-like boundaries existed, and app storage/sync adapters were separated. External consumers still lacked a stable serialized state contract: saved states could be replayed only by convention, not through an explicit schema version and migration entrypoint.
+
+### Decision
+
+Add `PERSONALITY_STATE_SCHEMA_VERSION`, include schema version metadata in state snapshots, command results, replay results, and offline saves, and expose `migratePersonalityState(raw)` from the core package-like entrypoint. Add public quickstart/API/replay docs plus a runnable demo that imports only package-like core and preset entrypoints.
+
+### Why
+
+Package extraction needs a durable serialized boundary before implementation files move. A versioned state contract lets future consumers load legacy snapshots intentionally, reject unsupported future snapshots, and persist replay metadata without depending on app `Pet` types.
+
+### Alternatives
+
+- Move implementation files first: rejected, because consumers would still not have a stable save/replay contract.
+- Keep migration app-side: rejected, because external consumers need migration before app adapters exist.
+- Treat missing or malformed schema versions as legacy forever: rejected, because malformed snapshots should fail fast instead of silently mutating.
+
+### Consequences
+
+The package-like core API now has explicit version/migration semantics and a runnable consumer proof. `PersonalityState.schemaVersion` remains optional at the type level to allow legacy snapshots to enter migration, but current adapters and engine results write the current version.
+
+### Verification
+
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+- Boundary `rg` checks for storage/browser symbols and app API imports.
+
+### Next
+
+Move implementation ownership toward packages while keeping the existing public API and verification suite unchanged.

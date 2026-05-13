@@ -31,7 +31,13 @@ export type {
   PersonalityReplayResult,
 } from '../../../src/personality/engineFactory';
 export { createPersonalityEngine } from '../../../src/personality/engineFactory';
-export { PERSONALITY_ENGINE_VERSION, STATIC_REGISTRY_VERSION } from '../../../src/personality/engineVersion';
+export {
+  PERSONALITY_ENGINE_VERSION,
+  PERSONALITY_STATE_SCHEMA_VERSION,
+  STATIC_REGISTRY_VERSION,
+} from '../../../src/personality/engineVersion';
+export type { PersonalityStateMigrationResult } from '../../../src/personality/stateMigration';
+export { migratePersonalityState } from '../../../src/personality/stateMigration';
 export type {
   ActionType,
   ActiveEmergentState,

@@ -377,11 +377,11 @@ export function NoseShape({ id, cy, color }: { id: NoseId; cy: number; color: st
       );
     case 'led':
       return (
-        <motion.circle cx={cx} cy={cy} r={4} fill={color}
-          animate={{ opacity: [0.9, 0.3, 0.9], r: [4, 5, 4] }}
+        <motion.g style={{ transformOrigin: `${cx}px ${cy}px` }}
+          animate={{ opacity: [0.9, 0.3, 0.9], scale: [1, 1.25, 1] }}
           transition={{ duration: 1.4, repeat: Infinity }}>
-          <animate attributeName="r" values="4;5;4" dur="1.4s" repeatCount="indefinite" />
-        </motion.circle>
+          <circle cx={cx} cy={cy} r={4} fill={color} />
+        </motion.g>
       );
     case 'star': {
       let d = '';

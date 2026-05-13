@@ -73,15 +73,16 @@ function Stars({ count = 32 }: { count?: number }) {
       </div>
       <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible', mixBlendMode: 'screen' }}>
         {stars.map((s, i) => (
-          <motion.circle key={i} cx={`${s.x}%`} cy={`${s.y}%`} r={s.r}
-            fill={s.bright ? 'white' : '#8899BB'}
+          <motion.g key={i}
             style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
             animate={s.bright
               ? { opacity: [0.06, 1, 0.06], scale: [1, 2, 1] }
               : { opacity: [0.06, 0.5, 0.06] }
             }
             transition={{ duration: s.dur, repeat: Infinity, delay: s.del, ease: 'easeInOut' }}
-          />
+          >
+            <circle cx={`${s.x}%`} cy={`${s.y}%`} r={s.r} fill={s.bright ? 'white' : '#8899BB'} />
+          </motion.g>
         ))}
         {shoots.map((s, i) => {
           const rad = (s.ang * Math.PI) / 180;
@@ -185,11 +186,13 @@ function Grid({ color, opacity: op = 0.14 }: { color: string; opacity?: number }
         <circle key={`n${x}${y}`} cx={`${x}%`} cy={`${y}%`} r={1.5} fill={color} opacity={op * 2.5} />
       )))}
       {[{ nx: 20, ny: 40, del: 0 }, { nx: 60, ny: 20, del: 0.8 }, { nx: 40, ny: 80, del: 1.6 }, { nx: 80, ny: 60, del: 2.4 }].map((p, i) => (
-        <motion.circle key={`ping${i}`} cx={`${p.nx}%`} cy={`${p.ny}%`} r={1.5} fill={color}
+        <motion.g key={`ping${i}`}
           style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
           animate={{ scale: [1, 4.7, 1], opacity: [0.8, 0, 0.8] }}
           transition={{ duration: 2.4, repeat: Infinity, delay: p.del, ease: 'easeOut' }}
-        />
+        >
+          <circle cx={`${p.nx}%`} cy={`${p.ny}%`} r={1.5} fill={color} />
+        </motion.g>
       ))}
     </svg>
     {/* Traveling signal — div outside SVG avoids framer-motion SVG path-parsing bug */}

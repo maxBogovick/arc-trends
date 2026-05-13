@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { usePetStore } from '../../store/petStore';
 import type { Pet } from '../../api';
 import { useDarkness } from './RoomScene';
@@ -9,6 +9,10 @@ import { RoomScene } from './RoomScene';
 import type { PetMood } from '../../api';
 import { FurnitureItemVisual } from './FurnitureItemVisual';
 import { getFurniture } from '../../data/roomFurniture';
+import { usePetBehaviorState, type BehaviorMode, type SceneInteraction } from './usePetBehaviorState';
+import { getPetArchetype } from './petArchetype';
+import { SceneProps } from './SceneProps';
+import { BehaviorEffects } from './BehaviorEffects';
 
 export const MOOD_LABELS: Record<PetMood, { text: string; emoji: string; color: string }> = {
   ecstatic: { text: 'В восторге!', emoji: '🤩', color: 'text-yellow-600' },
@@ -29,31 +33,205 @@ const STAGE_INFO: Record<string, { label: string; emoji: string }> = {
   elder: { label: 'Мудрец',    emoji: '🦋' },
 };
 
-// Rendered inside RoomScene children so it has access to DarknessContext
-function PetBody({ pet }: { pet: Pet }) {
+// ── Travel speed by mood ──────────────────────────────────────────────────────
+function patrolTransitionDuration(mode: BehaviorMode, mood: PetMood): number {
+  if (mode === 'sleeping') return 1.8;
+  if (mood === 'ecstatic') return 0.9;
+  if (mood === 'tired' || mood === 'sad') return 2.4;
+  return 1.5;
+}
+
+// ── PetBody — rendered inside RoomScene to access DarknessContext ─────────────
+interface PetBodyProps {
+  pet: Pet;
+  mode: BehaviorMode;
+  petX: number;
+  petY?: number;
+  facingRight: boolean;
+  sceneInteraction: SceneInteraction | null;
+  moodTransitionDuration: number;
+  mouseInRoom?: boolean;
+  onPointerDown?: (e: React.PointerEvent) => void;
+}
+
+function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moodTransitionDuration, mouseInRoom = false, onPointerDown }: PetBodyProps) {
   const effectiveDarkness = useDarkness();
   const brightness = Math.max(0.05, 1 - effectiveDarkness * 0.88);
+  const isSleeping = mode === 'sleeping' || pet.isAsleep;
+  const isCarried  = mode === 'carried' || mode === 'being_grabbed';
+  const isLanding  = mode === 'landing';
+
   return (
-    <div
-      className="absolute inset-0 flex items-center justify-center pointer-events-none"
-      style={{ paddingBottom: '8%', zIndex: 25 }}
+    <motion.div
+      className="absolute pointer-events-none"
+      style={{ bottom: '13%', zIndex: 25 }}
+      animate={{ left: `${petX}%`, y: petY }}
+      transition={{
+        left: { duration: moodTransitionDuration, ease: 'easeInOut' },
+        y:    { duration: isLanding ? 0.32 : moodTransitionDuration, ease: isLanding ? [0.4, 0, 0.8, 1] : 'easeOut' },
+      }}
     >
+      {/* translateX(-50%) centres the pet on its position point */}
       <div
         className="relative pointer-events-auto"
-        style={{ filter: brightness < 1 ? `brightness(${brightness.toFixed(2)})` : undefined }}
+        style={{
+          transform: 'translateX(-50%)',
+          cursor: isSleeping ? 'default' : 'grab',
+          filter: brightness < 1 ? `brightness(${brightness.toFixed(2)})` : undefined,
+        }}
+        onPointerDown={onPointerDown}
       >
-        <PetTalk pet={pet} />
-        <PetDisplay pet={pet} size={270} />
+        {/* Shadow on floor — pulses inversely with float, fades when carried */}
+        <motion.div
+          className="absolute pointer-events-none"
+          style={{
+            bottom: 4,
+            left: '50%', translateX: '-50%',
+            width: isSleeping ? 88 : 100,
+            height: 12,
+            background: 'rgba(0,0,0,0.22)',
+            borderRadius: '50%',
+            filter: 'blur(6px)',
+            zIndex: -1,
+          }}
+          animate={{
+            scaleX:  isCarried ? 0.3  : isSleeping ? 1    : [1, 0.65, 1],
+            opacity: isCarried ? 0.05 : isSleeping ? 0.18 : [0.45, 0.15, 0.45],
+          }}
+          transition={{ duration: isCarried ? 0.3 : 3, repeat: isCarried ? 0 : Infinity, ease: 'easeInOut' }}
+        />
+        <PetTalk pet={pet} mode={mode} />
+        <BehaviorEffects pet={pet} mode={mode} sceneInteraction={sceneInteraction} facingRight={facingRight} />
+        <PetDisplay
+          pet={pet}
+          size={270}
+          behaviorMode={mode}
+          sceneInteractionType={sceneInteraction?.type}
+          facingRight={facingRight}
+          mouseInRoom={mouseInRoom}
+        />
       </div>
-    </div>
+    </motion.div>
   );
 }
 
+// ── PetScene ──────────────────────────────────────────────────────────────────
 export function PetScene() {
-  const { pet, updatePetName, actionLoading, placedFurniture, updateRoomFurniture } = usePetStore();
+  const {
+    pet,
+    updatePetName,
+    actionLoading,
+    placedFurniture,
+    updateRoomFurniture,
+    equippedTailId,
+    equippedLegsId,
+    equippedArmsId,
+    equippedOutfitId,
+  } = usePetStore();
+
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
+
+  // Determine pet archetype for eating props
+  const archetype = getPetArchetype({
+    equippedTailId: equippedTailId ?? 'none',
+    equippedLegsId: equippedLegsId ?? 'none',
+    equippedArmsId: equippedArmsId ?? 'none',
+    equippedOutfitId: equippedOutfitId ?? 'none',
+  });
+
+  // ── Mouse-in-room tracking ────────────────────────────────────────────────────
+  const [mouseInRoom, setMouseInRoom] = useState(false);
+  const [mousePosX, setMousePosX] = useState<number>(50);
+
+  // Behavior state machine — paused when mouse is in room
+  const behaviorState = usePetBehaviorState(pet ?? null, actionLoading, placedFurniture, mouseInRoom);
+
+  // ── Drag state ────────────────────────────────────────────────────────────────
+  const sceneRef = useRef<HTMLDivElement>(null);
+  type DragPhase = 'being_grabbed' | 'carried' | 'landing';
+  const [dragState, setDragState] = useState<{ x: number; y: number; phase: DragPhase } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; phase: DragPhase } | null>(null);
+  const dragStartClientY = useRef<number>(0);
+
+  const handlePetPointerDown = useCallback((e: React.PointerEvent) => {
+    if (pet?.isAsleep || actionLoading) return;
+    e.stopPropagation();
+    e.preventDefault();
+
+    const startX = behaviorState.petX;
+    dragStartClientY.current = e.clientY;
+    dragRef.current = { x: startX, y: 0, phase: 'being_grabbed' };
+    setDragState({ x: startX, y: 0, phase: 'being_grabbed' });
+
+    const grabTimer = setTimeout(() => {
+      if (dragRef.current) {
+        dragRef.current.phase = 'carried';
+        setDragState(d => d ? { ...d, phase: 'carried' } : null);
+      }
+    }, 220);
+
+    const onMove = (ev: PointerEvent) => {
+      const scene = sceneRef.current;
+      if (!scene || !dragRef.current || dragRef.current.phase === 'landing') return;
+      const rect = scene.getBoundingClientRect();
+      const newX = Math.max(8, Math.min(92, ((ev.clientX - rect.left) / rect.width) * 100));
+      // y: negative = up, positive = down; clamp so pet can't go offscreen
+      const newY = Math.max(-rect.height * 0.78, Math.min(40, ev.clientY - dragStartClientY.current));
+      dragRef.current.x = newX;
+      dragRef.current.y = newY;
+      dragRef.current.phase = 'carried';
+      setDragState({ x: newX, y: newY, phase: 'carried' });
+    };
+
+    const onUp = () => {
+      clearTimeout(grabTimer);
+      const finalX = dragRef.current?.x ?? startX;
+      dragRef.current = { x: finalX, y: 0, phase: 'landing' };
+      setDragState({ x: finalX, y: 0, phase: 'landing' });
+      setTimeout(() => {
+        behaviorState.warpTo(finalX);
+        dragRef.current = null;
+        setDragState(null);
+      }, 700);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pet?.isAsleep, actionLoading, behaviorState.petX, behaviorState.warpTo]);
+
+  // ── Scene pointer tracking ────────────────────────────────────────────────────
+  useEffect(() => {
+    const el = sceneRef.current;
+    if (!el) return;
+    const onEnter = () => setMouseInRoom(true);
+    const onLeave = () => setMouseInRoom(false);
+    const onMove  = (ev: PointerEvent) => {
+      const rect = el.getBoundingClientRect();
+      setMousePosX(((ev.clientX - rect.left) / rect.width) * 100);
+    };
+    el.addEventListener('pointerenter', onEnter);
+    el.addEventListener('pointerleave', onLeave);
+    el.addEventListener('pointermove',  onMove);
+    return () => {
+      el.removeEventListener('pointerenter', onEnter);
+      el.removeEventListener('pointerleave', onLeave);
+      el.removeEventListener('pointermove',  onMove);
+    };
+  }, []);
+
+  // Effective display values: drag overrides behavior state
+  const displayX       = dragState ? dragState.x : behaviorState.petX;
+  const displayY       = dragState ? dragState.y : 0;
+  const displayMode    = dragState ? dragState.phase : behaviorState.mode;
+  // When mouse is in room, pet turns to face the cursor
+  const mouseFacing    = mouseInRoom && !dragState ? mousePosX > displayX : null;
+  const displayFacing  = mouseFacing !== null ? mouseFacing : dragState ? dragState.x >= 50 : behaviorState.facingRight;
+  const displayInteraction = dragState ? null : behaviorState.sceneInteraction;
 
   const selectedPlaced = placedFurniture.find(p => p.uid === selectedUid) ?? null;
   const selectedDef    = selectedPlaced ? getFurniture(selectedPlaced.itemId) : null;
@@ -69,6 +247,9 @@ export function PetScene() {
     setNameInput('');
   };
 
+  const isDragging = dragState !== null;
+  const travelDuration = isDragging ? 0.06 : patrolTransitionDuration(behaviorState.mode, pet.mood);
+
   return (
     <div className="flex flex-col items-center gap-4 w-full">
 
@@ -76,24 +257,40 @@ export function PetScene() {
       <RoomScene
         height="clamp(340px, 42vw, 460px)"
         maxWidth="520px"
+        sceneRef={sceneRef}
         onSceneClick={() => setSelectedUid(null)}
       >
 
-        {/* Placed furniture items — lamp items are clickable */}
+        {/* Placed furniture items */}
         {placedFurniture.map(placed => {
           const def = getFurniture(placed.itemId);
           const hasEffects = def?.category === 'lamp';
+
+          // Pass interaction mode when this item is being interacted with
+          const isInteracting = behaviorState.sceneInteraction?.furnitureUid === placed.uid;
+          const interactionMode = isInteracting ? behaviorState.sceneInteraction!.type : null;
+
           return (
             <FurnitureItemVisual
               key={placed.uid}
               placed={placed}
               isSelected={placed.uid === selectedUid}
+              interactionMode={interactionMode}
               onClick={hasEffects ? () => setSelectedUid(uid => uid === placed.uid ? null : placed.uid) : undefined}
             />
           );
         })}
 
-        {/* Effects popup */}
+        {/* Ephemeral action props (food bowl / table / toy ball / bubbles) */}
+        <SceneProps
+          activeAction={behaviorState.activeAction}
+          mode={behaviorState.mode}
+          archetype={archetype}
+          petX={behaviorState.petX}
+          facingRight={behaviorState.facingRight}
+        />
+
+        {/* Effects popup for lamp items */}
         <AnimatePresence>
           {selectedPlaced && selectedDef && (
             <motion.div
@@ -116,7 +313,6 @@ export function PetScene() {
               <span className="text-xl leading-none">{selectedDef.emoji}</span>
               <span className="text-xs font-bold text-white">{selectedDef.name}</span>
 
-              {/* Light toggle for lamps */}
               {selectedDef.category === 'lamp' && (
                 <button
                   onClick={() => updateRoomFurniture(selectedPlaced.uid, { isOn: !(selectedPlaced.isOn ?? true) })}
@@ -156,8 +352,18 @@ export function PetScene() {
           {moodInfo.emoji} {moodInfo.text}
         </motion.div>
 
-        {/* Pet + speech bubble — brightness driven by DarknessContext (set by RoomScene) */}
-        <PetBody pet={pet} />
+        {/* Pet — freely positioned, driven by behavior state (or drag override) */}
+        <PetBody
+          pet={pet}
+          mode={displayMode}
+          petX={displayX}
+          petY={displayY}
+          facingRight={displayFacing}
+          sceneInteraction={displayInteraction}
+          moodTransitionDuration={travelDuration}
+          mouseInRoom={mouseInRoom}
+          onPointerDown={handlePetPointerDown}
+        />
 
       </RoomScene>
 

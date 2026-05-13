@@ -68,10 +68,14 @@ function SkyBody({ hour, sceneW, sceneH }: SkyBodyProps) {
   return (
     <g>
       {/* outer glow */}
-      <motion.circle cx={cx} cy={cy} r={28} fill={sunColor} opacity={0.12}
-        animate={{ r: [28, 33, 28] }} transition={{ duration: 4, repeat: Infinity }} />
-      <motion.circle cx={cx} cy={cy} r={20} fill={sunColor} opacity={0.2}
-        animate={{ r: [20, 23, 20] }} transition={{ duration: 3, repeat: Infinity }} />
+      <motion.g style={{ transformOrigin: `${cx}px ${cy}px` }}
+        animate={{ scale: [1, 1.18, 1] }} transition={{ duration: 4, repeat: Infinity }}>
+        <circle cx={cx} cy={cy} r={28} fill={sunColor} opacity={0.12} />
+      </motion.g>
+      <motion.g style={{ transformOrigin: `${cx}px ${cy}px` }}
+        animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 3, repeat: Infinity }}>
+        <circle cx={cx} cy={cy} r={20} fill={sunColor} opacity={0.2} />
+      </motion.g>
       {/* sun disc */}
       <circle cx={cx} cy={cy} r={13} fill={sunColor} />
       <circle cx={cx - 3} cy={cy - 3} r={4} fill="rgba(255,255,255,0.35)" />
@@ -193,9 +197,11 @@ function NightStars({ hour, w, h }: TimeOverlayProps) {
   return (
     <g opacity={starsOpacity}>
       {stars.map((s, i) => (
-        <motion.circle key={i} cx={s.x} cy={s.y} r={s.r} fill="white"
+        <motion.g key={i} style={{ transformOrigin: `${s.x}px ${s.y}px` }}
           animate={{ opacity: [0.35, 0.95, 0.35] }}
-          transition={{ duration: s.twinkleDur, repeat: Infinity, delay: s.twinkleDelay }} />
+          transition={{ duration: s.twinkleDur, repeat: Infinity, delay: s.twinkleDelay }}>
+          <circle cx={s.x} cy={s.y} r={s.r} fill="white" />
+        </motion.g>
       ))}
     </g>
   );
@@ -354,9 +360,11 @@ function SceneSpace({ w, h }: { w: number; h: number }) {
       <ellipse cx={w * 0.72} cy={h * 0.5} rx={w * 0.32} ry={h * 0.28} fill="url(#nebula2)" />
       {/* stars */}
       {stars.map((s, i) => (
-        <motion.circle key={i} cx={s.x} cy={s.y} r={s.r} fill="white"
+        <motion.g key={i} style={{ transformOrigin: `${s.x}px ${s.y}px` }}
           animate={{ opacity: [0.4, 1, 0.4] }}
-          transition={{ duration: 2 + s.delay, repeat: Infinity, delay: s.delay }} />
+          transition={{ duration: 2 + s.delay, repeat: Infinity, delay: s.delay }}>
+          <circle cx={s.x} cy={s.y} r={s.r} fill="white" />
+        </motion.g>
       ))}
       {/* planet */}
       <circle cx={w * 0.78} cy={h * 0.22} r={22} fill="#C084FC" opacity={0.8} />
@@ -396,8 +404,10 @@ function SceneCity({ w, h }: { w: number; h: number }) {
       <circle cx={w * 0.87} cy={h * 0.1} r={11} fill="#0D1A3A" opacity={0.6} />
       {/* stars */}
       {[[0.1, 0.06], [0.28, 0.1], [0.45, 0.05], [0.62, 0.08], [0.15, 0.18], [0.55, 0.15]].map(([sx, sy], i) => (
-        <motion.circle key={i} cx={sx * w} cy={sy * h} r={1} fill="white" opacity={0.6}
-          animate={{ opacity: [0.3, 0.8, 0.3] }} transition={{ duration: 2 + i * 0.4, repeat: Infinity }} />
+        <motion.g key={i} style={{ transformOrigin: `${sx * w}px ${sy * h}px` }}
+          animate={{ opacity: [0.3, 0.8, 0.3] }} transition={{ duration: 2 + i * 0.4, repeat: Infinity }}>
+          <circle cx={sx * w} cy={sy * h} r={1} fill="white" />
+        </motion.g>
       ))}
       {/* buildings */}
       {buildings.map((b, i) => (
@@ -541,9 +551,11 @@ function SceneWinter({ w, h }: { w: number; h: number }) {
       <ellipse cx={w * 0.5} cy={gy} rx={w * 0.7} ry={h * 0.07} fill="white" />
       {/* snowflakes */}
       {snowflakes.map((s, i) => (
-        <motion.circle key={i} cx={s.x} cy={s.y} r={s.r} fill="white" opacity={0.75}
+        <motion.g key={i} style={{ transformOrigin: `${s.x}px ${s.y}px` }}
           animate={{ y: [0, h * 0.25], opacity: [0.8, 0] }}
-          transition={{ duration: 5 + s.delay, repeat: Infinity, delay: s.delay, ease: 'linear' }} />
+          transition={{ duration: 5 + s.delay, repeat: Infinity, delay: s.delay, ease: 'linear' }}>
+          <circle cx={s.x} cy={s.y} r={s.r} fill="white" opacity={0.75} />
+        </motion.g>
       ))}
     </g>
   );

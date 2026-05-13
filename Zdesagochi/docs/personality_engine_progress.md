@@ -172,11 +172,11 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 | Field | Current Value |
 |---|---|
 | Current Goal | Выделить движок характера в переиспользуемую библиотеку |
-| Current Step | Library extraction — Iteration 5: Versioning and docs |
-| Why This Step | Core/preset boundary и app-side storage/sync adapters отделены; следующий blocker — public schema/version/migration/docs для external consumers |
+| Current Step | Library extraction — Iteration 5 complete; next is physical source ownership / package readiness |
+| Why This Step | Core/preset boundary теперь имеет versioned state contract, migration entrypoint, docs and runnable consumer demo |
 | Current Vector | Правильный: strangler extraction без rewrite, без изменения gameplay balance |
-| Next Step | Add schema versioning, migration entrypoint, public quickstart/replay guarantee docs |
-| Why Next | Core API уже отделен от app/storage; external use needs stable versioned state contract and docs |
+| Next Step | Move implementation ownership toward packages while preserving the existing package-like public API |
+| Why Next | Public API contract стабилизирован; следующий blocker — implementation files still live under `src/personality`, so package readiness is not physically proven |
 | Required Verification | `npm test`, `npx tsc --noEmit`, `npm run build`, `npm run simulate:balance`, boundary `rg` checks |
 
 ---
@@ -185,29 +185,31 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Закрыта Library extraction — Iteration 4: Storage and sync adapters.
+Закрыта Library extraction — Iteration 5: Versioning and docs.
 
 ### Why
 
-После Iteration 3 core/preset package-like boundary был отделен от app `Pet`, но legacy `src/personality/offlineStorage.ts` все еще экспортировал browser/localStorage surface из personality module. Storage/sync/backend adapters должны жить app-side.
+После Iteration 4 core/preset boundary и app-side storage/sync adapters были отделены, но external consumer contract еще не был зафиксирован: не было public state schema version, migration entrypoint, quickstart, replay guarantee и runnable consumer proof.
 
 ### Impact
 
 Добавлены и подключены:
 
-- Moved offline storage helpers from `src/personality/offlineStorage.ts` to `src/api/offlineStorage.ts`.
-- Removed `offlineStorage` from `src/personality/index.ts` public exports.
-- `LocalSave`, `SyncQueue`, `ExplainabilityLog`, `ServerApi`, `BackendReplayServerApi`, `PetService` now use package-like core API for command/result/version types.
-- `BackendReplayServerApi` now uses `appPersonalityEngine` + app `Pet` adapter instead of direct `applyPersonalityCommand()`.
-- Added `src/api/personalityEngineAdapter.ts` as the shared app-side engine instance.
-- Exported storage helpers/types from `src/api/index.ts`.
+- `PERSONALITY_STATE_SCHEMA_VERSION = 1`;
+- `schemaVersion` on `PersonalityState`, `PetCommandResult`, replay results and offline saves;
+- `migratePersonalityState(raw)` as the public migration/validation entrypoint;
+- app `Pet` adapter now writes current schema version when creating `PersonalityState`;
+- package-like core export now exposes schema version and migration API;
+- public docs under `docs/personality-library/`: API overview, quickstart and replay guarantee;
+- runnable consumer proof `scripts/personality-core-quickstart-demo.mjs`;
+- `npm run demo:personality-core`, and `npm test` now runs the quickstart demo too.
 
 Review fixes after implementation:
 
-- removed duplicate app engine singletons from `PetService` and `BackendReplayServerApi`;
-- removed app adapter dependency on internal `src/personality/clone`;
-- switched `personalityPetAdapter` to public package-like `PersonalityState` type;
-- removed direct `../personality` imports from storage/sync/backend replay service files.
+- made engine replay result carry a required `schemaVersion`, matching command results and docs;
+- tightened migration so invalid schema versions like `"1"` or `0` are rejected instead of being treated as legacy snapshots;
+- added migration tests for legacy, future and invalid schema versions;
+- updated replay docs to include state schema version in deterministic replay metadata.
 
 Gameplay constants, registry data and balance logic не менялись.
 
@@ -220,14 +222,15 @@ Gameplay constants, registry data and balance logic не менялись.
 - Boundary `rg` check:
   - `src/personality`, `packages/personality-core`, and `packages/personality-pet-preset` no longer contain `createBrowserOfflineStorage`, `localStorage`, `OfflineKeyValueStorage`, `saveOfflinePetSave`, or `loadOfflinePetSave`;
   - `BackendReplayServerApi`, `ServerApi`, `LocalSave`, `SyncQueue`, `ExplainabilityLog`, and `PetService` no longer import `../personality` or call `applyPersonalityCommand` directly.
+  - `packages/personality-core`, `packages/personality-pet-preset`, and `src/personality` do not import `src/api/types`.
 
 ### Next
 
-Library extraction — Iteration 5: Versioning and docs.
+Physical source ownership / package readiness.
 
 ### Why Next
 
-Core/preset package-like boundary is storage-agnostic and app adapters own storage/sync. Следующий blocker — add versioned state schema, migration entrypoint, quickstart docs, and replay guarantee docs so external consumers have a stable contract.
+Core API now has versioning, migration and consumer docs. Следующий blocker — implementation still mostly lives under `src/personality`; package readiness should now be proven by moving or mirroring implementation ownership behind the existing public package-like API without changing behavior.
 
 ---
 

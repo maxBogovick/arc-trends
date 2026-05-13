@@ -11,7 +11,7 @@ import type {
   StatKey,
   TraitVector,
 } from './types';
-import { PERSONALITY_ENGINE_VERSION, STATIC_REGISTRY_VERSION } from './engineVersion';
+import { PERSONALITY_ENGINE_VERSION, PERSONALITY_STATE_SCHEMA_VERSION, STATIC_REGISTRY_VERSION } from './engineVersion';
 
 export type PetCommand =
   | { type: 'feed'; foodId: string; foodEffect?: { hungerRestore: number; happinessBonus: number; healthBonus: number }; at: string; commandId: string }
@@ -68,6 +68,7 @@ export interface PetCommandResult<TState extends PersonalityState = PersonalityS
   blockedAction: BlockedAction | null;
   appliedModifiers: AppliedModifier[];
   meta?: Record<string, unknown>;
+  schemaVersion: number;
   engineVersion: string;
   registryVersion: string;
 }
@@ -77,6 +78,7 @@ export interface OfflinePetSave {
   commandLog: PetCommand[];
   lastSyncedCommandId: string | null;
   influenceCooldowns: InfluenceCooldownState;
+  schemaVersion?: number;
   engineVersion: string;
   registryVersion: string;
   savedAt: string;
@@ -98,6 +100,7 @@ export function createOfflinePetSave(
     commandLog: [...(options.commandLog ?? [])],
     lastSyncedCommandId: options.lastSyncedCommandId ?? null,
     influenceCooldowns: { ...(options.influenceCooldowns ?? {}) },
+    schemaVersion: petSnapshot.schemaVersion ?? PERSONALITY_STATE_SCHEMA_VERSION,
     engineVersion: options.engineVersion ?? PERSONALITY_ENGINE_VERSION,
     registryVersion: options.registryVersion ?? STATIC_REGISTRY_VERSION,
     savedAt,

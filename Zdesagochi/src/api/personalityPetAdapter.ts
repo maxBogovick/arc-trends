@@ -1,5 +1,5 @@
 import type { Account, Pet } from './types';
-import type { PersonalityState } from '../../packages/personality-core/src';
+import { PERSONALITY_STATE_SCHEMA_VERSION, type PersonalityState } from '../../packages/personality-core/src';
 
 export function toPersonalityState(
   appPet: Pet,
@@ -7,6 +7,7 @@ export function toPersonalityState(
   coins?: number,
 ): PersonalityState {
   return cloneData({
+    schemaVersion: PERSONALITY_STATE_SCHEMA_VERSION,
     mood: appPet.mood,
     stats: appPet.stats,
     ageHours: appPet.ageHours,

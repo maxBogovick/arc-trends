@@ -363,18 +363,6 @@ export function RoomScene({
         </motion.div>
       ))}
 
-      {/* Pet shadow on floor */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          bottom: '14%', left: '50%', transform: 'translateX(-50%)',
-          width: '46%', height: '5%',
-          background: `radial-gradient(ellipse, ${accent}88 0%, transparent 70%)`,
-          filter: 'blur(12px)',
-          zIndex: 5,
-        }}
-      />
-
       <DarknessContext.Provider value={effectiveDarkness}>
         {children}
       </DarknessContext.Provider>

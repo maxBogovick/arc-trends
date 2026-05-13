@@ -1,4 +1,7 @@
-import type { OfflinePetSave } from '../../packages/personality-core/src';
+import {
+  PERSONALITY_STATE_SCHEMA_VERSION,
+  type OfflinePetSave,
+} from '../../packages/personality-core/src';
 
 export const DEFAULT_OFFLINE_PET_SAVE_KEY = 'zdesagochi:offline-pet-save:v1';
 
@@ -77,10 +80,21 @@ function isOfflinePetSave(value: unknown): value is OfflinePetSave {
   if (!Array.isArray(value.commandLog)) return false;
   if (value.lastSyncedCommandId !== null && typeof value.lastSyncedCommandId !== 'string') return false;
   if (!isNumberRecord(value.influenceCooldowns)) return false;
+  if (!isSupportedSchemaVersion(value.schemaVersion)) return false;
   if (typeof value.engineVersion !== 'string') return false;
   if (typeof value.registryVersion !== 'string') return false;
   if (typeof value.savedAt !== 'string') return false;
   return true;
+}
+
+function isSupportedSchemaVersion(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= PERSONALITY_STATE_SCHEMA_VERSION
+  );
 }
 
 function isNumberRecord(value: unknown): value is Record<string, number> {

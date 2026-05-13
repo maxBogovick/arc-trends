@@ -706,7 +706,7 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
 
     async feedPet(foodId) {
-      await action('feed', async () => {
+      await action(`feed_${foodId}`, async () => {
         const pet = await api().feedPet(foodId);
         const food = get().foods.find(f => f.id === foodId);
         set({ pet });

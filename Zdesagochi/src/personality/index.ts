@@ -16,6 +16,7 @@ export * from './commandHandlers';
 export * from './coreState';
 export * from './engineFacade';
 export * from './engineFactory';
+export * from './stateMigration';
 export * from './zdesagochiPetPreset';
 export * from './clone';
 export * from './random';

@@ -21,7 +21,11 @@ import {
   trySaveOfflinePetSave,
   type OfflineKeyValueStorage,
 } from '../src/api/offlineStorage';
-import { createPersonalityEngine } from '../packages/personality-core/src';
+import {
+  PERSONALITY_STATE_SCHEMA_VERSION,
+  createPersonalityEngine,
+  migratePersonalityState,
+} from '../packages/personality-core/src';
 import { zdesagochiPetPreset } from '../packages/personality-pet-preset/src';
 import type { BehavioralCounters, BehavioralFlag, MoodSnapshot, TraitVector } from '../src/personality/types';
 import {
@@ -252,6 +256,7 @@ test('offline save captures snapshot with engine and registry versions', () => {
   assert.deepEqual(save.commandLog, []);
   assert.equal(save.lastSyncedCommandId, null);
   assert.deepEqual(save.influenceCooldowns, {});
+  assert.equal(save.schemaVersion, PERSONALITY_STATE_SCHEMA_VERSION);
   assert.equal(save.engineVersion, PERSONALITY_ENGINE_VERSION);
   assert.equal(save.registryVersion, STATIC_REGISTRY_VERSION);
   assert.equal(save.savedAt, '2026-05-04T00:00:00.000Z');
@@ -345,6 +350,7 @@ test('personality pet adapter roundtrips engine-owned fields', () => {
   const state = toPersonalityState(pet, account, 123);
   const roundtripped = fromPersonalityState(state, makePet({ name: 'Shell Name', color: '#abc' }));
 
+  assert.equal(state.schemaVersion, PERSONALITY_STATE_SCHEMA_VERSION);
   assert.deepEqual(roundtripped.stats, pet.stats);
   assert.equal(roundtripped.personality, pet.personality);
   assert.deepEqual(roundtripped.traitVector, pet.traitVector);
@@ -364,6 +370,59 @@ test('personality pet adapter roundtrips engine-owned fields', () => {
   assert.deepEqual(state.legacy?.legacyVector, account.legacyVector);
 });
 
+test('migratePersonalityState versions legacy state snapshots', () => {
+  const legacyState = toPersonalityState(makePet());
+  delete legacyState.schemaVersion;
+
+  const migrated = migratePersonalityState(legacyState);
+
+  assert.equal(migrated.ok, true);
+  if (migrated.ok) {
+    assert.equal(migrated.migrated, true);
+    assert.equal(migrated.fromVersion, null);
+    assert.equal(migrated.state.schemaVersion, PERSONALITY_STATE_SCHEMA_VERSION);
+    assert.deepEqual(migrated.state.traitVector, legacyState.traitVector);
+  }
+});
+
+test('migratePersonalityState rejects unsupported future snapshots', () => {
+  const futureState = {
+    ...toPersonalityState(makePet()),
+    schemaVersion: PERSONALITY_STATE_SCHEMA_VERSION + 1,
+  };
+
+  assert.deepEqual(migratePersonalityState(futureState), {
+    ok: false,
+    reason: 'unsupported_future_version',
+    fromVersion: PERSONALITY_STATE_SCHEMA_VERSION + 1,
+    toVersion: PERSONALITY_STATE_SCHEMA_VERSION,
+  });
+});
+
+test('migratePersonalityState rejects invalid schema versions', () => {
+  const stringVersionState = {
+    ...toPersonalityState(makePet()),
+    schemaVersion: '1',
+  };
+  const zeroVersionState = {
+    ...toPersonalityState(makePet()),
+    schemaVersion: 0,
+  };
+
+  assert.deepEqual(migratePersonalityState(stringVersionState), {
+    ok: false,
+    reason: 'invalid_state',
+    fromVersion: null,
+    toVersion: PERSONALITY_STATE_SCHEMA_VERSION,
+  });
+  assert.deepEqual(migratePersonalityState(zeroVersionState), {
+    ok: false,
+    reason: 'invalid_state',
+    fromVersion: 0,
+    toVersion: PERSONALITY_STATE_SCHEMA_VERSION,
+  });
+});
+
 testAsync('personality state command wrapper keeps app pet compatibility path', async () => {
   const pet = makePet({ stats: { hunger: 70, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 } });
   const state = toPersonalityState(pet, undefined, 10);
@@ -375,6 +434,7 @@ testAsync('personality state command wrapper keeps app pet compatibility path', 
   });
 
   assert.equal(result.command.commandId, 'cmd-state-feed');
+  assert.equal(result.schemaVersion, PERSONALITY_STATE_SCHEMA_VERSION);
   assert.equal(result.pet.stats.hunger > state.stats.hunger, true);
   assert.equal(result.coinDelta >= 0, true);
 });
@@ -737,6 +797,14 @@ test('offline storage reports invalid json and invalid shape without throwing', 
     }),
   });
   assert.deepEqual(loadOfflinePetSave(badShapeStorage), { ok: false, reason: 'invalid_shape' });
+
+  const futureSchemaStorage = makeMemoryStorage({
+    'zdesagochi:offline-pet-save:v1': JSON.stringify({
+      ...createOfflinePetSave(makePet(), '2026-05-04T00:00:00.000Z'),
+      schemaVersion: PERSONALITY_STATE_SCHEMA_VERSION + 1,
+    }),
+  });
+  assert.deepEqual(loadOfflinePetSave(futureSchemaStorage), { ok: false, reason: 'invalid_shape' });
 });
 
 test('pattern rule params validate against supported evaluator semantics', () => {
@@ -1224,6 +1292,7 @@ await testAsync('personality command feed applies exact trait deltas without mut
   assert.equal(result.events.some(event => event.type === 'trait_vector_changed'), true);
   assert.equal(result.engineVersion, PERSONALITY_ENGINE_VERSION);
   assert.equal(result.registryVersion, STATIC_REGISTRY_VERSION);
+  assert.equal(result.schemaVersion, PERSONALITY_STATE_SCHEMA_VERSION);
 });
 
 await testAsync('personality command play returns full gameplay outcome', async () => {
