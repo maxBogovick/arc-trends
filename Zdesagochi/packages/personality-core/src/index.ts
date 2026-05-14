@@ -5,39 +5,40 @@ export type {
   OfflinePetSave,
   PetCommand,
   PetCommandResult,
-} from '../../../src/personality/commands';
+} from './commands';
 export {
   appendOfflineCommand,
   createOfflinePetSave,
   getUnsyncedCommands,
   markCommandsSynced,
-} from '../../../src/personality/commands';
+} from './commands';
 export type {
   PersonalityAccount,
   PersonalityInfluenceCooldownState,
   PersonalityMemoryGuardian,
+  PersonalityMemoryTextGenerator,
   PersonalityMood,
   PersonalityNamedState,
   PersonalityRuntime,
   PersonalityState,
   PersonalityStats,
-} from '../../../src/personality/coreState';
-export { applyPersonalityStateCommand } from '../../../src/personality/engineFacade';
+} from './coreState';
+export { applyPersonalityStateCommand } from './engineFacade';
 export type {
   PersonalityEngine,
   PersonalityEngineConfig,
   PersonalityEngineValidationIssue,
   PersonalityPreset,
   PersonalityReplayResult,
-} from '../../../src/personality/engineFactory';
-export { createPersonalityEngine } from '../../../src/personality/engineFactory';
+} from './engineFactory';
+export { createPersonalityEngine } from './engineFactory';
 export {
   PERSONALITY_ENGINE_VERSION,
   PERSONALITY_STATE_SCHEMA_VERSION,
   STATIC_REGISTRY_VERSION,
-} from '../../../src/personality/engineVersion';
-export type { PersonalityStateMigrationResult } from '../../../src/personality/stateMigration';
-export { migratePersonalityState } from '../../../src/personality/stateMigration';
+} from './engineVersion';
+export type { PersonalityStateMigrationResult } from './stateMigration';
+export { migratePersonalityState } from './stateMigration';
 export type {
   ActionType,
   ActiveEmergentState,
@@ -55,4 +56,4 @@ export type {
   StatKey,
   TraitKey,
   TraitVector,
-} from '../../../src/personality/types';
+} from './types';

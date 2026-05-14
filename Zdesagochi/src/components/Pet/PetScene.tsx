@@ -36,6 +36,8 @@ const STAGE_INFO: Record<string, { label: string; emoji: string }> = {
 // ── Travel speed by mood ──────────────────────────────────────────────────────
 function patrolTransitionDuration(mode: BehaviorMode, mood: PetMood): number {
   if (mode === 'sleeping') return 1.8;
+  // Action modes: snap quickly so food/props appear at the same position as the pet
+  if (mode === 'eating' || mode === 'playing' || mode === 'cleaning' || mode === 'medicine') return 0.25;
   if (mood === 'ecstatic') return 0.9;
   if (mood === 'tired' || mood === 'sad') return 2.4;
   return 1.5;

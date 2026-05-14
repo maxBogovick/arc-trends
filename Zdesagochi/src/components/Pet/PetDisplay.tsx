@@ -664,7 +664,6 @@ export function PetDisplay({ pet, moodOverride, size = 220, behaviorMode, sceneI
         scaleX: 0.32,
         scaleY: 0.32,
         y: 113,
-        x: facing * -42,
         transition: {
           y:      { duration: 0.55, ease: 'easeInOut', delay: 1.8 },
           scaleX: { duration: 0.55, ease: 'easeInOut', delay: 1.8 },

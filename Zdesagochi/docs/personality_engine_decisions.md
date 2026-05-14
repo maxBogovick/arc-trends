@@ -506,3 +506,193 @@ The package-like core API now has explicit version/migration semantics and a run
 ### Next
 
 Move implementation ownership toward packages while keeping the existing public API and verification suite unchanged.
+
+---
+
+## DEC-0009: Move foundational core contracts before command execution ownership
+
+Status: accepted  
+Date: 2026-05-13  
+Related files: `packages/personality-core/src/types.ts`, `packages/personality-core/src/coreState.ts`, `packages/personality-core/src/engineVersion.ts`, `packages/personality-core/src/stateMigration.ts`, `src/personality/types.ts`, `src/personality/coreState.ts`, `src/personality/engineVersion.ts`, `src/personality/stateMigration.ts`  
+Related roadmap item: Physical source ownership / package readiness
+
+### Context
+
+After versioning/docs, the package-like API was usable, but many exports still physically came from `src/personality`. Moving command execution first would touch high-risk behavior paths. The low-risk base layer is the type/state/version/migration contract because it does not change gameplay formulas or registry data.
+
+### Decision
+
+Move `types.ts`, `coreState.ts`, `engineVersion.ts`, and `stateMigration.ts` into `packages/personality-core/src`. Keep same-name `src/personality` files as compatibility shims that re-export the package-owned modules.
+
+### Why
+
+This proves physical package ownership incrementally while preserving all existing imports. It also gives future command/factory moves a package-local contract to import from instead of continuing to depend on legacy `src/personality` files.
+
+### Alternatives
+
+- Move all command execution files at once: rejected, because it would be a larger behavioral-risk refactor.
+- Leave package entrypoint as re-exports only: rejected, because package readiness would remain unproven.
+- Delete legacy `src/personality` files immediately: rejected, because the app and internal implementation still import those paths.
+
+### Consequences
+
+The foundational core contract now lives in the package boundary. Legacy paths still work, but they are no longer authoritative. The next package-readiness step can focus on commands/factory/facade without also moving state/type contracts.
+
+### Verification
+
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+- Boundary `rg` checks for app API imports, storage/browser symbols, and foundational package imports routing back through `src/personality`.
+
+### Next
+
+Move command/result and engine factory/facade ownership behind `packages/personality-core/src` while keeping behavior and public API stable.
+
+---
+
+## DEC-0010: Move public command and engine API before gameplay internals
+
+Status: accepted  
+Date: 2026-05-13  
+Related files: `packages/personality-core/src/commands.ts`, `packages/personality-core/src/commandHandlers.ts`, `packages/personality-core/src/engineFacade.ts`, `packages/personality-core/src/engineFactory.ts`, `src/personality/commands.ts`, `src/personality/commandHandlers.ts`, `src/personality/engineFacade.ts`, `src/personality/engineFactory.ts`  
+Related roadmap item: Physical source ownership / package readiness
+
+### Context
+
+The foundational contracts moved into `packages/personality-core/src`, but the package entrypoint still exported command/result and engine construction through legacy `src/personality` files. Moving all gameplay internals at once would be risky because command execution coordinates action rules, pattern rules, state layers, trait evolution, memory generation and personality registries.
+
+### Decision
+
+Move `commands.ts`, `commandHandlers.ts`, `engineFacade.ts`, and `engineFactory.ts` into `packages/personality-core/src`. Keep same-name `src/personality` files as compatibility shims. Allow package-owned `commandHandlers` to temporarily import legacy gameplay implementation dependencies until those are moved in separate slices.
+
+### Why
+
+This makes the public command and engine API physically package-owned without changing gameplay behavior. It also exposes the remaining extraction work clearly: package command execution now depends on a finite set of legacy implementation modules instead of hiding behind legacy public files.
+
+### Alternatives
+
+- Move all gameplay internals together with `commandHandlers`: rejected, because it would be a broad behavioral-risk refactor.
+- Keep `engineFacade` importing legacy `commandHandlers`: rejected after review, because public package ownership would still be routed through a legacy command bridge.
+- Delete compatibility shims now: rejected, because existing app/tests still import `src/personality`.
+
+### Consequences
+
+External-style imports now resolve public command/result/engine API from package-local files. The package is still not standalone because command execution depends on legacy implementation modules. That dependency is explicit and is the next extraction target.
+
+### Verification
+
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+- Boundary `rg` checks for app API imports, storage/browser symbols, same-name shim imports, and app adapters bypassing public engine APIs.
+
+### Next
+
+Move or isolate the gameplay implementation dependencies used by package-owned `commandHandlers`, starting with pure data/rule modules before stateful orchestration modules.
+
+---
+
+## DEC-0011: Move generic gameplay implementation before Zdesagochi defaults
+
+Status: accepted  
+Date: 2026-05-13  
+Related files: `packages/personality-core/src/PersonalityEngine.ts`, `packages/personality-core/src/TraitEvolutionEngine.ts`, `packages/personality-core/src/actionRules.ts`, `packages/personality-core/src/patternRules.ts`, `packages/personality-core/src/passiveRules.ts`, `packages/personality-core/src/decayRules.ts`, `packages/personality-core/src/gameplayStateRules.ts`, `packages/personality-core/src/emergentStates.ts`, `packages/personality-core/src/stateLayers.ts`, `packages/personality-core/src/personalityTraitMap.ts`, `src/personality/*` shims  
+Related roadmap item: Physical source ownership / package readiness
+
+### Context
+
+Public command and engine API files were package-owned, but `commandHandlers` still imported legacy implementation modules. Some of those modules are generic gameplay/core logic, while others are Zdesagochi defaults or runtime adapters. Moving them together would blur the core/preset boundary.
+
+### Decision
+
+Move generic gameplay implementation modules into `packages/personality-core/src` first:
+
+- action/passive/decay/pattern/gameplay-state rules;
+- emergent state definitions;
+- state layer helpers;
+- deterministic clone/random helpers;
+- `PersonalityEngine`;
+- `TraitEvolutionEngine`;
+- `personalityTraitMap`.
+
+Keep legacy `src/personality` paths as shims. Leave `personalities`, `influenceRegistry`, and `memoryTextGenerator` as explicit remaining dependencies for the next preset/runtime defaults slice.
+
+### Why
+
+This reduces package command execution dependency on legacy source layout while avoiding the wrong architectural move of putting Zdesagochi preset data and browser-aware memory generation into generic core by accident.
+
+### Alternatives
+
+- Move `personalities` and `influenceRegistry` into core immediately: rejected, because those are Zdesagochi preset/default data, not generic core.
+- Move `memoryTextGenerator` into core unchanged: rejected for now, because it includes browser/device capability probing and needs a cleaner runtime boundary.
+- Stop after public API ownership: rejected, because command execution would still be mostly legacy-owned.
+
+### Consequences
+
+Generic gameplay execution is now mostly package-owned. The package is still not standalone, but the remaining imports are narrower and semantically meaningful: preset/default registry and memory text generation.
+
+### Verification
+
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+- Boundary `rg` checks for app API imports, storage/browser symbols, app adapter bypasses, and remaining `src/personality` imports from package core.
+
+### Next
+
+Extract Zdesagochi preset/default dependencies by moving or injecting `personalities`, `influenceRegistry`, and `memoryTextGenerator` through preset/runtime boundaries.
+
+---
+
+## DEC-0012: Inject preset/runtime defaults into core instead of importing them
+
+Status: accepted  
+Date: 2026-05-14  
+Related files: `packages/personality-core/src/coreState.ts`, `packages/personality-core/src/engineFactory.ts`, `packages/personality-core/src/commandHandlers.ts`, `packages/personality-core/src/TraitEvolutionEngine.ts`, `src/personality/commandHandlers.ts`, `src/personality/engineFacade.ts`, `src/personality/TraitEvolutionEngine.ts`, `src/personality/zdesagochiPetPreset.ts`  
+Related roadmap item: Physical source ownership / package readiness
+
+### Context
+
+After generic gameplay implementation moved into `packages/personality-core/src`, the core package still imported legacy Zdesagochi defaults: personality definitions, influence registry, and browser-aware memory text generation. Moving those into core would make the package less reusable and violate the core/preset split.
+
+### Decision
+
+Make preset/runtime defaults injectable:
+
+- add `personalities` to `PersonalityRuntime` and `PersonalityEngineConfig`;
+- require `personalities` and `influenceRegistry` for core command execution;
+- add `personalities` to `TraitEvolutionContext`;
+- keep core fallback memory text generation minimal and storage/browser-free;
+- update `zdesagochiPetPreset` to provide `PERSONALITIES`;
+- keep legacy `src/personality` wrappers that inject Zdesagochi defaults for old imports.
+
+### Why
+
+Generic core should not import Zdesagochi preset data or browser-aware runtime adapters. Injection makes the reusable boundary explicit while preserving current app behavior through compatibility wrappers.
+
+### Alternatives
+
+- Move `personalities` and `influenceRegistry` into core: rejected, because they are Zdesagochi defaults.
+- Leave core importing `src/personality`: rejected, because package core would not be standalone.
+- Break legacy `src/personality` callers immediately: rejected, because the app and existing tests still use those paths.
+
+### Consequences
+
+`packages/personality-core/src` no longer imports `src/personality`. Consumers using core directly must provide preset/runtime data through config or runtime. Existing app paths keep working through wrappers that inject Zdesagochi defaults.
+
+### Verification
+
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+- `rg "../../../src/personality" packages/personality-core/src` returns no matches.
+- Boundary checks confirm no app API imports or storage/browser symbols in package core.
+
+### Next
+
+Move Zdesagochi preset ownership into `packages/personality-pet-preset/src`, including personality data/default registry wrappers, while keeping app-facing legacy imports as compatibility shims.

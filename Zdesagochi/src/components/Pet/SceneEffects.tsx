@@ -1,220 +1,547 @@
+import { useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { useMemo } from 'react';
 import type { SceneEffect } from '../../data/backgrounds';
 
 const sr = (i: number, off = 0) => ((i * 137 + off * 31) % 100) / 100;
-const SCR: React.CSSProperties = { mixBlendMode: 'screen' };
 
-/* ─── Dust (subtle atmosphere, replaces old Particles) ──────────────────────── */
-function Dust({ color, count = 14 }: { color: string; count?: number }) {
-  const items = useMemo(() => Array.from({ length: count }, (_, i) => ({
-    x:   sr(i, 0) * 88 + 6,
-    y:   sr(i, 1) * 78 + 8,
-    sz:  sr(i, 2) * 1.4 + 0.7,          // 0.7–2.1px
-    dur: sr(i, 3) * 10 + 14,            // 14–24s (very slow)
-    del: sr(i, 4) * 10,
-    dy:  (sr(i, 5) - 0.5) * 10,         // ±5px drift
-    dx:  (sr(i, 6) - 0.5) * 6,          // ±3px drift
-    maxOp: sr(i, 7) * 0.12 + 0.04,      // 0.04–0.16 opacity max
-  })), [count]);
+// ── Canvas hook ───────────────────────────────────────────────────────────────
 
-  return (
-    <div className="absolute inset-0 pointer-events-none" style={SCR}>
-      {items.map((p, i) => (
-        <motion.div key={i} style={{
-          position: 'absolute', left: `${p.x}%`, top: `${p.y}%`,
-          transform: 'translate(-50%,-50%)',
-          width: p.sz, height: p.sz, borderRadius: '50%',
-          background: color,
-          boxShadow: `0 0 ${p.sz * 4}px ${p.sz * 1.5}px ${color}`,
-        }}
-          animate={{
-            y: [0, p.dy, 0],
-            x: [0, p.dx, 0],
-            opacity: [0, p.maxOp, 0],
-          }}
-          transition={{ duration: p.dur, repeat: Infinity, delay: p.del, ease: 'easeInOut' }}
-        />
-      ))}
-    </div>
-  );
+type DrawFn = (ctx: CanvasRenderingContext2D, t: number, w: number, h: number) => void;
+
+function useCanvas(draw: DrawFn) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const drawRef = useRef<DrawFn>(draw);
+  drawRef.current = draw;
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const parent = canvas.parentElement;
+    if (!parent) return;
+
+    const ctx = canvas.getContext('2d')!;
+    let rafId: number;
+    const t0 = performance.now();
+
+    const resize = () => {
+      const { width, height } = parent.getBoundingClientRect();
+      const w = Math.max(1, Math.round(width));
+      const h = Math.max(1, Math.round(height));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+    };
+    resize();
+
+    const ro = new ResizeObserver(resize);
+    ro.observe(parent);
+
+    const loop = (now: number) => {
+      rafId = requestAnimationFrame(loop);
+      if (document.hidden) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawRef.current(ctx, (now - t0) / 1000, canvas.width, canvas.height);
+    };
+    rafId = requestAnimationFrame(loop);
+
+    return () => { cancelAnimationFrame(rafId); ro.disconnect(); };
+  }, []);
+
+  return ref;
 }
 
-/* ─── Stars ──────────────────────────────────────────────────────────────────── */
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.startsWith('#') ? hex.slice(1) : '808080';
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const n = parseInt(full, 16) || 0;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+const CANVAS_BASE: React.CSSProperties = {
+  position: 'absolute', inset: 0,
+  width: '100%', height: '100%',
+  pointerEvents: 'none',
+  mixBlendMode: 'screen',
+};
+
+// ── Dust ──────────────────────────────────────────────────────────────────────
+
+function Dust({ color, count = 14 }: { color: string; count?: number }) {
+  const pts = useMemo(() => Array.from({ length: count }, (_, i) => ({
+    bx:   sr(i, 0) * 0.88 + 0.06,
+    by:   sr(i, 1) * 0.78 + 0.08,
+    sz:   sr(i, 2) * 1.4 + 0.7,
+    dur:  sr(i, 3) * 10 + 14,
+    del:  sr(i, 4) * 10,
+    dy:   (sr(i, 5) - 0.5) * 10,
+    dx:   (sr(i, 6) - 0.5) * 6,
+    maxOp: sr(i, 7) * 0.12 + 0.04,
+  })), [count]);
+
+  const [r, g, b] = useMemo(() => hexToRgb(color), [color]);
+
+  const ref = useCanvas((ctx, t, w, h) => {
+    ctx.globalCompositeOperation = 'source-over';
+    for (const p of pts) {
+      const phase = ((t - p.del) / p.dur) * Math.PI * 2;
+      const x = p.bx * w + p.dx * Math.sin(phase * 0.7);
+      const y = p.by * h + p.dy * Math.sin(phase);
+      const op = p.maxOp * (0.5 + 0.5 * Math.sin(phase));
+      if (op < 0.005) continue;
+      const rad = p.sz * 4;
+      const grd = ctx.createRadialGradient(x, y, 0, x, y, rad);
+      grd.addColorStop(0, `rgba(${r},${g},${b},${op})`);
+      grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(x, y, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  return <canvas ref={ref} style={CANVAS_BASE} />;
+}
+
+// ── Stars ─────────────────────────────────────────────────────────────────────
+
 function Stars({ count = 32 }: { count?: number }) {
   const stars = useMemo(() => Array.from({ length: count }, (_, i) => ({
-    x: sr(i, 0) * 96 + 2, y: sr(i, 1) * 95 + 2,
-    r: sr(i, 2) * 2 + 0.4,
-    dur: sr(i, 3) * 3 + 1.5, del: sr(i, 4) * 5,
+    x:  sr(i, 0) * 0.96 + 0.02,
+    y:  sr(i, 1) * 0.95 + 0.02,
+    r:  sr(i, 2) * 2 + 0.4,
+    dur: sr(i, 3) * 3 + 1.5,
+    del: sr(i, 4) * 5,
     bright: i < Math.ceil(count * 0.25),
   })), [count]);
+
   const shoots = useMemo(() => Array.from({ length: 3 }, (_, i) => ({
-    x1: sr(i + 60, 0) * 50 + 5, y1: sr(i + 60, 1) * 30 + 5,
-    len: sr(i + 60, 5) * 45 + 25, ang: sr(i + 60, 6) * 35 + 15,
-    dur: sr(i + 60, 3) * 0.6 + 0.5, repDel: sr(i + 60, 4) * 7 + 5,
+    x1:     sr(i + 60, 0) * 0.5 + 0.05,
+    y1:     sr(i + 60, 1) * 0.3 + 0.05,
+    lenF:   sr(i + 60, 5) * 0.45 + 0.25,
+    ang:    sr(i + 60, 6) * 35 + 15,
+    dur:    sr(i + 60, 3) * 0.6 + 0.5,
+    repDel: sr(i + 60, 4) * 7 + 5,
   })), []);
-  return (
-    <>
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {[
-          { x: '28%', y: '22%', w: 145, h: 105, c: '#5040D0', op: 0.2  },
-          { x: '74%', y: '66%', w: 100, h: 80,  c: '#901880', op: 0.14 },
-        ].map((n, i) => (
-          <motion.div key={i} style={{
-            position: 'absolute', left: n.x, top: n.y,
-            transform: 'translate(-50%,-50%)',
-            width: n.w, height: n.h, borderRadius: '50%',
-            background: n.c, opacity: n.op, filter: 'blur(28px)',
-          }}
-            animate={{ scale: [1, 1.15, 1], opacity: [n.op, n.op * 1.6, n.op] }}
-            transition={{ duration: 8 + i * 5, repeat: Infinity, ease: 'easeInOut' }}
-          />
-        ))}
-      </div>
-      <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible', mixBlendMode: 'screen' }}>
-        {stars.map((s, i) => (
-          <motion.g key={i}
-            style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-            animate={s.bright
-              ? { opacity: [0.06, 1, 0.06], scale: [1, 2, 1] }
-              : { opacity: [0.06, 0.5, 0.06] }
-            }
-            transition={{ duration: s.dur, repeat: Infinity, delay: s.del, ease: 'easeInOut' }}
-          >
-            <circle cx={`${s.x}%`} cy={`${s.y}%`} r={s.r} fill={s.bright ? 'white' : '#8899BB'} />
-          </motion.g>
-        ))}
-        {shoots.map((s, i) => {
-          const rad = (s.ang * Math.PI) / 180;
-          return (
-            <motion.line key={`sh${i}`}
-              x1={`${s.x1}%`} y1={`${s.y1}%`}
-              x2={`${s.x1 + s.len * Math.cos(rad)}%`} y2={`${s.y1 + s.len * Math.sin(rad) * 0.5}%`}
-              stroke="white" strokeWidth={1.8} strokeLinecap="round"
-              style={{ filter: 'drop-shadow(0 0 3px white)' }}
-              animate={{ opacity: [0, 0.95, 0] }}
-              transition={{ duration: s.dur, repeat: Infinity, repeatDelay: s.repDel, ease: 'easeOut' }}
-            />
-          );
-        })}
-      </svg>
-    </>
-  );
+
+  const nebulas = useMemo(() => [
+    { x: 0.28, y: 0.22, rw: 0.145, rh: 0.105, r: 80,  g: 64,  b: 208, op: 0.20 },
+    { x: 0.74, y: 0.66, rw: 0.10,  rh: 0.08,  r: 144, g: 24,  b: 128, op: 0.14 },
+  ], []);
+
+  const ref = useCanvas((ctx, t, w, h) => {
+    // Nebulas — slow pulse, no blur needed (radial gradient is already soft)
+    for (const n of nebulas) {
+      const op = n.op * (1 + 0.6 * Math.sin(t * 0.08));
+      const grd = ctx.createRadialGradient(n.x * w, n.y * h, 0, n.x * w, n.y * h, n.rw * w);
+      grd.addColorStop(0, `rgba(${n.r},${n.g},${n.b},${op})`);
+      grd.addColorStop(1, `rgba(${n.r},${n.g},${n.b},0)`);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.ellipse(n.x * w, n.y * h, n.rw * w, n.rh * h, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Stars
+    for (const s of stars) {
+      const phase = ((t - s.del) / s.dur) * Math.PI * 2;
+      const raw = 0.5 + 0.5 * Math.sin(phase);
+      const op  = s.bright ? raw * 0.94 + 0.06 : raw * 0.44 + 0.06;
+      const rr  = s.bright ? s.r * (1 + raw) : s.r;
+
+      ctx.fillStyle = s.bright
+        ? `rgba(255,255,255,${op})`
+        : `rgba(136,153,187,${op})`;
+      ctx.beginPath();
+      ctx.arc(s.x * w, s.y * h, rr, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (s.bright && op > 0.3) {
+        const grd = ctx.createRadialGradient(s.x * w, s.y * h, 0, s.x * w, s.y * h, rr * 4);
+        grd.addColorStop(0, `rgba(255,255,255,${op * 0.35})`);
+        grd.addColorStop(1, `rgba(255,255,255,0)`);
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(s.x * w, s.y * h, rr * 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Shooting stars
+    ctx.lineCap = 'round';
+    for (const s of shoots) {
+      const cycle = s.dur + s.repDel;
+      const localT = ((t % cycle) + cycle) % cycle;
+      if (localT >= s.dur) continue;
+      const frac = localT / s.dur;
+      const op = frac < 0.15 ? frac / 0.15 : Math.max(0, 1 - (frac - 0.15) / 0.85);
+      if (op < 0.01) continue;
+      const rad = (s.ang * Math.PI) / 180;
+      const x1 = s.x1 * w, y1 = s.y1 * h;
+      const x2 = x1 + s.lenF * w * Math.cos(rad);
+      const y2 = y1 + s.lenF * w * Math.sin(rad) * 0.5;
+      const grd = ctx.createLinearGradient(x1, y1, x2, y2);
+      grd.addColorStop(0, `rgba(255,255,255,${op * 0.95})`);
+      grd.addColorStop(1, `rgba(255,255,255,0)`);
+      ctx.strokeStyle = grd;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+  });
+
+  return <canvas ref={ref} style={CANVAS_BASE} />;
 }
 
-/* ─── Rain ───────────────────────────────────────────────────────────────────── */
-const RAIN_CSS = `
-@keyframes neonRain{0%{transform:translateY(-70px) translateX(0);opacity:0}8%{opacity:1}88%{opacity:.8}100%{transform:translateY(320px) translateX(-22px);opacity:0}}
-@keyframes splash{0%{transform:translate(-50%,-50%) scale(.2);opacity:.7}100%{transform:translate(-50%,-50%) scale(2.5);opacity:0}}`;
+// ── Rain ──────────────────────────────────────────────────────────────────────
+
 function Rain({ color }: { color: string }) {
   const drops = useMemo(() => Array.from({ length: 28 }, (_, i) => ({
-    x: sr(i, 0) * 96, w: sr(i, 1) * 1.2 + 0.5, h: sr(i, 2) * 25 + 12,
-    dur: sr(i, 3) * 0.8 + 0.45, del: sr(i, 4) * 2.5,
-    op: sr(i, 5) * 0.45 + 0.3, glow: sr(i, 6) > 0.65,
+    xF:   sr(i, 0) * 0.96,
+    w:    sr(i, 1) * 1.2 + 0.5,
+    dropH: sr(i, 2) * 25 + 12,
+    dur:  sr(i, 3) * 0.8 + 0.45,
+    del:  sr(i, 4) * 2.5,
+    op:   sr(i, 5) * 0.45 + 0.3,
+    glow: sr(i, 6) > 0.65,
   })), []);
+
   const splashes = useMemo(() => Array.from({ length: 7 }, (_, i) => ({
-    x: sr(i + 30, 0) * 85 + 7,
-    dur: sr(i + 30, 1) * 0.6 + 0.5, del: sr(i + 30, 2) * 2.5,
+    xF:   sr(i + 30, 0) * 0.85 + 0.07,
+    dur:  sr(i + 30, 1) * 0.6 + 0.5,
+    del:  sr(i + 30, 2) * 2.5,
   })), []);
-  return (
-    <>
-      <style>{RAIN_CSS}</style>
-      <div className="absolute inset-0 pointer-events-none overflow-hidden" style={SCR}>
-        {drops.map((d, i) => (
-          <div key={i} style={{
-            position: 'absolute', left: `${d.x}%`, top: 0,
-            width: d.w, height: d.h,
-            background: `linear-gradient(to bottom, transparent, ${color})`,
-            opacity: d.op,
-            boxShadow: d.glow ? `0 0 ${d.w * 4}px ${color}cc` : 'none',
-            borderRadius: 2,
-            animation: `neonRain ${d.dur}s ${d.del}s linear infinite`,
-          }} />
-        ))}
-        {splashes.map((s, i) => (
-          <div key={`sp${i}`} style={{
-            position: 'absolute', left: `${s.x}%`, bottom: '4%',
-            width: 14, height: 6, borderRadius: '50%',
-            border: `1px solid ${color}88`,
-            animation: `splash ${s.dur}s ${s.del}s ease-out infinite`,
-          }} />
-        ))}
-      </div>
-    </>
-  );
+
+  const [r, g, b] = useMemo(() => hexToRgb(color), [color]);
+
+  const ref = useCanvas((ctx, t, w, h) => {
+    for (const d of drops) {
+      const cycle = d.dur;
+      const localT = ((t - d.del) % cycle + cycle) % cycle;
+      const frac = localT / cycle;
+      const dropH = d.dropH;
+      const yTop = -dropH + frac * (h + dropH + 20);
+      const x = d.xF * w - 22 * frac;
+
+      // Opacity envelope: ramp 0→8%, hold 8→88%, fade 88→100%
+      let op: number;
+      if (frac < 0.08)       op = d.op * (frac / 0.08);
+      else if (frac < 0.88)  op = d.op;
+      else                   op = d.op * (1 - (frac - 0.88) / 0.12);
+
+      if (op < 0.01) continue;
+
+      const grd = ctx.createLinearGradient(x, yTop, x, yTop + dropH);
+      grd.addColorStop(0, `rgba(${r},${g},${b},0)`);
+      grd.addColorStop(1, `rgba(${r},${g},${b},${op})`);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.rect(x - d.w / 2, yTop, d.w, dropH);
+      ctx.fill();
+    }
+
+    // Splashes at bottom
+    for (const s of splashes) {
+      const cycle = s.dur;
+      const localT = ((t - s.del) % cycle + cycle) % cycle;
+      const frac = localT / cycle;
+      const op = Math.max(0, 0.7 * (1 - frac));
+      const scale = 0.2 + frac * 2.3;
+      const x = s.xF * w;
+      const y = h * 0.96;
+      const rw = 7 * scale, rh = 3 * scale;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${op * 0.53})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rw, rh, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
+
+  return <canvas ref={ref} style={CANVAS_BASE} />;
 }
 
-/* ─── Ash / Embers ───────────────────────────────────────────────────────────── */
-const ASH_CSS = `
-@keyframes emberRise{0%{transform:translateY(0) translateX(0);opacity:0}10%{opacity:.9}80%{opacity:.4}100%{transform:translateY(-290px) translateX(var(--dx));opacity:0}}`;
+// ── Ash / Embers ──────────────────────────────────────────────────────────────
+
 function Ash({ color, count = 22 }: { color: string; count?: number }) {
   const items = useMemo(() => Array.from({ length: count }, (_, i) => ({
-    x: sr(i, 0) * 88 + 6, sz: sr(i, 1) * 3 + 1.2,
-    dur: sr(i, 2) * 3.5 + 3, del: sr(i, 3) * 5,
-    dx: (sr(i, 4) - 0.5) * 50, bright: sr(i, 5) > 0.6,
+    xF:    sr(i, 0) * 0.88 + 0.06,
+    sz:    sr(i, 1) * 3 + 1.2,
+    dur:   sr(i, 2) * 3.5 + 3,
+    del:   sr(i, 3) * 5,
+    dxPx:  (sr(i, 4) - 0.5) * 50,
+    bright: sr(i, 5) > 0.6,
   })), [count]);
-  return (
-    <>
-      <style>{ASH_CSS}</style>
-      <div className="absolute inset-0 pointer-events-none overflow-hidden" style={SCR}>
-        {items.map((s, i) => (
-          <div key={i} style={{
-            position: 'absolute', left: `${s.x}%`, bottom: '4%',
-            width: s.sz * 2, height: s.sz * 2, borderRadius: '50%',
-            background: s.bright ? `radial-gradient(circle, #fff 0%, ${color} 40%, transparent 80%)` : color,
-            boxShadow: s.bright ? `0 0 ${s.sz * 5}px ${s.sz * 2}px ${color}cc` : `0 0 ${s.sz * 3}px ${color}88`,
-            '--dx': `${s.dx}px`,
-            animation: `emberRise ${s.dur}s ${s.del}s ease-out infinite`,
-          } as React.CSSProperties} />
-        ))}
-      </div>
-    </>
-  );
+
+  const [r, g, b] = useMemo(() => hexToRgb(color), [color]);
+
+  const ref = useCanvas((ctx, t, w, h) => {
+    for (const em of items) {
+      const cycle = em.dur;
+      const localT = ((t - em.del) % cycle + cycle) % cycle;
+      const frac = localT / cycle;
+
+      let op: number;
+      if (frac < 0.10)       op = frac / 0.10 * 0.9;
+      else if (frac < 0.80)  op = 0.9 * (1 - (frac - 0.10) / 0.7 * 0.5);
+      else                   op = 0.45 * (1 - (frac - 0.80) / 0.20);
+
+      if (op < 0.01) continue;
+
+      const x = em.xF * w + em.dxPx * frac;
+      const y = h * 0.96 - frac * 290;
+      const rad = em.sz;
+
+      const grd = ctx.createRadialGradient(x, y, 0, x, y, rad * 2);
+      if (em.bright) {
+        grd.addColorStop(0, `rgba(255,255,255,${op})`);
+        grd.addColorStop(0.4, `rgba(${r},${g},${b},${op})`);
+      } else {
+        grd.addColorStop(0, `rgba(${r},${g},${b},${op})`);
+      }
+      grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(x, y, rad * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  return <canvas ref={ref} style={CANVAS_BASE} />;
 }
 
-/* ─── Grid ───────────────────────────────────────────────────────────────────── */
+// ── Aurora ────────────────────────────────────────────────────────────────────
+
+function Aurora({ color, color2 }: { color: string; color2?: string }) {
+  const c2 = color2 ?? '#818CF8';
+  const [r1, g1, b1] = useMemo(() => hexToRgb(color), [color]);
+  const [r2, g2, b2] = useMemo(() => hexToRgb(c2), [c2]);
+  const [r3, g3, b3] = useMemo(() => hexToRgb('#A855F7'), []);
+  const [r4, g4, b4] = useMemo(() => hexToRgb('#EC4899'), []);
+  const [r5, g5, b5] = useMemo(() => hexToRgb('#6366F1'), []);
+
+  const bands = useMemo(() => [
+    { yF: 0.08, hF: 70, cr: r1, cg: g1, cb: b1, op: 0.44, scAmpl: 0.6, delay: 0,   xAmpl: 18 },
+    { yF: 0.22, hF: 55, cr: r2, cg: g2, cb: b2, op: 0.33, scAmpl: 0.3, delay: 1.2, xAmpl: 14 },
+    { yF: 0.34, hF: 80, cr: r3, cg: g3, cb: b3, op: 0.33, scAmpl: 0.4, delay: 2.1, xAmpl: 20 },
+    { yF: 0.48, hF: 45, cr: r4, cg: g4, cb: b4, op: 0.33, scAmpl: 0.2, delay: 0.7, xAmpl: 12 },
+    { yF: 0.58, hF: 60, cr: r5, cg: g5, cb: b5, op: 0.33, scAmpl: 0.4, delay: 1.7, xAmpl: 16 },
+  ], [r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4, b4, r5, g5, b5]);
+
+  const ref = useCanvas((ctx, t, w, h) => {
+    for (const band of bands) {
+      const dur = 5 + bands.indexOf(band) * 1.3;
+      const phase = ((t - band.delay) / dur) * Math.PI * 2;
+      const scaleY = 1 + band.scAmpl * Math.sin(phase);
+      const xOff = band.xAmpl * Math.sin(phase * 0.7);
+      const op = band.op * (0.5 + 0.5 * Math.sin(phase * 0.5 + 0.5));
+
+      const cy = band.yF * h;
+      const bandH = band.hF * scaleY;
+
+      const grd = ctx.createLinearGradient(0, cy - bandH / 2, 0, cy + bandH / 2);
+      grd.addColorStop(0, `rgba(${band.cr},${band.cg},${band.cb},0)`);
+      grd.addColorStop(0.5, `rgba(${band.cr},${band.cg},${band.cb},${op})`);
+      grd.addColorStop(1, `rgba(${band.cr},${band.cg},${band.cb},0)`);
+
+      ctx.save();
+      ctx.translate(xOff, 0);
+      ctx.fillStyle = grd;
+      ctx.fillRect(-w * 0.12, cy - bandH / 2, w * 1.24, bandH);
+      ctx.restore();
+    }
+  });
+
+  return <canvas ref={ref} style={CANVAS_BASE} />;
+}
+
+// ── Lava ──────────────────────────────────────────────────────────────────────
+
+function Lava({ color }: { color: string }) {
+  const bubbles = useMemo(() => Array.from({ length: 12 }, (_, i) => ({
+    xF:    sr(i, 0) * 0.84 + 0.08,
+    botF:  sr(i, 1) * 0.22 + 0.03,
+    sz:    sr(i, 2) * 6 + 2.5,
+    dur:   sr(i, 3) * 1.5 + 1.2,
+    del:   sr(i, 4) * 3,
+    bright: i < 4,
+  })), []);
+
+  const sparks = useMemo(() => Array.from({ length: 10 }, (_, i) => ({
+    xF:   sr(i + 20, 0) * 0.80 + 0.10,
+    sz:   sr(i + 20, 1) * 2 + 0.8,
+    dur:  sr(i + 20, 2) + 0.8,
+    del:  sr(i + 20, 3) * 3,
+    dxPx: (sr(i + 20, 4) - 0.5) * 24,
+  })), []);
+
+  const [r, g, b] = useMemo(() => hexToRgb(color), [color]);
+
+  const ref = useCanvas((ctx, t, w, h) => {
+    // Base lava glow at bottom
+    const glowPulse = 0.6 + 0.4 * Math.sin(t * (Math.PI * 2 / 2.2));
+    const glowGrd = ctx.createLinearGradient(0, h * 0.48, 0, h);
+    glowGrd.addColorStop(0, `rgba(${r},${g},${b},0)`);
+    glowGrd.addColorStop(0.35, `rgba(${r},${g},${b},${0.33 * glowPulse})`);
+    glowGrd.addColorStop(1, `rgba(${r},${g},${b},${0.66 * glowPulse})`);
+    ctx.fillStyle = glowGrd;
+    ctx.fillRect(0, 0, w, h);
+
+    // Bubbles
+    for (const bub of bubbles) {
+      const cycle = bub.dur;
+      const localT = ((t - bub.del) % cycle + cycle) % cycle;
+      const frac = localT / cycle;
+
+      let op: number;
+      if (frac < 0.40) op = 0.9 * (frac / 0.40);
+      else if (frac < 0.85) op = 0.9 * (1 - (frac - 0.40) / 0.45 * 0.5);
+      else op = 0.45 * (1 - (frac - 0.85) / 0.15);
+
+      if (op < 0.01) continue;
+
+      const scale = frac < 0.85 ? frac / 0.85 : 1 + (frac - 0.85) / 0.15 * 0.3;
+      const x = bub.xF * w;
+      const y = (1 - bub.botF) * h - frac * 16;
+      const rad = bub.sz * scale;
+
+      const grd = ctx.createRadialGradient(x, y, 0, x, y, rad);
+      if (bub.bright) {
+        grd.addColorStop(0, `rgba(255,255,255,${op})`);
+        grd.addColorStop(0.4, `rgba(${r},${g},${b},${op})`);
+      } else {
+        grd.addColorStop(0, `rgba(${r},${g},${b},${op})`);
+      }
+      grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(x, y, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Sparks flying up
+    for (const sp of sparks) {
+      const cycle = sp.dur;
+      const localT = ((t - sp.del) % cycle + cycle) % cycle;
+      const frac = localT / cycle;
+
+      const op = frac < 0.2 ? frac / 0.2 : Math.max(0, 1 - (frac - 0.2) / 0.8);
+      if (op < 0.01) continue;
+
+      const x = sp.xF * w + sp.dxPx * frac;
+      const y = h * 0.92 - frac * (150 + sp.sz * 20);
+      const scale = 0.5 + frac * 0.5;
+      const rad = sp.sz * scale;
+
+      const grd = ctx.createRadialGradient(x, y, 0, x, y, rad * 2);
+      grd.addColorStop(0, `rgba(255,255,255,${op})`);
+      grd.addColorStop(0.5, `rgba(${r},${g},${b},${op})`);
+      grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(x, y, rad * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  return <canvas ref={ref} style={CANVAS_BASE} />;
+}
+
+// ── Digital Rain ──────────────────────────────────────────────────────────────
+
+const DR_CHARS = '0123456789ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃ!@#$%&?';
+
+function DigitalRain({ color }: { color: string }) {
+  const LINE_H = 18;
+  const FONT_SZ = 10;
+
+  const cols = useMemo(() => Array.from({ length: 11 }, (_, i) => ({
+    xF:   (i * 9.1 + sr(i, 1) * 2) / 100,
+    chars: Array.from({ length: 18 }, (__, j) =>
+      DR_CHARS[Math.floor(sr(i * 18 + j, j) * DR_CHARS.length)]),
+    dur: sr(i, 2) * 2.5 + 1.8,
+    del: sr(i, 3) * 3,
+    op:  sr(i, 4) * 0.45 + 0.5,
+  })), []);
+
+  const [r, g, b] = useMemo(() => hexToRgb(color), [color]);
+
+  const ref = useCanvas((ctx, t, w, h) => {
+    ctx.font = `${FONT_SZ}px monospace`;
+    ctx.textBaseline = 'top';
+
+    for (const col of cols) {
+      const colH = col.chars.length * LINE_H;
+      const cycle = col.dur;
+      const localT = ((t - col.del) % cycle + cycle) % cycle;
+      const yTop = -colH + (localT / cycle) * (h + colH);
+
+      for (let j = 0; j < col.chars.length; j++) {
+        const cy = yTop + j * LINE_H;
+        if (cy < -LINE_H || cy > h) continue;
+
+        const tailFade = Math.max(0, 1 - j / 20);
+        const charOp = col.op * tailFade;
+        if (charOp < 0.01) continue;
+
+        if (j === 0) {
+          ctx.fillStyle = `rgba(255,255,255,${col.op})`;
+        } else if (j < 4) {
+          ctx.fillStyle = `rgba(${r},${g},${b},${charOp})`;
+        } else {
+          ctx.fillStyle = `rgba(${r},${g},${b},${charOp * 0.7})`;
+        }
+        ctx.fillText(col.chars[j], col.xF * w, cy);
+      }
+    }
+  });
+
+  return <canvas ref={ref} style={CANVAS_BASE} />;
+}
+
+// ── Grid (lightweight — keep framer-motion) ───────────────────────────────────
+
 function Grid({ color, opacity: op = 0.14 }: { color: string; opacity?: number }) {
-  const vLines = [20, 40, 60, 80];
+  const lines = [20, 40, 60, 80];
   return (
     <>
-    <svg className="absolute inset-0 w-full h-full pointer-events-none">
-      {vLines.map(v => [
-        <line key={`h${v}`} x1="0%" y1={`${v}%`} x2="100%" y2={`${v}%`} stroke={color} strokeWidth={0.5} opacity={op} />,
-        <line key={`v${v}`} x1={`${v}%`} y1="0%" x2={`${v}%`} y2="100%" stroke={color} strokeWidth={0.5} opacity={op} />,
-      ])}
-      {vLines.flatMap(x => vLines.map(y => (
-        <circle key={`n${x}${y}`} cx={`${x}%`} cy={`${y}%`} r={1.5} fill={color} opacity={op * 2.5} />
-      )))}
-      {[{ nx: 20, ny: 40, del: 0 }, { nx: 60, ny: 20, del: 0.8 }, { nx: 40, ny: 80, del: 1.6 }, { nx: 80, ny: 60, del: 2.4 }].map((p, i) => (
-        <motion.g key={`ping${i}`}
-          style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-          animate={{ scale: [1, 4.7, 1], opacity: [0.8, 0, 0.8] }}
-          transition={{ duration: 2.4, repeat: Infinity, delay: p.del, ease: 'easeOut' }}
-        >
-          <circle cx={`${p.nx}%`} cy={`${p.ny}%`} r={1.5} fill={color} />
-        </motion.g>
-      ))}
-    </svg>
-    {/* Traveling signal — div outside SVG avoids framer-motion SVG path-parsing bug */}
-    <motion.div
-      className="absolute pointer-events-none"
-      style={{
-        top: '40%', left: 0,
-        width: '2%', height: 1.5,
-        background: color,
-        boxShadow: `0 0 6px ${color}`,
-        opacity: 0.75,
-      }}
-      animate={{ left: ['-2%', '100%'] }}
-      transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-    />
+      <svg className="absolute inset-0 w-full h-full pointer-events-none">
+        {lines.map(v => [
+          <line key={`h${v}`} x1="0%" y1={`${v}%`} x2="100%" y2={`${v}%`} stroke={color} strokeWidth={0.5} opacity={op} />,
+          <line key={`v${v}`} x1={`${v}%`} y1="0%" x2={`${v}%`} y2="100%" stroke={color} strokeWidth={0.5} opacity={op} />,
+        ])}
+        {lines.flatMap(x => lines.map(y => (
+          <circle key={`n${x}${y}`} cx={`${x}%`} cy={`${y}%`} r={1.5} fill={color} opacity={op * 2.5} />
+        )))}
+        {[{ nx: 20, ny: 40, del: 0 }, { nx: 60, ny: 20, del: 0.8 }, { nx: 40, ny: 80, del: 1.6 }, { nx: 80, ny: 60, del: 2.4 }].map((p, i) => (
+          <motion.g key={`ping${i}`}
+            style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+            animate={{ scale: [1, 4.7, 1], opacity: [0.8, 0, 0.8] }}
+            transition={{ duration: 2.4, repeat: Infinity, delay: p.del, ease: 'easeOut' }}
+          >
+            <circle cx={`${p.nx}%`} cy={`${p.ny}%`} r={1.5} fill={color} />
+          </motion.g>
+        ))}
+      </svg>
+      <motion.div
+        className="absolute pointer-events-none"
+        style={{ top: '40%', left: 0, width: '2%', height: 1.5, background: color, boxShadow: `0 0 6px ${color}`, opacity: 0.75 }}
+        animate={{ left: ['-2%', '100%'] }}
+        transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+      />
     </>
   );
 }
 
-/* ─── Scan ───────────────────────────────────────────────────────────────────── */
+// ── Scan (lightweight — keep framer-motion) ───────────────────────────────────
+
 function Scan({ color }: { color: string }) {
-  const digits = useMemo(() => Array.from({ length: 7 }, (_, i) => Math.floor(sr(i + 10, i) * 100).toString().padStart(2, '0')), []);
+  const digits = useMemo(() => Array.from({ length: 7 }, (_, i) =>
+    Math.floor(sr(i + 10, i) * 100).toString().padStart(2, '0')), []);
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
       <motion.div style={{
@@ -245,135 +572,15 @@ function Scan({ color }: { color: string }) {
   );
 }
 
-/* ─── Aurora ─────────────────────────────────────────────────────────────────── */
-function Aurora({ color, color2 }: { color: string; color2?: string }) {
-  const c2 = color2 ?? '#818CF8';
-  const bands = [
-    { top: '8%',  h: 70, bg: `${color}44, ${c2}33`,      scaleY: [1, 1.6, 0.8, 1],    delay: 0   },
-    { top: '22%', h: 55, bg: `${c2}33, ${color}44`,      scaleY: [1, 0.7, 1.3, 1],    delay: 1.2 },
-    { top: '34%', h: 80, bg: `${color}33, #A855F755`,    scaleY: [1, 1.4, 0.9, 1],    delay: 2.1 },
-    { top: '48%', h: 45, bg: `${c2}33, #EC489933`,       scaleY: [1, 1.2, 0.75, 1],   delay: 0.7 },
-    { top: '58%', h: 60, bg: `#6366F133, ${color}44`,    scaleY: [1, 0.85, 1.4, 1],   delay: 1.7 },
-  ];
-  return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden" style={SCR}>
-      {bands.map((b, i) => (
-        <motion.div key={i} style={{
-          position: 'absolute', left: '-12%', right: '-12%',
-          height: b.h, top: b.top, borderRadius: b.h,
-          background: `linear-gradient(90deg, transparent 0%, ${b.bg} 50%, transparent 100%)`,
-          filter: `blur(${16 + i * 4}px)`,
-        }}
-          animate={{ scaleY: b.scaleY, opacity: [0.5, 1, 0.4, 0.5], x: [0, 18, -14, 0] }}
-          transition={{ duration: 5 + i * 1.3, repeat: Infinity, ease: 'easeInOut', delay: b.delay }}
-        />
-      ))}
-    </div>
-  );
-}
+// ── Void Rings (keep framer-motion — manageable count) ────────────────────────
 
-/* ─── Lava ───────────────────────────────────────────────────────────────────── */
-const LAVA_CSS = `
-@keyframes lavaGlow{0%,100%{opacity:.6;transform:scaleX(1)}50%{opacity:1;transform:scaleX(1.04)}}
-@keyframes lavaBubble{0%{transform:scale(0) translateY(0);opacity:0}40%{opacity:.9}85%{transform:scale(1) translateY(-16px);opacity:.5}100%{transform:scale(.3) translateY(-22px);opacity:0}}`;
-function Lava({ color }: { color: string }) {
-  const bubbles = useMemo(() => Array.from({ length: 12 }, (_, i) => ({
-    x: sr(i, 0) * 84 + 8, bot: sr(i, 1) * 22 + 3,
-    sz: sr(i, 2) * 6 + 2.5, dur: sr(i, 3) * 1.5 + 1.2,
-    del: sr(i, 4) * 3, bright: i < 4,
-  })), []);
-  const sparks = useMemo(() => Array.from({ length: 10 }, (_, i) => ({
-    x: sr(i + 20, 0) * 80 + 10, sz: sr(i + 20, 1) * 2 + 0.8,
-    dur: sr(i + 20, 2) * 1 + 0.8, del: sr(i + 20, 3) * 3,
-    dx: (sr(i + 20, 4) - 0.5) * 24,
-  })), []);
-  return (
-    <>
-      <style>{LAVA_CSS}</style>
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0, height: '52%',
-          background: `linear-gradient(0deg, ${color}66 0%, ${color}33 35%, ${color}12 65%, transparent 100%)`,
-          animation: 'lavaGlow 2.2s ease-in-out infinite',
-        }} />
-        {[0, 1, 2].map(i => (
-          <motion.div key={i} style={{
-            position: 'absolute', bottom: '28%', left: `${25 + i * 22}%`,
-            width: 30, height: 8, borderRadius: '50%',
-            border: `1px solid ${color}88`,
-            transform: 'translate(-50%, 50%)',
-          }}
-            animate={{ scaleX: [0.5, 1.5, 0.5], opacity: [0.6, 0, 0.6] }}
-            transition={{ duration: 1.8, repeat: Infinity, delay: i * 0.6 }}
-          />
-        ))}
-        {bubbles.map((b, i) => (
-          <div key={i} style={{
-            position: 'absolute', left: `${b.x}%`, bottom: `${b.bot}%`,
-            width: b.sz * 2, height: b.sz * 2, borderRadius: '50%',
-            background: b.bright ? `radial-gradient(circle, #fff 0%, ${color} 40%, transparent 80%)` : color,
-            boxShadow: `0 0 ${b.sz * 4}px ${b.sz}px ${color}88`,
-            animation: `lavaBubble ${b.dur}s ${b.del}s ease-out infinite`,
-          }} />
-        ))}
-        {sparks.map((s, i) => (
-          <motion.div key={`sp${i}`} style={{
-            position: 'absolute', left: `${s.x}%`, bottom: '8%',
-            width: s.sz * 2, height: s.sz * 2, borderRadius: '50%',
-            background: '#fff',
-            boxShadow: `0 0 ${s.sz * 4}px ${s.sz}px ${color}`,
-          }}
-            animate={{ y: [0, -(150 + s.sz * 20)], x: [0, s.dx], opacity: [0, 1, 0], scale: [0.5, 1, 0.2] }}
-            transition={{ duration: s.dur, repeat: Infinity, delay: s.del, ease: 'easeOut' }}
-          />
-        ))}
-      </div>
-    </>
-  );
-}
-
-/* ─── Digital Rain ───────────────────────────────────────────────────────────── */
-const DR_CSS = `@keyframes drScroll{from{transform:translateY(-105%)}to{transform:translateY(105%)}}`;
-const DR_CHARS = '0123456789ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃ!@#$%&?';
-function DigitalRain({ color }: { color: string }) {
-  const cols = useMemo(() => Array.from({ length: 11 }, (_, i) => ({
-    x: i * 9.1 + sr(i, 1) * 2,
-    chars: Array.from({ length: 18 }, (__, j) => DR_CHARS[Math.floor(sr(i * 18 + j, j) * DR_CHARS.length)]),
-    dur: sr(i, 2) * 2.5 + 1.8, del: sr(i, 3) * 3, op: sr(i, 4) * 0.45 + 0.5,
-  })), []);
-  return (
-    <>
-      <style>{DR_CSS}</style>
-      <div className="absolute inset-0 pointer-events-none overflow-hidden"
-        style={{ ...SCR, fontFamily: 'monospace', fontSize: 10 }}>
-        {cols.map((col, i) => (
-          <div key={i} style={{
-            position: 'absolute', left: `${col.x}%`, top: 0,
-            opacity: col.op,
-            animation: `drScroll ${col.dur}s ${col.del}s linear infinite`,
-          }}>
-            {col.chars.map((ch, j) => (
-              <div key={j} style={{
-                lineHeight: '18px', color: j === 0 ? '#fff' : color,
-                textShadow: j === 0 ? `0 0 8px #fff, 0 0 16px ${color}` : j < 4 ? `0 0 5px ${color}` : 'none',
-                opacity: j === 0 ? 1 : Math.max(0, 1 - j / 20),
-              }}>{ch}</div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
-
-/* ─── Void Rings ─────────────────────────────────────────────────────────────── */
 function VoidRings({ color }: { color: string }) {
   const orbiters = useMemo(() => Array.from({ length: 6 }, (_, i) => ({
-    angle: i * 60, dist: 0.28, sz: sr(i, 1) * 3 + 2,
+    angle: i * 60, sz: sr(i, 1) * 3 + 2,
     dur: sr(i, 2) + 1.5, del: sr(i, 3),
   })), []);
   return (
-    <div className="absolute inset-0 pointer-events-none flex items-center justify-center" style={SCR}>
+    <div className="absolute inset-0 pointer-events-none flex items-center justify-center" style={{ mixBlendMode: 'screen' }}>
       <div style={{
         position: 'absolute', width: 34, height: 34, borderRadius: '50%',
         background: 'radial-gradient(circle, #000 0%, rgba(0,0,0,0.85) 60%, transparent 100%)',
@@ -396,8 +603,8 @@ function VoidRings({ color }: { color: string }) {
           return (
             <motion.div key={i} style={{
               position: 'absolute',
-              left: 70 + 70 * o.dist * Math.cos(rad) - o.sz / 2,
-              top:  70 + 70 * o.dist * Math.sin(rad) - o.sz / 2,
+              left: 70 + 70 * 0.28 * Math.cos(rad) - o.sz / 2,
+              top:  70 + 70 * 0.28 * Math.sin(rad) - o.sz / 2,
               width: o.sz, height: o.sz, borderRadius: '50%',
               background: color,
               boxShadow: `0 0 ${o.sz * 4}px ${o.sz}px ${color}88`,
@@ -412,10 +619,12 @@ function VoidRings({ color }: { color: string }) {
   );
 }
 
-/* ─── Glitch ─────────────────────────────────────────────────────────────────── */
+// ── Glitch (CSS keyframes — already cheap) ────────────────────────────────────
+
 const GLITCH_CSS = `
 @keyframes scanTear{0%,88%,100%{opacity:0}89%{opacity:1;transform:translateX(0)}90%{opacity:1;transform:translateX(-8px)}91%{opacity:.7;transform:translateX(6px)}92%{opacity:0}}
 @keyframes pixelFlash{0%,82%,100%{opacity:0}83%,85%,87%{opacity:.75}84%,86%{opacity:.25}}`;
+
 function Glitch({ color }: { color: string }) {
   const tears = useMemo(() => Array.from({ length: 5 }, (_, i) => ({
     y: sr(i, 0) * 80 + 5, h: sr(i, 1) * 4 + 1,
@@ -436,22 +645,22 @@ function Glitch({ color }: { color: string }) {
         transition={{ duration: 0.15, repeat: Infinity, repeatDelay: 2.5 }}
       />
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {tears.map((t, i) => (
+        {tears.map((tr, i) => (
           <div key={i} style={{
             position: 'absolute', left: 0, right: 0,
-            top: `${t.y}%`, height: t.h,
+            top: `${tr.y}%`, height: tr.h,
             background: `linear-gradient(90deg, transparent, ${color}66, rgba(255,255,255,0.4), ${color}44, transparent)`,
-            animationName: 'scanTear', animationDuration: `${t.dur}s`,
-            animationDelay: `${t.del}s`, animationTimingFunction: 'step-end',
+            animationName: 'scanTear', animationDuration: `${tr.dur}s`,
+            animationDelay: `${tr.del}s`, animationTimingFunction: 'step-end',
             animationIterationCount: 'infinite',
           }} />
         ))}
-        {pixels.map((p, i) => (
+        {pixels.map((px, i) => (
           <div key={i} style={{
-            position: 'absolute', left: `${p.x}%`, top: `${p.y}%`,
-            width: p.w, height: p.h, background: p.c,
-            animationName: 'pixelFlash', animationDuration: `${p.dur}s`,
-            animationDelay: `${p.del}s`, animationTimingFunction: 'step-end',
+            position: 'absolute', left: `${px.x}%`, top: `${px.y}%`,
+            width: px.w, height: px.h, background: px.c,
+            animationName: 'pixelFlash', animationDuration: `${px.dur}s`,
+            animationDelay: `${px.del}s`, animationTimingFunction: 'step-end',
             animationIterationCount: 'infinite',
           }} />
         ))}
@@ -460,20 +669,21 @@ function Glitch({ color }: { color: string }) {
   );
 }
 
-/* ─── Main ───────────────────────────────────────────────────────────────────── */
+// ── Main ──────────────────────────────────────────────────────────────────────
+
 function EffectRenderer({ effect }: { effect: SceneEffect }) {
   switch (effect.type) {
-    case 'particles':    return <Dust         color={effect.color ?? '#A855F7'} count={effect.count} />;
-    case 'stars':        return <Stars        count={effect.count} />;
-    case 'rain':         return <Rain         color={effect.color ?? '#EC4899'} />;
-    case 'ash':          return <Ash          color={effect.color ?? '#FF6600'} count={effect.count} />;
-    case 'grid':         return <Grid         color={effect.color ?? '#00D4FF'} opacity={effect.opacity} />;
-    case 'scan':         return <Scan         color={effect.color ?? '#00FF41'} />;
-    case 'aurora':       return <Aurora       color={effect.color ?? '#10B981'} color2={effect.color2} />;
-    case 'lava':         return <Lava         color={effect.color ?? '#FF5500'} />;
-    case 'digital_rain': return <DigitalRain  color={effect.color ?? '#00FF41'} />;
-    case 'void_rings':   return <VoidRings    color={effect.color ?? '#D946EF'} />;
-    case 'glitch':       return <Glitch       color={effect.color ?? '#D946EF'} />;
+    case 'particles':    return <Dust        color={effect.color ?? '#A855F7'} count={effect.count} />;
+    case 'stars':        return <Stars       count={effect.count} />;
+    case 'rain':         return <Rain        color={effect.color ?? '#EC4899'} />;
+    case 'ash':          return <Ash         color={effect.color ?? '#FF6600'} count={effect.count} />;
+    case 'grid':         return <Grid        color={effect.color ?? '#00D4FF'} opacity={effect.opacity} />;
+    case 'scan':         return <Scan        color={effect.color ?? '#00FF41'} />;
+    case 'aurora':       return <Aurora      color={effect.color ?? '#10B981'} color2={effect.color2} />;
+    case 'lava':         return <Lava        color={effect.color ?? '#FF5500'} />;
+    case 'digital_rain': return <DigitalRain color={effect.color ?? '#00FF41'} />;
+    case 'void_rings':   return <VoidRings   color={effect.color ?? '#D946EF'} />;
+    case 'glitch':       return <Glitch      color={effect.color ?? '#D946EF'} />;
     default:             return null;
   }
 }

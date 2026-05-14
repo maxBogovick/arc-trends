@@ -172,11 +172,11 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 | Field | Current Value |
 |---|---|
 | Current Goal | Выделить движок характера в переиспользуемую библиотеку |
-| Current Step | Library extraction — Iteration 5 complete; next is physical source ownership / package readiness |
-| Why This Step | Core/preset boundary теперь имеет versioned state contract, migration entrypoint, docs and runnable consumer demo |
+| Current Step | Preset/runtime defaults injection complete; next is physical preset ownership |
+| Why This Step | `packages/personality-core/src` no longer imports `src/personality`; Zdesagochi defaults are injected through preset/config or legacy compatibility wrappers |
 | Current Vector | Правильный: strangler extraction без rewrite, без изменения gameplay balance |
-| Next Step | Move implementation ownership toward packages while preserving the existing package-like public API |
-| Why Next | Public API contract стабилизирован; следующий blocker — implementation files still live under `src/personality`, so package readiness is not physically proven |
+| Next Step | Move Zdesagochi preset data/defaults behind `packages/personality-pet-preset/src` instead of legacy `src/personality` files |
+| Why Next | Core package is clean; preset package still re-exports `src/personality/zdesagochiPetPreset` and app/UI imports still consume legacy `personalities` paths |
 | Required Verification | `npm test`, `npx tsc --noEmit`, `npm run build`, `npm run simulate:balance`, boundary `rg` checks |
 
 ---
@@ -185,31 +185,57 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Закрыта Library extraction — Iteration 5: Versioning and docs.
+Закрыт preset/runtime defaults injection slice для `personality-core`.
 
 ### Why
 
-После Iteration 4 core/preset boundary и app-side storage/sync adapters были отделены, но external consumer contract еще не был зафиксирован: не было public state schema version, migration entrypoint, quickstart, replay guarantee и runnable consumer proof.
+После gameplay core extraction package `commandHandlers` все еще импортировал Zdesagochi defaults/runtime modules: `personalities`, `influenceRegistry`, `memoryTextGenerator`. Следующим шагом было разорвать эти imports через runtime/config injection, не перенося Zdesagochi data в generic core.
 
 ### Impact
 
-Добавлены и подключены:
+Теперь под `packages/personality-core/src` физически живут:
 
-- `PERSONALITY_STATE_SCHEMA_VERSION = 1`;
-- `schemaVersion` on `PersonalityState`, `PetCommandResult`, replay results and offline saves;
-- `migratePersonalityState(raw)` as the public migration/validation entrypoint;
-- app `Pet` adapter now writes current schema version when creating `PersonalityState`;
-- package-like core export now exposes schema version and migration API;
-- public docs under `docs/personality-library/`: API overview, quickstart and replay guarantee;
-- runnable consumer proof `scripts/personality-core-quickstart-demo.mjs`;
-- `npm run demo:personality-core`, and `npm test` now runs the quickstart demo too.
+- `types.ts`;
+- `coreState.ts`;
+- `engineVersion.ts`;
+- `stateMigration.ts`;
+- `commands.ts`;
+- `commandHandlers.ts`;
+- `engineFacade.ts`;
+- `engineFactory.ts`;
+- `actionRules.ts`;
+- `clone.ts`;
+- `random.ts`;
+- `patternRules.ts`;
+- `passiveRules.ts`;
+- `decayRules.ts`;
+- `gameplayStateRules.ts`;
+- `emergentStates.ts`;
+- `stateLayers.ts`;
+- `PersonalityEngine.ts`;
+- `personalityTraitMap.ts`;
+- `TraitEvolutionEngine.ts`.
 
-Review fixes after implementation:
+Старые файлы в `src/personality` сохранены как compatibility shims/wrappers, чтобы текущий app и legacy tests продолжали работать без broad rewrite. `packages/personality-core/src/index.ts` экспортирует public command/result and engine API из package-local files, а не через `src/personality`.
 
-- made engine replay result carry a required `schemaVersion`, matching command results and docs;
-- tightened migration so invalid schema versions like `"1"` or `0` are rejected instead of being treated as legacy snapshots;
-- added migration tests for legacy, future and invalid schema versions;
-- updated replay docs to include state schema version in deterministic replay metadata.
+Добавлено в контракт:
+
+- `PersonalityRuntime.personalities`;
+- `PersonalityEngineConfig.personalities`;
+- core `commandHandlers` требует `personalities` и `influenceRegistry` для command execution;
+- `TraitEvolutionContext.personalities`;
+- Zdesagochi preset теперь передает `PERSONALITIES`;
+- legacy `src/personality/commandHandlers`, `engineFacade`, `TraitEvolutionEngine` подставляют Zdesagochi defaults for compatibility.
+
+Review after implementation:
+
+- package-owned `coreState` no longer imports legacy `memoryTextGenerator`;
+- `PersonalityMemoryTextGenerator` is structural and typed with package-local `PersonalityDefinition` / `InfluenceCategory`;
+- `engineFacade` imports package-owned `commandHandlers`, not legacy `src/personality/commandHandlers`;
+- `commandHandlers` imports package-owned `actionRules`, `clone`, `stateLayers`, `PersonalityEngine`, and `TraitEvolutionEngine`;
+- `TraitEvolutionEngine` imports package-owned `personalityTraitMap` and `stateLayers`;
+- `packages/personality-core/src` no longer imports `src/personality`;
+- custom preset test now explicitly supplies `personalities`, making the new dependency visible.
 
 Gameplay constants, registry data and balance logic не менялись.
 
@@ -223,14 +249,15 @@ Gameplay constants, registry data and balance logic не менялись.
   - `src/personality`, `packages/personality-core`, and `packages/personality-pet-preset` no longer contain `createBrowserOfflineStorage`, `localStorage`, `OfflineKeyValueStorage`, `saveOfflinePetSave`, or `loadOfflinePetSave`;
   - `BackendReplayServerApi`, `ServerApi`, `LocalSave`, `SyncQueue`, `ExplainabilityLog`, and `PetService` no longer import `../personality` or call `applyPersonalityCommand` directly.
   - `packages/personality-core`, `packages/personality-pet-preset`, and `src/personality` do not import `src/api/types`.
+  - `packages/personality-core/src` no longer imports `src/personality`.
 
 ### Next
 
-Physical source ownership / package readiness.
+Physical preset ownership.
 
 ### Why Next
 
-Core API now has versioning, migration and consumer docs. Следующий blocker — implementation still mostly lives under `src/personality`; package readiness should now be proven by moving or mirroring implementation ownership behind the existing public package-like API without changing behavior.
+Core package no longer reaches into legacy `src/personality`. Следующий blocker — `packages/personality-pet-preset/src` still re-exports legacy `zdesagochiPetPreset`, and app/UI code still imports Zdesagochi personality data through `src/personality/personalities`. Moving preset ownership will make the preset package physically real too.
 
 ---
 

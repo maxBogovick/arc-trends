@@ -9,12 +9,13 @@ import {
 import { createMemoryTextGenerator } from './memoryTextGenerator';
 import { validatePassiveRules } from './passiveRules';
 import { validatePatternRules } from './patternRules';
-import { validatePersonalitySpecialRules } from './personalities';
+import { PERSONALITIES, validatePersonalitySpecialRules } from './personalities';
 import type { PersonalityPreset } from './engineFactory';
 
 export const zdesagochiPetPreset: PersonalityPreset = {
   id: 'zdesagochi-pet',
   name: 'Zdesagochi Pet',
+  personalities: PERSONALITIES,
   influenceRegistry: STATIC_INFLUENCE_REGISTRY,
   getIntensityMultiplier,
   memoryTextGenerator: createMemoryTextGenerator(),

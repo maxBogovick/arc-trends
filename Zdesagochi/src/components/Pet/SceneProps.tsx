@@ -9,6 +9,7 @@ interface Props {
   archetype: PetArchetype;
   petX: number; // 0-100 left%
   facingRight: boolean;
+  containerWidth?: number;
 }
 
 // z-index above pet (pet is 25)
@@ -210,8 +211,15 @@ function SleepingBed({ petX }: { petX: number }) {
 }
 
 // ─── ZZZ bubbles ─────────────────────────────────────────────────────────────
+// After rotate(90° CW), the pet head is to the LEFT when facing right, RIGHT when facing left.
+// Head is ~30px from center in the direction opposite to facing.
+// ZZZ should drift upward from near the head position.
 
-function SleepZzz({ petX }: { petX: number }) {
+function SleepZzz({ petX, facingRight }: { petX: number; facingRight: boolean }) {
+  // Head side: opposite of facing direction
+  // When facing right → head is to the LEFT → negative offset (toward lower %)
+  // When facing left  → head is to the RIGHT → positive offset (toward higher %)
+  const headSign = facingRight ? -1 : 1;
   return (
     <>
       {[0, 1, 2].map(i => (
@@ -219,8 +227,8 @@ function SleepZzz({ petX }: { petX: number }) {
           key={i}
           className="absolute pointer-events-none"
           style={{
-            left: `${petX + 5 + i * 2.5}%`,
-            bottom: `${33 + i * 6}%`,
+            left: `${petX + headSign * (4 + i * 2)}%`,
+            bottom: `${34 + i * 5}%`,
             transform: 'translateX(-50%)',
             zIndex: Z,
             fontSize: 10 + i * 5,
@@ -232,7 +240,7 @@ function SleepZzz({ petX }: { petX: number }) {
           animate={{
             opacity: [0, 1, 0.8, 0],
             y:       [0, -18, -30, -44],
-            x:       [0, i % 2 === 0 ? 7 : -5, i % 2 === 0 ? 12 : -9, i % 2 === 0 ? 18 : -14],
+            x:       [0, headSign * (4 + i * 2), headSign * (7 + i * 3), headSign * (10 + i * 4)],
           }}
           transition={{ duration: 2.8, delay: i * 0.9, repeat: Infinity, repeatDelay: 0.4 }}
         >
@@ -279,7 +287,7 @@ export function SceneProps({ activeAction, mode, archetype, petX, facingRight }:
       {isCleaning && <SoapBubbles key="bubbles" petX={petX} />}
       {isMedicine && <MedicinePill key="pill"   petX={petX} facingRight={facingRight} />}
       {isSleeping && <SleepingBed key="bed"     petX={petX} />}
-      {isSleeping && <SleepZzz    key="zzz"     petX={petX} />}
+      {isSleeping && <SleepZzz    key="zzz"     petX={petX} facingRight={facingRight} />}
     </AnimatePresence>
   );
 }

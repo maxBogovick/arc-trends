@@ -473,6 +473,7 @@ testAsync('personality engine accepts a tiny custom preset for command influence
   const engine = createPersonalityEngine({
     id: 'tiny-test-preset',
     name: 'Tiny Test Preset',
+    personalities: [getPersonality('playful')],
     influenceRegistry: [{
       id: 'action:feed',
       category: 'action',
