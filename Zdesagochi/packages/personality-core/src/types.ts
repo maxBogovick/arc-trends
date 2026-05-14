@@ -286,6 +286,7 @@ export interface PersonalitySpecialRules {
 
   // Anxious
   peakPerformanceThreshold?: number;    // avg stats > этого → XP/coins бонус
+  anxiousStatSadThreshold?: number;     // если любой стат < этого значения → mood = sad
 
   // Feral
   nighttimeHours?: [number, number];    // [22, 6] — диапазон "ночи"

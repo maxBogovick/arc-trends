@@ -616,6 +616,8 @@ export function PetDisplay({ pet, moodOverride, size = 220, behaviorMode, sceneI
 
   const isIdleMode = (behaviorMode === 'idle' || !behaviorMode) && !pet?.isAsleep;
   const idleQuirk = useIdleQuirk(isIdleMode && !mouseInRoom, hasArms);
+  const morphYScale = Math.max(0.35, (petMorph.scale ?? 1) * (petMorph.height ?? 1));
+  const sleepYOffset = Math.round(113 / morphYScale);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const floatAnim: any = (() => {
@@ -663,7 +665,7 @@ export function PetDisplay({ pet, moodOverride, size = 220, behaviorMode, sceneI
         rotate: 90,
         scaleX: 0.32,
         scaleY: 0.32,
-        y: 113,
+        y: sleepYOffset,
         transition: {
           y:      { duration: 0.55, ease: 'easeInOut', delay: 1.8 },
           scaleX: { duration: 0.55, ease: 'easeInOut', delay: 1.8 },

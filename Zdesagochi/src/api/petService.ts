@@ -2,7 +2,7 @@ import type { Account, Pet } from './types';
 import { ExplainabilityLog } from './explainability';
 import { LocalSave, inventoryEntriesToMap } from './localSave';
 import { SyncQueue } from './syncQueue';
-import type { InfluenceCooldownState, PersonalityRuntime, PetCommand, PetCommandResult } from '../../packages/personality-core/src';
+import type { InfluenceCooldownState, PersonalityRuntime, PetCommand, PetCommandResult } from '@zdesagochi/personality-core';
 import { createBrowserOfflineStorage, type OfflineKeyValueStorage } from './offlineStorage';
 import { appPersonalityEngine } from './personalityEngineAdapter';
 import { fromPersonalityState, toPersonalityState } from './personalityPetAdapter';

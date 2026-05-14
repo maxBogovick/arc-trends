@@ -9,6 +9,7 @@ interface Props {
   archetype: PetArchetype;
   petX: number; // 0-100 left%
   facingRight: boolean;
+  transitionDuration?: number;
   petSize?: number; // rendered SVG width in px, used to compute prop offsets
 }
 
@@ -17,22 +18,19 @@ const Z = 30;
 // z-index below furniture (furniture starts at placed.zIndex ≥ 10) and below pet
 const Z_UNDER = 5;
 
-// Pet SVG is always 270px wide; body half-width ≈ 60px from center.
-// Use calc(petX% ± Npx) so food stays relative to the pet's actual pixel size,
-// not a percentage of the variable room width.
-function petLeft(petX: number, facingRight: boolean, offsetPx: number): string {
-  return `calc(${petX}% ${facingRight ? '+' : '-'} ${offsetPx}px)`;
+function sidePx(facingRight: boolean, offsetPx: number): number {
+  return facingRight ? offsetPx : -offsetPx;
 }
 
 // ─── Animal: bowl on the floor ────────────────────────────────────────────────
 
-function FoodBowl({ petX, facingRight, emoji, offsetPx }: { petX: number; facingRight: boolean; emoji: string; offsetPx: number }) {
+function FoodBowl({ facingRight, emoji, offsetPx, bottomPx }: { facingRight: boolean; emoji: string; offsetPx: number; bottomPx: number }) {
   return (
     <motion.div
       className="absolute pointer-events-none"
       style={{
-        left: petLeft(petX, facingRight, offsetPx),
-        bottom: '13%',
+        left: sidePx(facingRight, offsetPx),
+        bottom: bottomPx,
         transform: 'translateX(-50%)',
         zIndex: Z,
         fontSize: 34,
@@ -51,13 +49,13 @@ function FoodBowl({ petX, facingRight, emoji, offsetPx }: { petX: number; facing
 
 // ─── Humanoid: table with food ────────────────────────────────────────────────
 
-function FoodTable({ petX, facingRight, emoji, offsetPx }: { petX: number; facingRight: boolean; emoji: string; offsetPx: number }) {
+function FoodTable({ facingRight, emoji, offsetPx, bottomPx }: { facingRight: boolean; emoji: string; offsetPx: number; bottomPx: number }) {
   return (
     <motion.div
       className="absolute pointer-events-none"
       style={{
-        left: petLeft(petX, facingRight, offsetPx),
-        bottom: '13%',
+        left: sidePx(facingRight, offsetPx),
+        bottom: bottomPx,
         transform: 'translateX(-50%)',
         zIndex: Z,
       }}
@@ -87,13 +85,13 @@ function FoodTable({ petX, facingRight, emoji, offsetPx }: { petX: number; facin
 
 // ─── Creature: glowing food orb floats beside pet ─────────────────────────────
 
-function CreatureFood({ petX, facingRight, emoji, offsetPx }: { petX: number; facingRight: boolean; emoji: string; offsetPx: number }) {
+function CreatureFood({ facingRight, emoji, offsetPx, bottomPx }: { facingRight: boolean; emoji: string; offsetPx: number; bottomPx: number }) {
   return (
     <motion.div
       className="absolute pointer-events-none"
       style={{
-        left: petLeft(petX, facingRight, offsetPx),
-        bottom: '22%',
+        left: sidePx(facingRight, offsetPx),
+        bottom: bottomPx,
         transform: 'translateX(-50%)',
         zIndex: Z,
         fontSize: 32,
@@ -101,9 +99,9 @@ function CreatureFood({ petX, facingRight, emoji, offsetPx }: { petX: number; fa
         filter: 'drop-shadow(0 0 12px rgba(255,100,50,0.9))',
       }}
       initial={{ opacity: 0, scale: 0.3, y: 20 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.2, x: facingRight ? -30 : 30, y: 10 }}
-      transition={{ duration: 0.4, ease: [0.34, 1.56, 0.64, 1] }}
+      animate={{ opacity: 1, scale: [1, 1.08, 0.7], x: [0, 0, -sidePx(facingRight, offsetPx)], y: [0, -16, 18] }}
+      exit={{ opacity: 0, scale: 0.2, x: -sidePx(facingRight, offsetPx), y: 10 }}
+      transition={{ duration: 1.2, ease: 'easeInOut', times: [0, 0.45, 1] }}
     >
       {emoji}
     </motion.div>
@@ -112,13 +110,13 @@ function CreatureFood({ petX, facingRight, emoji, offsetPx }: { petX: number; fa
 
 // ─── Playing: bouncing ball ───────────────────────────────────────────────────
 
-function PlayBall({ petX, facingRight, offsetPx }: { petX: number; facingRight: boolean; offsetPx: number }) {
+function PlayBall({ facingRight, offsetPx }: { facingRight: boolean; offsetPx: number }) {
   return (
     <motion.div
       className="absolute pointer-events-none"
       style={{
-        left: petLeft(petX, facingRight, offsetPx),
-        bottom: '13%',
+        left: sidePx(facingRight, offsetPx),
+        bottom: 0,
         transform: 'translateX(-50%)',
         zIndex: Z,
         fontSize: 28,
@@ -139,7 +137,7 @@ function PlayBall({ petX, facingRight, offsetPx }: { petX: number; facingRight: 
 
 // ─── Cleaning: soap bubbles ───────────────────────────────────────────────────
 
-function SoapBubbles({ petX }: { petX: number }) {
+function SoapBubbles() {
   return (
     <>
       {[0, 1, 2, 3].map(i => (
@@ -147,8 +145,8 @@ function SoapBubbles({ petX }: { petX: number }) {
           key={i}
           className="absolute pointer-events-none"
           style={{
-            left: `${petX + (i - 1.5) * 5}%`,
-            bottom: '20%',
+            left: (i - 1.5) * 20,
+            bottom: 42,
             transform: 'translateX(-50%)',
             zIndex: Z,
             fontSize: 14 + i * 3,
@@ -166,13 +164,13 @@ function SoapBubbles({ petX }: { petX: number }) {
 
 // ─── Medicine pill ────────────────────────────────────────────────────────────
 
-function MedicinePill({ petX, facingRight, offsetPx }: { petX: number; facingRight: boolean; offsetPx: number }) {
+function MedicinePill({ facingRight, offsetPx }: { facingRight: boolean; offsetPx: number }) {
   return (
     <motion.div
       className="absolute pointer-events-none"
       style={{
-        left: petLeft(petX, facingRight, offsetPx),
-        bottom: '40%',
+        left: sidePx(facingRight, offsetPx),
+        bottom: 122,
         transform: 'translateX(-50%)',
         zIndex: Z,
         fontSize: 28,
@@ -255,12 +253,20 @@ function SleepZzz({ petX, facingRight }: { petX: number; facingRight: boolean })
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export function SceneProps({ activeAction, mode, archetype, petX, facingRight, petSize = 270 }: Props) {
-  // Pixel offset from pet center to prop position, proportional to rendered pet size
-  const sideOffset = Math.round(petSize * 0.26);  // bowl / orb / pill
-  const tableOffset = Math.round(petSize * 0.27);  // humanoid table (slightly wider)
-  const ballOffset = Math.round(petSize * 0.29);  // ball further from body
-  const { foods } = usePetStore();
+export function SceneProps({ activeAction, mode, archetype, petX, facingRight, transitionDuration = 0.25, petSize = 270 }: Props) {
+  const { foods, petMorph } = usePetStore();
+  const morphXScale = Math.max(0.35, (petMorph.scale ?? 1) * (petMorph.width ?? 1));
+  const morphYScale = Math.max(0.35, (petMorph.scale ?? 1) * (petMorph.height ?? 1));
+  const morphBottomCompensation = Math.round((1 - morphYScale) * petSize * 0.5);
+
+  // Pixel offsets are local to the pet anchor. Keep food close enough to read as
+  // being eaten, while play/medicine props can sit a little farther out.
+  const foodOffset = Math.round(petSize * 0.14 * morphXScale);
+  const tableOffset = Math.round(petSize * 0.18 * morphXScale);
+  const ballOffset = Math.round(petSize * 0.29);
+  const pillOffset = Math.round(petSize * 0.12);
+  const floorPropBottom = morphBottomCompensation;
+  const creatureFoodBottom = Math.round(42 * morphYScale) + morphBottomCompensation;
 
   // Resolve the food emoji from the actionLoading key (e.g. 'feed_apple' → 🍎)
   const foodEmoji = (() => {
@@ -285,15 +291,27 @@ export function SceneProps({ activeAction, mode, archetype, petX, facingRight, p
   const isSleeping = mode === 'sleeping';
 
   return (
-    <AnimatePresence>
-      {isEating && archetype === 'animal' && <FoodBowl key="bowl" petX={petX} facingRight={facingRight} emoji={foodEmoji} offsetPx={sideOffset} />}
-      {isEating && archetype === 'humanoid' && <FoodTable key="table" petX={petX} facingRight={facingRight} emoji={foodEmoji} offsetPx={tableOffset} />}
-      {isEating && archetype === 'creature' && <CreatureFood key="food" petX={petX} facingRight={facingRight} emoji={foodEmoji} offsetPx={sideOffset} />}
-      {isPlaying && <PlayBall key="ball" petX={petX} facingRight={facingRight} offsetPx={ballOffset} />}
-      {isCleaning && <SoapBubbles key="bubbles" petX={petX} />}
-      {isMedicine && <MedicinePill key="pill" petX={petX} facingRight={facingRight} offsetPx={sideOffset} />}
-      {isSleeping && <SleepingBed key="bed" petX={petX} />}
-      {isSleeping && <SleepZzz key="zzz" petX={petX} facingRight={facingRight} />}
-    </AnimatePresence>
+    <>
+      <motion.div
+        className="absolute pointer-events-none"
+        style={{ bottom: '13%', zIndex: Z, transform: 'translateX(-50%)' }}
+        animate={{ left: `${petX}%` }}
+        transition={{ left: { duration: transitionDuration, ease: 'easeInOut' } }}
+      >
+        <AnimatePresence>
+          {isEating && archetype === 'animal' && <FoodBowl key="bowl" facingRight={facingRight} emoji={foodEmoji} offsetPx={foodOffset} bottomPx={floorPropBottom} />}
+          {isEating && archetype === 'humanoid' && <FoodTable key="table" facingRight={facingRight} emoji={foodEmoji} offsetPx={tableOffset} bottomPx={floorPropBottom} />}
+          {isEating && archetype === 'creature' && <CreatureFood key="food" facingRight={facingRight} emoji={foodEmoji} offsetPx={foodOffset} bottomPx={creatureFoodBottom} />}
+          {isPlaying && <PlayBall key="ball" facingRight={facingRight} offsetPx={ballOffset} />}
+          {isCleaning && <SoapBubbles key="bubbles" />}
+          {isMedicine && <MedicinePill key="pill" facingRight={facingRight} offsetPx={pillOffset} />}
+        </AnimatePresence>
+      </motion.div>
+
+      <AnimatePresence>
+        {isSleeping && <SleepingBed key="bed" petX={petX} />}
+        {isSleeping && <SleepZzz key="zzz" petX={petX} facingRight={facingRight} />}
+      </AnimatePresence>
+    </>
   );
 }

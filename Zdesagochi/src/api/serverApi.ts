@@ -1,4 +1,4 @@
-import type { PetCommand, PetCommandResult } from '../../packages/personality-core/src';
+import type { PetCommand, PetCommandResult } from '@zdesagochi/personality-core';
 
 export interface ServerCommandBatch {
   clientId: string;

@@ -1,5 +1,6 @@
 import type { AppliedModifier, DomainEvent, InfluenceCooldownState, PetCommand, PetCommandResult } from './commands';
 import type { PersonalityMemoryTextGenerator, PersonalityMood, PersonalityState } from './coreState';
+import { EVOLUTION_LEGACY } from './personalityTraitMap';
 import { PERSONALITY_ENGINE_VERSION, PERSONALITY_STATE_SCHEMA_VERSION, STATIC_REGISTRY_VERSION } from './engineVersion';
 import { BASE_ACTION_RULES } from './actionRules';
 import { cloneData } from './clone';
@@ -16,7 +17,7 @@ import {
   runPatternEngine,
   updateCounters,
 } from './PersonalityEngine';
-import { clearEmergentStateLayer, getActiveEmergentStateTypes, setLayeredEmergentState, syncLayeredStatesFromLegacy } from './stateLayers';
+import { clearEmergentStateLayer, getActiveEmergentStates, getActiveEmergentStateTypes, setLayeredEmergentState, syncLayeredStatesFromLegacy } from './stateLayers';
 import {
   applyInfluence,
   applyRegression,
@@ -30,6 +31,7 @@ import {
   onWakeFromSleep,
   rejectEvolution,
   recordDailyTraitSnapshot,
+  CATHARSIS_XP_BURST_MULTIPLIER,
 } from './TraitEvolutionEngine';
 import type { ActionContext, ActionType, BlockedAction, PersonalityDefinition, RegisteredInfluence, StatKey, SyncContext, TraitVector } from './types';
 
@@ -182,16 +184,14 @@ export async function applyPersonalityCommand<TState extends PersonalityState>(
       naturalWake,
       sleptHours,
     });
+    // Lifecycle hooks: data-driven side effects on wake (early vs natural)
     if (sleptHours < 1) {
-      await applyRegisteredInfluence(
-        nextPet,
-        'action:wake_early',
-        command,
-        options,
-        ctx,
-        events,
-        influenceCooldowns,
-        currentSync,
+      await runInfluenceLifecycleHooks(
+        'sleep_wake_early', nextPet, command, options, ctx, events, influenceCooldowns, currentSync,
+      );
+    } else if (naturalWake) {
+      await runInfluenceLifecycleHooks(
+        'sleep_wake_natural', nextPet, command, options, ctx, events, influenceCooldowns, currentSync,
       );
     }
   } else if (command.type === 'accept_evolution') {
@@ -252,6 +252,7 @@ export async function applyPersonalityCommand<TState extends PersonalityState>(
     coinDelta: gameplayOutcome.coinDelta,
     blockedAction: gameplayOutcome.blockedAction,
     appliedModifiers: gameplayOutcome.appliedModifiers,
+    activeEmergentStates: getActiveEmergentStates(nextPet),
     meta: gameplayOutcome.meta,
     schemaVersion: nextPet.schemaVersion ?? PERSONALITY_STATE_SCHEMA_VERSION,
     engineVersion: options.engineVersion ?? PERSONALITY_ENGINE_VERSION,
@@ -653,6 +654,36 @@ function applySpecialOutcomeModifiers(
     }
   }
 
+  // ── Catharsis XP burst (first catharsis only, 2 hours) ─────────────────────
+  if (actionType && actionType !== 'sync' && pet.catharsisXpBurstExpiresAt) {
+    const burstExpiry = new Date(pet.catharsisXpBurstExpiresAt).getTime();
+    const now = Date.now();
+    if (now < burstExpiry && outcome.xpDelta > 0) {
+      outcome.xpDelta = Math.round(outcome.xpDelta * CATHARSIS_XP_BURST_MULTIPLIER);
+      outcome.appliedModifiers.push({ source: 'special_rule', id: 'catharsis_xp_burst', description: 'Catharsis XP burst active' });
+    }
+  }
+
+  // ── Legacy bonuses from evolution history ──────────────────────────────────
+  // Apply EVOLUTION_LEGACY bonuses from previously inhabited personalities.
+  // Each evolution record contributes its legacy bonus cumulatively.
+  if (pet.evolutionHistory.length > 0 && actionType && actionType !== 'sync') {
+    let xpLegacyMult = 1.0;
+    let coinLegacyMult = 1.0;
+    let legacyApplied = false;
+    for (const record of pet.evolutionHistory) {
+      const bonus = EVOLUTION_LEGACY[record.fromPersonalityId];
+      if (!bonus) continue;
+      if (bonus.xpMultiplierBonus) { xpLegacyMult += bonus.xpMultiplierBonus; legacyApplied = true; }
+      if (bonus.coinMultiplierBonus) { coinLegacyMult += bonus.coinMultiplierBonus; legacyApplied = true; }
+    }
+    if (legacyApplied) {
+      outcome.xpDelta = Math.round(outcome.xpDelta * xpLegacyMult);
+      outcome.coinDelta = Math.round(outcome.coinDelta * coinLegacyMult);
+      outcome.appliedModifiers.push({ source: 'special_rule', id: 'evolution_legacy_bonus', description: 'Evolution legacy bonuses applied' });
+    }
+  }
+
   if (actionType) {
     outcome.xpDelta = Math.max(0, Math.round(outcome.xpDelta));
     outcome.coinDelta = Math.round(outcome.coinDelta);
@@ -791,6 +822,29 @@ async function applyEligibleSystemInfluences(
   }
 }
 
+// ── Lifecycle hook runner ────────────────────────────────────────────────────
+// Finds all influences with matching onApply hook type and applies them.
+// Adding new lifecycle side effects = add influence to registry with onApply set.
+// Do not add new branches here.
+async function runInfluenceLifecycleHooks(
+  hookType: NonNullable<RegisteredInfluence['onApply']>,
+  pet: PersonalityState,
+  command: PetCommand,
+  options: PersonalityCommandHandlerOptions,
+  ctx: Parameters<typeof applyInfluence>[2],
+  events: DomainEvent[],
+  influenceCooldowns: InfluenceCooldownState,
+  currentSync: number,
+): Promise<void> {
+  const registry = requireInfluenceRegistry(options.influenceRegistry);
+  const candidates = registry.filter(influence => influence.onApply === hookType);
+  for (const influence of candidates) {
+    await applyRegisteredInfluence(
+      pet, influence.id, command, options, ctx, events, influenceCooldowns, currentSync,
+    );
+  }
+}
+
 async function applyRegisteredInfluence(
   pet: PersonalityState,
   influenceId: string,
@@ -807,7 +861,8 @@ async function applyRegisteredInfluence(
 
   const lastAppliedSync = influenceCooldowns[influence.id];
   const cooldownSyncs = influence.cooldownSyncs ?? 0;
-  if (!canApplyInfluenceAtSync(lastAppliedSync, currentSync, cooldownSyncs)) {
+  const inSingularity = command.type === 'use_item' && getActiveEmergentStateTypes(pet).includes('singularity');
+  if (!inSingularity && !canApplyInfluenceAtSync(lastAppliedSync, currentSync, cooldownSyncs)) {
     const appliedSync = lastAppliedSync ?? currentSync;
     events.push({
       type: 'influence_cooldown_skipped',

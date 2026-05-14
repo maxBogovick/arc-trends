@@ -14,8 +14,13 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@zdesagochi/personality-core": ["packages/personality-core/src/index.ts"],
+      "@zdesagochi/personality-pet-preset": ["packages/personality-pet-preset/src/index.ts"]
+    }
   },
-  "include": ["src"],
+  "include": ["src", "packages"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

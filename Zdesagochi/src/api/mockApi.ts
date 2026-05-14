@@ -13,7 +13,7 @@ import type {
   BehavioralFlag, BehavioralCounters, MoodSnapshot,
   TraitVector,
 } from '../personality/types';
-import type { InfluenceCooldownState, PetCommand } from '../../packages/personality-core/src';
+import type { InfluenceCooldownState, PetCommand } from '@zdesagochi/personality-core';
 import type { OfflineKeyValueStorage } from './offlineStorage';
 import { PetService, type PetCommandDraft } from './petService';
 import { calcMoodWithBias, createDefaultCounters } from '../personality/PersonalityEngine';
@@ -27,7 +27,7 @@ import {
   getPersonality,
   getPersonalityBySkin,
   getIntensityMultiplier,
-} from '../../packages/personality-pet-preset/src';
+} from '@zdesagochi/personality-pet-preset';
 import {
   syncLayeredStatesFromLegacy,
 } from '../personality/stateLayers';
@@ -504,6 +504,7 @@ function normalizePetEvolutionFields(pet: Pet): Pet {
   p.traumaLevel ??= 0;
   p.catharsisProgress ??= 0;
   p.catharsisAchieved ??= false;
+  p.catharsisXpBurstExpiresAt ??= null;
   p.traumaCooldownUntil ??= null;
   p.dailyVectorVariance ??= 0;
   p.confusedState ??= false;

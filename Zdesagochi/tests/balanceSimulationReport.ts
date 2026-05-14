@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { Pet, PetMood, PetStage } from '../src/api/types';
 import type { BehavioralCounters, MoodSnapshot, TraitVector } from '../src/personality/types';
-import type { PetCommand } from '../packages/personality-core/src';
+import type { PetCommand } from '@zdesagochi/personality-core';
 import {
   applyPersonalityCommand,
   replayPersonalityCommands,

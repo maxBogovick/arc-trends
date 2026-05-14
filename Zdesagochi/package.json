@@ -12,6 +12,7 @@
     "demo:personality-core": "node scripts/personality-core-quickstart-demo.mjs",
     "demo:personality-package-imports": "node scripts/personality-package-name-import-demo.mjs",
     "simulate:balance": "node scripts/run-balance-simulations.mjs",
+    "simulate:montecarlo": "node scripts/run-monte-carlo.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

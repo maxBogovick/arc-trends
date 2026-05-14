@@ -1,7 +1,7 @@
 import {
   PERSONALITY_STATE_SCHEMA_VERSION,
   type OfflinePetSave,
-} from '../../packages/personality-core/src';
+} from '@zdesagochi/personality-core';
 
 export const DEFAULT_OFFLINE_PET_SAVE_KEY = 'zdesagochi:offline-pet-save:v1';
 

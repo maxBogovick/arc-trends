@@ -1,6 +1,7 @@
 import type { PersonalityState } from './coreState';
 import type {
   ActionType,
+  ActiveEmergentState,
   BlockedAction,
   CoreMemory,
   EmergentStateType,
@@ -67,6 +68,8 @@ export interface PetCommandResult<TState extends PersonalityState = PersonalityS
   coinDelta: number;
   blockedAction: BlockedAction | null;
   appliedModifiers: AppliedModifier[];
+  /** All active emergent states from all layers, sorted by priority. */
+  activeEmergentStates: ActiveEmergentState[];
   meta?: Record<string, unknown>;
   schemaVersion: number;
   engineVersion: string;

@@ -1,5 +1,5 @@
 import type { Account, Pet } from './types';
-import { PERSONALITY_STATE_SCHEMA_VERSION, type PersonalityState } from '../../packages/personality-core/src';
+import { PERSONALITY_STATE_SCHEMA_VERSION, type PersonalityState } from '@zdesagochi/personality-core';
 
 export function toPersonalityState(
   appPet: Pet,
@@ -40,6 +40,7 @@ export function toPersonalityState(
     traumaLevel: appPet.traumaLevel,
     catharsisProgress: appPet.catharsisProgress,
     catharsisAchieved: appPet.catharsisAchieved,
+    catharsisXpBurstExpiresAt: appPet.catharsisXpBurstExpiresAt ?? null,
     traumaCooldownUntil: appPet.traumaCooldownUntil,
     dailyVectorVariance: appPet.dailyVectorVariance,
     confusedState: appPet.confusedState,
@@ -96,6 +97,7 @@ export function fromPersonalityState(
     traumaLevel: personalityState.traumaLevel,
     catharsisProgress: personalityState.catharsisProgress,
     catharsisAchieved: personalityState.catharsisAchieved,
+    catharsisXpBurstExpiresAt: personalityState.catharsisXpBurstExpiresAt ?? null,
     traumaCooldownUntil: personalityState.traumaCooldownUntil,
     dailyVectorVariance: personalityState.dailyVectorVariance,
     confusedState: personalityState.confusedState,

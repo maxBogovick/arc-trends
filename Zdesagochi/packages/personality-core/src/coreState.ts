@@ -91,6 +91,7 @@ export interface PersonalityState {
   traumaLevel: number;
   catharsisProgress: number;
   catharsisAchieved: boolean;
+  catharsisXpBurstExpiresAt?: string | null;
   traumaCooldownUntil: string | null;
   dailyVectorVariance: number;
   confusedState: boolean;

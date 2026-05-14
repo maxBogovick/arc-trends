@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePetStore } from '../../store/petStore';
-import { getPersonality } from '../../../packages/personality-pet-preset/src';
+import { getPersonality } from '@zdesagochi/personality-pet-preset';
 import { EMERGENT_STATE_MAP } from '../../personality/emergentStates';
 import { PersonalityCatalog } from './PersonalityCatalog';
 import type { BehavioralFlagType } from '../../personality/types';

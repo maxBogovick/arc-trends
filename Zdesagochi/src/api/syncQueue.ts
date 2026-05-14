@@ -1,4 +1,4 @@
-import type { PetCommand } from '../../packages/personality-core/src';
+import type { PetCommand } from '@zdesagochi/personality-core';
 import type { OfflineKeyValueStorage } from './offlineStorage';
 
 export const DEFAULT_SYNC_QUEUE_KEY = 'zdesagochi:sync-queue:v1';

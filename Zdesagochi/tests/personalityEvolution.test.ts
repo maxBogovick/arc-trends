@@ -25,8 +25,8 @@ import {
   PERSONALITY_STATE_SCHEMA_VERSION,
   createPersonalityEngine,
   migratePersonalityState,
-} from '../packages/personality-core/src';
-import { zdesagochiPetPreset } from '../packages/personality-pet-preset/src';
+} from '@zdesagochi/personality-core';
+import { zdesagochiPetPreset } from '@zdesagochi/personality-pet-preset';
 import type { BehavioralCounters, BehavioralFlag, MoodSnapshot, TraitVector } from '../src/personality/types';
 import {
   applyActionModifiers,
@@ -70,6 +70,8 @@ import {
   recordDailyTraitSnapshot,
   recordLegacy,
   rejectEvolution,
+  triggerCatharsis,
+  CATHARSIS_XP_BURST_MULTIPLIER,
 } from '../src/personality/TraitEvolutionEngine';
 import { getEmergentStateDef } from '../src/personality/emergentStates';
 import { BASE_ACTION_RULES, validateActionRules } from '../src/personality/actionRules';
@@ -88,7 +90,7 @@ import {
   getUnsyncedCommands,
   markCommandsSynced,
   type PetCommand,
-} from '../packages/personality-core/src';
+} from '@zdesagochi/personality-core';
 import {
   applyPersonalityCommand,
   replayPersonalityCommands,
@@ -2830,4 +2832,106 @@ test('variance hard reset requires last full sleep timestamp', () => {
 
   assert.equal(pet.dailyVectorVariance, 0);
   assert.equal(pet.confusedState, false);
+});
+
+test('first catharsis sets XP burst window, second catharsis does not', () => {
+  const now = new Date('2026-05-04T00:00:00.000Z');
+  const pet = makePet({
+    emergentState: 'shadow_form',
+    stateLayers: { evolution: { id: 'shadow_form', enteredAt: now.toISOString() } },
+    traumaLevel: 60,
+  });
+
+  triggerCatharsis(pet, { now });
+  assert.ok(pet.catharsisXpBurstExpiresAt, 'burst window should be set after first catharsis');
+  const firstExpiry = pet.catharsisXpBurstExpiresAt!;
+
+  // Force second catharsis: reset shadow and re-enter
+  pet.catharsisProgress = 0;
+  pet.traumaLevel = 60;
+  pet.traumaCooldownUntil = null;
+  pet.stateLayers = { evolution: { id: 'shadow_form', enteredAt: now.toISOString() } };
+  pet.emergentState = 'shadow_form';
+
+  const later = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  triggerCatharsis(pet, { now: later });
+  assert.equal(pet.catharsisXpBurstExpiresAt, firstExpiry, 'burst window should not be updated on second catharsis');
+});
+
+await testAsync('catharsis XP burst multiplies XP during burst window', async () => {
+  const burstExpiry = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const pet = makePet({
+    formationComplete: true,
+    personality: 'playful',
+    catharsisAchieved: true,
+    catharsisXpBurstExpiresAt: burstExpiry,
+    stats: { hunger: 70, happiness: 50, energy: 80, health: 80, cleanliness: 80, bond: 40 },
+  });
+
+  const result = await applyPersonalityCommand(pet, {
+    type: 'play',
+    scoreSeed: '100',
+    at: new Date().toISOString(),
+    commandId: 'cmd-catharsis-burst',
+  });
+
+  assert.ok(result.xpDelta > 80, 'XP should be multiplied during catharsis burst');
+  assert.equal(result.xpDelta, 80 * CATHARSIS_XP_BURST_MULTIPLIER);
+  assert.ok(result.appliedModifiers.some(m => m.id === 'catharsis_xp_burst'), 'catharsis_xp_burst modifier should be present');
+});
+
+await testAsync('catharsis XP burst does not apply after expiry', async () => {
+  const expiredBurst = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const pet = makePet({
+    formationComplete: true,
+    personality: 'playful',
+    catharsisAchieved: true,
+    catharsisXpBurstExpiresAt: expiredBurst,
+    stats: { hunger: 70, happiness: 50, energy: 80, health: 80, cleanliness: 80, bond: 40 },
+  });
+
+  const result = await applyPersonalityCommand(pet, {
+    type: 'play',
+    scoreSeed: '100',
+    at: new Date().toISOString(),
+    commandId: 'cmd-catharsis-burst-expired',
+  });
+
+  assert.equal(result.xpDelta, 80, 'XP should not be multiplied after burst expiry');
+  assert.ok(!result.appliedModifiers.some(m => m.id === 'catharsis_xp_burst'), 'catharsis_xp_burst modifier should not be present');
+});
+
+await testAsync('singularity state bypasses use_item influence cooldown', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    personality: 'playful',
+    stateLayers: { evolution: { id: 'singularity', enteredAt: new Date().toISOString() } },
+    emergentState: 'singularity',
+    stats: { hunger: 50, happiness: 50, energy: 50, health: 50, cleanliness: 50, bond: 50 },
+  });
+
+  const at1 = '2026-05-04T01:00:00.000Z';
+  const at2 = '2026-05-04T01:01:00.000Z';
+
+  const result1 = await applyPersonalityCommand(pet, {
+    type: 'use_item',
+    itemId: 'elixir',
+    itemKind: 'food',
+    itemEffect: { hunger: 30 },
+    at: at1,
+    commandId: 'cmd-item-1',
+  });
+  assert.ok(!result1.blockedAction, 'first use_item should succeed');
+
+  // Immediately apply second use_item on same pet — in singularity cooldown should be bypassed
+  const result2 = await applyPersonalityCommand(result1.pet as Pet, {
+    type: 'use_item',
+    itemId: 'elixir',
+    itemKind: 'food',
+    itemEffect: { hunger: 30 },
+    at: at2,
+    commandId: 'cmd-item-2',
+  });
+  // Without singularity, cooldown would block this. With singularity, it should apply.
+  assert.ok(!result2.events.some(e => e.type === 'influence_cooldown_skipped'), 'singularity should bypass influence cooldown for use_item');
 });

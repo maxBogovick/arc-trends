@@ -6,7 +6,7 @@ import type {
   ServerCommandRejectReason,
   ServerRejectedCommand,
 } from './serverApi';
-import type { InfluenceCooldownState, PersonalityRuntime, PetCommand, PetCommandResult } from '../../packages/personality-core/src';
+import type { InfluenceCooldownState, PersonalityRuntime, PetCommand, PetCommandResult } from '@zdesagochi/personality-core';
 import { appPersonalityEngine } from './personalityEngineAdapter';
 import { fromPersonalityState, toPersonalityState } from './personalityPetAdapter';
 

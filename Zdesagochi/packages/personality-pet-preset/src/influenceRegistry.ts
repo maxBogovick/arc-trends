@@ -62,6 +62,15 @@ export const STATIC_INFLUENCE_REGISTRY: RegisteredInfluence[] = [
     onApply: 'sleep_wake_early',
   },
   {
+    id: 'action:wake_natural',
+    category: 'action',
+    label: 'Естественное пробуждение',
+    traitDeltas: {},
+    traumaDelta: -1,
+    cooldownSyncs: 6,
+    onApply: 'sleep_wake_natural',
+  },
+  {
     id: 'action:sleep_forced',
     category: 'action',
     label: 'Принудительный сон',

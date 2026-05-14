@@ -79,8 +79,8 @@ export function applyDecay(
   const result = { ...currentStats };
   const keys: StatKey[] = ['hunger', 'happiness', 'energy', 'health', 'cleanliness', 'bond'];
 
-  // Хаотик: рандомные модификаторы из суточного seed
-  const chaosMult = personality.id === 'chaotic'
+  // Хаотик: рандомные модификаторы из суточного seed (data-driven: randomizeDailySeed)
+  const chaosMult = personality.specialRules?.randomizeDailySeed
     ? getChaosMultipliers(counters, context).decayMult
     : 1.0;
 
@@ -123,7 +123,7 @@ export function applyActionModifiers(
     coins: base.coins,
   };
 
-  const chaos = personality.id === 'chaotic' ? getChaosMultipliers(counters, context) : null;
+  const chaos = personality.specialRules?.randomizeDailySeed ? getChaosMultipliers(counters, context) : null;
 
   // ── 1. Restore: аддитивные бонусы ─────────────────────────────────────────
   const restoreBonus = personality.restoreBonus[action] ?? {};
@@ -212,11 +212,9 @@ export function applyActionModifiers(
   if (personality.specialRules?.flatXpFromPlay && action === 'play') {
     result.xp = STOIC_FLAT_PLAY_XP;
   } else {
-    // Нервный: пиковое состояние — XP бонус
-    let xpBase = result.xp;
-    if (personality.id === 'anxious' && personality.specialRules?.peakPerformanceThreshold) {
-      // пиковый бонус будет применён в computeNaturalPassives — здесь только mult
-    }
+    // Нервный: пиковое состояние — XP бонус (data-driven: peakPerformanceThreshold)
+    // Пиковый бонус применяется в computeNaturalPassives — здесь только mult
+    const xpBase = result.xp;
     result.xp = Math.round(xpBase * clamp(multiplyAll(xpMults), MODIFIER_CAPS.XP_MIN, MODIFIER_CAPS.XP_MAX));
   }
 
@@ -602,10 +600,11 @@ export function calcMoodWithBias(
   if (health < 25) return 'sick';
   if (energy < 20) return 'tired';
 
-  // Нервный: при любом стате < 40 → sad
-  if (personality.id === 'anxious') {
+  // Нервный: при любом стате ниже anxiousStatSadThreshold → sad (data-driven)
+  if (personality.specialRules?.anxiousStatSadThreshold !== undefined) {
+    const threshold = personality.specialRules.anxiousStatSadThreshold;
     const allStats = Object.values(stats) as number[];
-    if (allStats.some(v => v < 40)) return 'sad';
+    if (allStats.some(v => v < threshold)) return 'sad';
   }
 
   const avg = (hunger + happiness + energy + health) / 4;
@@ -637,7 +636,8 @@ export function getPeakPerformanceMult(
   stats: Record<StatKey, number>,
   personality: PersonalityDefinition,
 ): { xpMult: number; coinMult: number } {
-  if (personality.id !== 'anxious' || !personality.specialRules?.peakPerformanceThreshold) {
+  // Data-driven: peakPerformanceThreshold in specialRules (no personality.id check needed)
+  if (!personality.specialRules?.peakPerformanceThreshold) {
     return { xpMult: 1.0, coinMult: 1.0 };
   }
   const threshold = personality.specialRules.peakPerformanceThreshold;

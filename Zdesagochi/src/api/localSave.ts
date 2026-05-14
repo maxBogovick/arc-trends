@@ -1,6 +1,6 @@
 import type { Account, Pet } from './types';
-import type { InfluenceCooldownState } from '../../packages/personality-core/src';
-import { PERSONALITY_ENGINE_VERSION, STATIC_REGISTRY_VERSION } from '../../packages/personality-core/src';
+import type { InfluenceCooldownState } from '@zdesagochi/personality-core';
+import { PERSONALITY_ENGINE_VERSION, STATIC_REGISTRY_VERSION } from '@zdesagochi/personality-core';
 import type { OfflineKeyValueStorage } from './offlineStorage';
 
 export const DEFAULT_LOCAL_SAVE_KEY = 'zdesagochi:local-save:v1';

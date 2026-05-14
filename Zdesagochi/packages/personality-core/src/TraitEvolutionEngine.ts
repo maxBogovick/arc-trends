@@ -443,9 +443,17 @@ export function exitShadowForm(pet: PersonalityState, ctx: TraitEvolutionContext
   pet.traumaCooldownUntil = cooldown.toISOString();
 }
 
+export const CATHARSIS_XP_BURST_MULTIPLIER = 5;
+const CATHARSIS_XP_BURST_HOURS = 2;
+
 export function triggerCatharsis(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   const firstCatharsis = !pet.catharsisAchieved;
   exitShadowForm(pet, ctx);
+
+  if (firstCatharsis) {
+    const burstEnd = new Date(getNow(ctx).getTime() + CATHARSIS_XP_BURST_HOURS * 60 * 60 * 1000);
+    pet.catharsisXpBurstExpiresAt = burstEnd.toISOString();
+  }
   pet.catharsisAchieved = true;
 
   addCoreMemory(pet, {

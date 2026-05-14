@@ -1,8 +1,24 @@
 import { usePetStore } from '../../store/petStore';
-import { getPersonality } from '../../../packages/personality-pet-preset/src';
+import { getPersonality } from '@zdesagochi/personality-pet-preset';
 import { StatBar } from '../personality/StatBar';
 import type { StatConfig } from '../personality/StatBar';
-import type { StatKey } from '../../personality/types';
+import type { ActiveEmergentState, EmergentStateLayer, StatKey } from '../../personality/types';
+
+const LAYER_COLORS: Record<EmergentStateLayer, string> = {
+  gameplay: '#F59E0B',
+  evolution: '#8B5CF6',
+  cognitive: '#3B82F6',
+};
+
+function getActiveStatesFromLayers(stateLayers?: import('../../personality/types').PetStateLayers): ActiveEmergentState[] {
+  if (!stateLayers) return [];
+  return Object.values(stateLayers)
+    .flatMap((states): ActiveEmergentState[] => {
+      if (!states) return [];
+      if (Array.isArray(states)) return states as ActiveEmergentState[];
+      return [states as ActiveEmergentState];
+    });
+}
 
 const STATS: StatConfig[] = [
   { key: 'hunger',      label: 'Сытость',    emoji: '🍔', color: '#F59E0B', bg: '#FEF3C7', warn: 25 },
@@ -24,6 +40,7 @@ export function StatsPanel() {
 
   const personalityDef = pet.personality ? getPersonality(pet.personality as any) : null;
   const statTints = personalityDef?.visualProfile.statBarTints ?? {};
+  const activeStates = getActiveStatesFromLayers(pet.stateLayers);
 
   return (
     <div
@@ -50,6 +67,21 @@ export function StatsPanel() {
           tint={statTints[config.key as StatKey]}
         />
       ))}
+
+      {activeStates.length > 0 && (
+        <div className="pt-1 flex flex-wrap gap-1">
+          {activeStates.map(state => (
+            <span
+              key={`${state.layer}-${state.type}`}
+              className="text-xs font-medium px-2 py-0.5 rounded-full text-white"
+              style={{ background: LAYER_COLORS[state.layer] }}
+              title={`Layer: ${state.layer}`}
+            >
+              {state.type}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

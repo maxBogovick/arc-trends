@@ -81,6 +81,7 @@ export interface Pet {
   // ── Система характеров ──────────────────────────────────────────
   personality: string;                          // PersonalityId
   behavioralFlags: import('../personality/types').BehavioralFlag[];
+  /** @deprecated Use stateLayers or activeEmergentStates from PetCommandResult for full multi-layer state. */
   emergentState: import('../personality/types').EmergentStateType | null;
   emergentStateEnteredAt?: string;
   stateLayers?: import('../personality/types').PetStateLayers;
@@ -111,6 +112,7 @@ export interface Pet {
   traumaLevel: number;
   catharsisProgress: number;
   catharsisAchieved: boolean;
+  catharsisXpBurstExpiresAt?: string | null;
   traumaCooldownUntil: string | null;
   // Cognitive dissonance / sleep lifecycle
   dailyVectorVariance: number;

@@ -13,6 +13,10 @@ import { usePetBehaviorState, type BehaviorMode, type SceneInteraction } from '.
 import { getPetArchetype } from './petArchetype';
 import { SceneProps } from './SceneProps';
 import { BehaviorEffects } from './BehaviorEffects';
+import { EvolutionProposalBanner } from '../personality/EvolutionProposalBanner';
+import { ShadowCatharsisProgress } from '../personality/ShadowCatharsisProgress';
+import { CoreMemoriesPanel } from '../personality/CoreMemoriesPanel';
+import { LegacyBadge } from '../personality/LegacyBadge';
 
 export const MOOD_LABELS: Record<PetMood, { text: string; emoji: string; color: string }> = {
   ecstatic: { text: 'В восторге!', emoji: '🤩', color: 'text-yellow-600' },
@@ -231,8 +235,12 @@ export function PetScene() {
   const displayY       = dragState ? dragState.y : 0;
   const displayMode    = dragState ? dragState.phase : behaviorState.mode;
   const isSleeping = behaviorState.mode === 'sleeping' || !!pet?.isAsleep;
+  const isActionMode = behaviorState.mode === 'eating'
+    || behaviorState.mode === 'playing'
+    || behaviorState.mode === 'cleaning'
+    || behaviorState.mode === 'medicine';
   // When mouse is in room, pet turns to face the cursor (disabled while sleeping)
-  const mouseFacing    = mouseInRoom && !dragState && !isSleeping ? mousePosX > displayX : null;
+  const mouseFacing    = mouseInRoom && !dragState && !isSleeping && !isActionMode ? mousePosX > displayX : null;
   const displayFacing  = mouseFacing !== null ? mouseFacing : dragState ? dragState.x >= 50 : behaviorState.facingRight;
   const displayInteraction = dragState ? null : behaviorState.sceneInteraction;
 
@@ -291,6 +299,7 @@ export function PetScene() {
           archetype={archetype}
           petX={displayX}
           facingRight={displayFacing}
+          transitionDuration={travelDuration}
           petSize={270}
         />
 
@@ -425,6 +434,16 @@ export function PetScene() {
             />
           </div>
         </div>
+
+        {/* Legacy badge */}
+        <LegacyBadge />
+      </div>
+
+      {/* ── Evolution / Shadow panels ─────────────────────────────── */}
+      <div className="w-full space-y-2" style={{ maxWidth: '520px' }}>
+        <ShadowCatharsisProgress />
+        <EvolutionProposalBanner />
+        <CoreMemoriesPanel />
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -20,12 +20,12 @@ const packageNameResolver = {
   },
 };
 
-const tempDir = await mkdtemp(join(tmpdir(), 'zdesagochi-tests-'));
-const outfile = join(tempDir, 'personalityEvolution.test.mjs');
+const tempDir = await mkdtempCompat();
+const outfile = join(tempDir, 'monteCarloSimulation.mjs');
 
 try {
   await build({
-    entryPoints: ['tests/personalityEvolution.test.ts'],
+    entryPoints: ['tests/monteCarloSimulation.ts'],
     outfile,
     bundle: true,
     platform: 'node',
@@ -39,4 +39,9 @@ try {
   await import(pathToFileURL(outfile).href);
 } finally {
   await rm(tempDir, { recursive: true, force: true });
+}
+
+async function mkdtempCompat() {
+  const { mkdtemp } = await import('node:fs/promises');
+  return mkdtemp(join(tmpdir(), 'zdesagochi-montecarlo-'));
 }

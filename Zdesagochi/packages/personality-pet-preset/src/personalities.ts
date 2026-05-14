@@ -268,7 +268,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     emergentTriggers: [
       { stateType: 'breakdown', description: '3 стата одновременно < 30' },
     ],
-    specialRules: { peakPerformanceThreshold: 80 },
+    specialRules: { peakPerformanceThreshold: 80, anxiousStatSadThreshold: 40 },
     visualProfile: {
       idleAnimationOverride: 'nervous_shake',
       eyeOverride: 'wide_fear',
@@ -761,6 +761,11 @@ const SPECIAL_RULE_SUPPORT: Record<keyof PersonalitySpecialRules, {
     status: 'engine',
     owner: 'applyPersonalityCommand/applyActionOutcome',
     message: 'Supported by command outcome XP/coin multiplier.',
+  },
+  anxiousStatSadThreshold: {
+    status: 'engine',
+    owner: 'calcMoodWithBias',
+    message: 'Supported by mood calculation: any stat below threshold forces sad mood.',
   },
   nighttimeHours: {
     status: 'engine',
