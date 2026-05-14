@@ -230,8 +230,9 @@ export function PetScene() {
   const displayX       = dragState ? dragState.x : behaviorState.petX;
   const displayY       = dragState ? dragState.y : 0;
   const displayMode    = dragState ? dragState.phase : behaviorState.mode;
-  // When mouse is in room, pet turns to face the cursor
-  const mouseFacing    = mouseInRoom && !dragState ? mousePosX > displayX : null;
+  const isSleeping = behaviorState.mode === 'sleeping' || !!pet?.isAsleep;
+  // When mouse is in room, pet turns to face the cursor (disabled while sleeping)
+  const mouseFacing    = mouseInRoom && !dragState && !isSleeping ? mousePosX > displayX : null;
   const displayFacing  = mouseFacing !== null ? mouseFacing : dragState ? dragState.x >= 50 : behaviorState.facingRight;
   const displayInteraction = dragState ? null : behaviorState.sceneInteraction;
 
@@ -288,8 +289,9 @@ export function PetScene() {
           activeAction={behaviorState.activeAction}
           mode={behaviorState.mode}
           archetype={archetype}
-          petX={behaviorState.petX}
-          facingRight={behaviorState.facingRight}
+          petX={displayX}
+          facingRight={displayFacing}
+          petSize={270}
         />
 
         {/* Effects popup for lamp items */}

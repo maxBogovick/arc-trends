@@ -1,7 +1,7 @@
 # Library Extraction Handoff
 
-> Date: 2026-05-13  
-> Purpose: start the next Codex session directly on library extraction work.
+> Date: 2026-05-14  
+> Purpose: start the next Codex session directly on the current library extraction work.
 
 ## Start Here
 
@@ -14,47 +14,48 @@ Read these files in order:
 Current active goal:
 
 ```text
-Library extraction — Iteration 1: PersonalityState boundary
+Library extraction — app runtime resolver decision
 ```
 
-Do not start with package moves. Do not create `packages/` yet.
+Do not rewrite gameplay. Do not change balance constants. Do not publish packages.
 
 ## First Task
 
 Implement:
 
 ```text
-Create PersonalityState and app Pet adapter without moving packages yet.
+Decide whether to add app/runtime resolver aliases for package names now, or keep relative source imports until generated package build output exists.
 ```
 
 Expected files:
 
-- `src/personality/coreState.ts`
-- `src/api/personalityPetAdapter.ts`
-- optional `src/personality/engineFacade.ts`
-- targeted tests in `tests/personalityEvolution.test.ts`
+- TypeScript/Vite resolver config if choosing source alias migration;
+- package build/declaration config if choosing build-output first;
+- package entrypoint docs if policy changes;
+- boundary check updates if app runtime package-name imports become allowed.
 
 Important placement rule:
 
-- `PersonalityState` can live in `src/personality`.
-- Any adapter importing app `Pet` from `src/api/types` must live outside future core, preferably `src/api/personalityPetAdapter.ts`.
-- Do not create `src/personality/appPetAdapter.ts`.
+- `packages/personality-core/src` must not import `src/personality`, app API, storage, UI, or browser persistence.
+- `packages/personality-pet-preset/src` must not import legacy `src/personality` or app API types.
+- `src/personality/*` compatibility shims may remain during migration.
 
 ## Current Known Boundary Problems
 
-These are expected at the start of Iteration 1:
+Current expected state:
 
 ```text
-src/personality/commandHandlers.ts imports app Pet/PetMood from ../api/types
-src/personality/commands.ts imports app Pet from ../api/types
-src/personality/TraitEvolutionEngine.ts imports app Account/Pet from ../api/types
-src/personality/stateLayers.ts imports app Pet from ../api/types
-src/personality/offlineStorage.ts contains browser/localStorage adapter
+packages/personality-core/src owns generic engine/state/command implementation
+packages/personality-pet-preset/src owns Zdesagochi personalities, influence registry, memory generator, and zdesagochiPetPreset
+app/UI consumers of Zdesagochi defaults import packages/personality-pet-preset/src directly
+npm test runs package boundary checks and package-only typecheck
+app/tests no longer import the broad src/personality index
+packages have private source-only manifests with `./src/index.ts` exports
+`npm test` proves package-name imports in `scripts/personality-package-name-import-demo.mjs`
+src/personality/* still contains explicit compatibility shims/wrappers
 ```
 
-Do not try to remove all of them in one slice.
-
-Iteration 1 should only introduce the boundary and adapter.
+Do not publish packages. If changing app runtime imports to package names, configure and verify TypeScript and Vite resolution in the same slice.
 
 ## Required Guardrails
 
@@ -63,7 +64,7 @@ Iteration 1 should only introduce the boundary and adapter.
 - No package publishing.
 - No `mockApi` in core.
 - No storage/sync/backend adapter in core.
-- No new core file may import `src/api/types`.
+- No core or preset file may import `src/api/types`.
 - Existing app must keep working.
 
 ## Boundary Checks
@@ -73,13 +74,17 @@ Run before and after the slice:
 ```bash
 rg -n "from '../api/types'|from '../../api/types'|src/api/types" src/personality
 rg -n "mockApi|PetService|LocalSave|SyncQueue|BackendReplayServerApi|createBrowserOfflineStorage|localStorage" src/personality
+rg -n "../../../src/personality|../../src/personality|src/personality" packages/personality-core/src packages/personality-pet-preset/src
+rg -n "from ['\"](?:\\.\\./)+(?:src/)?personality['\"]" src tests packages
+npm run check:personality-boundaries
+npm run typecheck:packages
 ```
 
-Expected after Iteration 1:
+Expected:
 
-- Existing legacy matches may remain.
-- New `coreState.ts` must not import app API types.
-- App adapter may import app API types because it lives outside core.
+- no `src/api/types` imports from core/preset/personality modules;
+- no `src/personality` imports from package modules;
+- app adapters may import app API types because they live outside core.
 
 ## Verification
 
@@ -96,54 +101,33 @@ Build may keep the existing Vite chunk-size warning.
 
 ## Minimal Success Criteria
 
-Iteration 1 is done when:
+Next slice is done when:
 
-- `PersonalityState` exists.
-- App `Pet -> PersonalityState -> app Pet` adapter exists.
-- A contract test proves the roundtrip preserves required personality fields.
-- Existing command path still passes tests.
-- No gameplay numbers changed.
-
-## Suggested First Test
-
-Add one boundary contract test, not many behavior tests:
-
-```text
-personality pet adapter roundtrips engine-owned fields
-```
-
-It should verify:
-
-- stats;
-- personality;
-- traitVector;
-- behavioralCounters;
-- behavioralFlags;
-- stateLayers/emergentState;
-- evolution fields;
-- memories;
-- sleep fields.
-
-Do not include shop, quests, achievements, UI events, or inventory unless the command runtime truly needs them.
+- resolver direction is explicit: source aliases now, or build output first;
+- if source aliases are added, TypeScript and Vite both resolve package names and full verification passes;
+- if build output is chosen first, the blocker and concrete build-output plan are documented;
+- private package manifest policy remains enforced;
+- full verification passes;
+- no gameplay numbers changed.
 
 ## Copy-Paste Prompt For New Session
 
 ```text
-Начни Iteration 1 из docs/personality_engine_library_extraction_playbook.md.
-
-Задача: создать PersonalityState boundary и app-side Pet adapter без переноса в packages.
+Продолжи library extraction.
 
 Сначала прочитай:
 1. docs/personality_engine_library_extraction_playbook.md
 2. docs/personality_engine_progress.md
 3. docs/personality_engine_library_extraction_handoff.md
 
+Задача: app runtime resolver decision: решить, добавлять ли TypeScript/Vite aliases для package-name imports сейчас или сначала делать build output/declaration pipeline. Если меняешь runtime imports, настрой resolver и прогони все проверки. Не публиковать packages.
+
 Соблюдай ограничения:
 - не менять gameplay balance;
 - не делать rewrite;
-- не создавать packages пока;
-- app Pet adapter не класть в src/personality;
-- новый core файл не должен импортировать src/api/types.
+- не публиковать packages;
+- core/preset не должны импортировать src/api/types;
+- core/preset не должны импортировать legacy src/personality.
 
 После изменений запусти:
 npm test
@@ -151,4 +135,3 @@ npx tsc --noEmit
 npm run build
 npm run simulate:balance
 ```
-

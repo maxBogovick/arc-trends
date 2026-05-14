@@ -3,21 +3,23 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { Pet, PetMood, PetStage } from '../src/api/types';
 import type { BehavioralCounters, MoodSnapshot, TraitVector } from '../src/personality/types';
+import type { PetCommand } from '../packages/personality-core/src';
+import {
+  applyPersonalityCommand,
+  replayPersonalityCommands,
+} from '../src/personality/commandHandlers';
+import { createDefaultCounters } from '../src/personality/PersonalityEngine';
 import {
   addCatharsisProgress,
-  applyPersonalityCommand,
   checkEvolution,
   checkShadowForm,
   collapseSingularity,
-  createDefaultCounters,
   createInitialTraitVector,
   FORMATION_THRESHOLD,
-  PERSONALITY_TRAIT_MAP,
-  replayPersonalityCommands,
   SINGULARITY_THRESHOLD_SYNCS,
   STABILITY_SYNCS,
-  type PetCommand,
-} from '../src/personality';
+} from '../src/personality/TraitEvolutionEngine';
+import { PERSONALITY_TRAIT_MAP } from '../src/personality/personalityTraitMap';
 
 interface ScenarioResult {
   name: string;

@@ -17,9 +17,11 @@ import type {
   PersonalityState,
 } from '../../packages/personality-core/src/coreState';
 import type { TraitVector } from '../../packages/personality-core/src/types';
-import { getIntensityMultiplier } from './influenceRegistry';
-import { createMemoryTextGenerator } from './memoryTextGenerator';
-import { PERSONALITIES } from './personalities';
+import {
+  PERSONALITIES,
+  createMemoryTextGenerator,
+  getIntensityMultiplier,
+} from '../../packages/personality-pet-preset/src';
 
 export function completeFormation(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   completeCoreFormation(pet, withZdesagochiEvolutionDefaults(ctx));

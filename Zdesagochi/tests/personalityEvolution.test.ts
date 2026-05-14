@@ -83,15 +83,19 @@ import { PERSONALITY_TRAIT_MAP } from '../src/personality/personalityTraitMap';
 import {
   PERSONALITY_ENGINE_VERSION,
   STATIC_REGISTRY_VERSION,
-  applyPersonalityCommand,
   appendOfflineCommand,
   createOfflinePetSave,
   getUnsyncedCommands,
   markCommandsSynced,
-  replayPersonalityCommands,
-  applyPersonalityStateCommand,
   type PetCommand,
-} from '../src/personality';
+} from '../packages/personality-core/src';
+import {
+  applyPersonalityCommand,
+  replayPersonalityCommands,
+} from '../src/personality/commandHandlers';
+import {
+  applyPersonalityStateCommand,
+} from '../src/personality/engineFacade';
 
 function makePet(overrides: Partial<Pet> = {}): Pet {
   const now = '2026-05-04T00:00:00.000Z';

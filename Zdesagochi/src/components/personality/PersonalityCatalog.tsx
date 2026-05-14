@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PERSONALITIES } from '../../personality/personalities';
+import { PERSONALITIES } from '../../../packages/personality-pet-preset/src';
 import { usePetStore } from '../../store/petStore';
 import type { PersonalityDefinition, PersonalityId } from '../../personality/types';
 

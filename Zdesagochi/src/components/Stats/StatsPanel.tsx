@@ -1,5 +1,5 @@
 import { usePetStore } from '../../store/petStore';
-import { getPersonality } from '../../personality/personalities';
+import { getPersonality } from '../../../packages/personality-pet-preset/src';
 import { StatBar } from '../personality/StatBar';
 import type { StatConfig } from '../personality/StatBar';
 import type { StatKey } from '../../personality/types';

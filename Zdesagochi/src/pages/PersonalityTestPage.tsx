@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { PERSONALITIES } from '../personality/personalities';
+import { PERSONALITIES } from '../../packages/personality-pet-preset/src';
 import { 
   applyDecay, 
   applyActionModifiers, 

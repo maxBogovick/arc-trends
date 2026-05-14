@@ -172,11 +172,11 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 | Field | Current Value |
 |---|---|
 | Current Goal | Выделить движок характера в переиспользуемую библиотеку |
-| Current Step | Preset/runtime defaults injection complete; next is physical preset ownership |
-| Why This Step | `packages/personality-core/src` no longer imports `src/personality`; Zdesagochi defaults are injected through preset/config or legacy compatibility wrappers |
+| Current Step | Package-name import pilot complete; next is app runtime resolver decision |
+| Why This Step | A non-runtime demo now consumes `@zdesagochi/personality-core` and `@zdesagochi/personality-pet-preset` through controlled package-name resolution |
 | Current Vector | Правильный: strangler extraction без rewrite, без изменения gameplay balance |
-| Next Step | Move Zdesagochi preset data/defaults behind `packages/personality-pet-preset/src` instead of legacy `src/personality` files |
-| Why Next | Core package is clean; preset package still re-exports `src/personality/zdesagochiPetPreset` and app/UI imports still consume legacy `personalities` paths |
+| Next Step | Decide whether to add app/runtime resolver aliases for package names or keep relative source imports until real package build output exists |
+| Why Next | Package-name consumption is proven in a demo; changing app runtime imports now requires an explicit resolver/build policy decision |
 | Required Verification | `npm test`, `npx tsc --noEmit`, `npm run build`, `npm run simulate:balance`, boundary `rg` checks |
 
 ---
@@ -185,59 +185,29 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Закрыт preset/runtime defaults injection slice для `personality-core`.
+Закрыт package-name import pilot slice.
 
 ### Why
 
-После gameplay core extraction package `commandHandlers` все еще импортировал Zdesagochi defaults/runtime modules: `personalities`, `influenceRegistry`, `memoryTextGenerator`. Следующим шагом было разорвать эти imports через runtime/config injection, не перенося Zdesagochi data в generic core.
+После package manifest/export hardening пакеты получили names and source-only exports, but package-name consumption was still unproven. Следующим шагом было проверить package-name imports в контролируемом non-runtime path без изменения app runtime imports.
 
 ### Impact
 
-Теперь под `packages/personality-core/src` физически живут:
+Сделано:
 
-- `types.ts`;
-- `coreState.ts`;
-- `engineVersion.ts`;
-- `stateMigration.ts`;
-- `commands.ts`;
-- `commandHandlers.ts`;
-- `engineFacade.ts`;
-- `engineFactory.ts`;
-- `actionRules.ts`;
-- `clone.ts`;
-- `random.ts`;
-- `patternRules.ts`;
-- `passiveRules.ts`;
-- `decayRules.ts`;
-- `gameplayStateRules.ts`;
-- `emergentStates.ts`;
-- `stateLayers.ts`;
-- `PersonalityEngine.ts`;
-- `personalityTraitMap.ts`;
-- `TraitEvolutionEngine.ts`.
-
-Старые файлы в `src/personality` сохранены как compatibility shims/wrappers, чтобы текущий app и legacy tests продолжали работать без broad rewrite. `packages/personality-core/src/index.ts` экспортирует public command/result and engine API из package-local files, а не через `src/personality`.
-
-Добавлено в контракт:
-
-- `PersonalityRuntime.personalities`;
-- `PersonalityEngineConfig.personalities`;
-- core `commandHandlers` требует `personalities` и `influenceRegistry` для command execution;
-- `TraitEvolutionContext.personalities`;
-- Zdesagochi preset теперь передает `PERSONALITIES`;
-- legacy `src/personality/commandHandlers`, `engineFacade`, `TraitEvolutionEngine` подставляют Zdesagochi defaults for compatibility.
+- `scripts/personality-package-name-import-demo.mjs` imports `@zdesagochi/personality-core` and `@zdesagochi/personality-pet-preset`;
+- the demo uses an esbuild resolver plugin that maps those names to current source entrypoints;
+- `npm run demo:personality-package-imports` runs the pilot directly;
+- `npm test` now includes the package-name import demo after the existing quickstart demo.
 
 Review after implementation:
 
-- package-owned `coreState` no longer imports legacy `memoryTextGenerator`;
-- `PersonalityMemoryTextGenerator` is structural and typed with package-local `PersonalityDefinition` / `InfluenceCategory`;
-- `engineFacade` imports package-owned `commandHandlers`, not legacy `src/personality/commandHandlers`;
-- `commandHandlers` imports package-owned `actionRules`, `clone`, `stateLayers`, `PersonalityEngine`, and `TraitEvolutionEngine`;
-- `TraitEvolutionEngine` imports package-owned `personalityTraitMap` and `stateLayers`;
-- `packages/personality-core/src` no longer imports `src/personality`;
-- custom preset test now explicitly supplies `personalities`, making the new dependency visible.
+- app/runtime imports remain relative source imports;
+- package-name resolution is proven only in a controlled non-runtime script;
+- the pilot validates public entrypoint consumption by creating an engine from package-name imports and checking preset config validation;
+- no resolver aliases were added to Vite/TypeScript app runtime yet.
 
-Gameplay constants, registry data and balance logic не менялись.
+No gameplay constants, registry values, or balance formulas were changed.
 
 ### Verification
 
@@ -245,19 +215,24 @@ Gameplay constants, registry data and balance logic не менялись.
 - `npx tsc --noEmit` — passed.
 - `npm run build` — passed; existing Vite chunk-size warning remains non-blocking.
 - `npm run simulate:balance` — passed and refreshed `docs/reports/personality_balance_report.md`.
+- `npm run check:personality-boundaries` — passed and is now part of `npm test`.
+- `npm run typecheck:packages` — passed and is now part of `npm test`.
+- `npm run demo:personality-package-imports` — passed and is now part of `npm test`.
 - Boundary `rg` check:
   - `src/personality`, `packages/personality-core`, and `packages/personality-pet-preset` no longer contain `createBrowserOfflineStorage`, `localStorage`, `OfflineKeyValueStorage`, `saveOfflinePetSave`, or `loadOfflinePetSave`;
-  - `BackendReplayServerApi`, `ServerApi`, `LocalSave`, `SyncQueue`, `ExplainabilityLog`, and `PetService` no longer import `../personality` or call `applyPersonalityCommand` directly.
   - `packages/personality-core`, `packages/personality-pet-preset`, and `src/personality` do not import `src/api/types`.
-  - `packages/personality-core/src` no longer imports `src/personality`.
+  - `packages/personality-core/src` and `packages/personality-pet-preset/src` no longer import `src/personality`.
+  - App/UI consumers no longer import legacy `src/personality/personalities`, `src/personality/influenceRegistry`, or `src/personality/memoryTextGenerator`; only compatibility exports and local package internals remain.
+  - App/tests no longer import broad `src/personality` compatibility index.
+  - Package manifests remain private source-only manifests with `./src/index.ts` exports.
 
 ### Next
 
-Physical preset ownership.
+App runtime resolver decision.
 
 ### Why Next
 
-Core package no longer reaches into legacy `src/personality`. Следующий blocker — `packages/personality-pet-preset/src` still re-exports legacy `zdesagochiPetPreset`, and app/UI code still imports Zdesagochi personality data through `src/personality/personalities`. Moving preset ownership will make the preset package physically real too.
+Core and preset package names are proven in a controlled demo, but app/runtime still uses relative source imports. Следующий blocker — deciding whether to add resolver aliases now or wait for generated package build output before runtime migration.
 
 ---
 

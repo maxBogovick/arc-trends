@@ -4,9 +4,12 @@ import {
 } from '../../packages/personality-core/src/engineFacade';
 import type { PersonalityRuntime, PersonalityState } from '../../packages/personality-core/src/coreState';
 import type { PetCommand } from '../../packages/personality-core/src/commands';
-import { getInfluenceRegistry, getIntensityMultiplier } from './influenceRegistry';
-import { createMemoryTextGenerator } from './memoryTextGenerator';
-import { PERSONALITIES } from './personalities';
+import {
+  PERSONALITIES,
+  createMemoryTextGenerator,
+  getInfluenceRegistry,
+  getIntensityMultiplier,
+} from '../../packages/personality-pet-preset/src';
 
 export type { PersonalityStateCommandResult } from '../../packages/personality-core/src/engineFacade';
 

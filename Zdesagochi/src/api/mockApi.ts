@@ -23,13 +23,14 @@ import {
   createInitialTraitVector,
 } from '../personality/TraitEvolutionEngine';
 import {
+  createMemoryTextGenerator,
+  getPersonality,
+  getPersonalityBySkin,
   getIntensityMultiplier,
-} from '../personality/influenceRegistry';
-import { createMemoryTextGenerator } from '../personality/memoryTextGenerator';
-import { getPersonality, getPersonalityBySkin } from '../personality/personalities';
+} from '../../packages/personality-pet-preset/src';
 import {
   syncLayeredStatesFromLegacy,
-} from '../personality';
+} from '../personality/stateLayers';
 import { createBrowserOfflineStorage } from './offlineStorage';
 
 // ─── Утилиты ─────────────────────────────────────────────────────────────────

@@ -696,3 +696,250 @@ Generic core should not import Zdesagochi preset data or browser-aware runtime a
 ### Next
 
 Move Zdesagochi preset ownership into `packages/personality-pet-preset/src`, including personality data/default registry wrappers, while keeping app-facing legacy imports as compatibility shims.
+
+---
+
+## DEC-0013: Make Zdesagochi preset package the physical owner of preset defaults
+
+Status: accepted  
+Date: 2026-05-14  
+Related files: `packages/personality-pet-preset/src/personalities.ts`, `packages/personality-pet-preset/src/influenceRegistry.ts`, `packages/personality-pet-preset/src/memoryTextGenerator.ts`, `packages/personality-pet-preset/src/zdesagochiPetPreset.ts`, `packages/personality-pet-preset/src/index.ts`, `src/personality/personalities.ts`, `src/personality/influenceRegistry.ts`, `src/personality/memoryTextGenerator.ts`, `src/personality/zdesagochiPetPreset.ts`  
+Related roadmap item: Physical source ownership / package readiness
+
+### Context
+
+After core stopped importing Zdesagochi defaults, the preset package still re-exported legacy `src/personality/zdesagochiPetPreset`. That meant package boundaries were clean in the generic core, but the Zdesagochi preset package did not yet own its own data/defaults.
+
+### Decision
+
+Move Zdesagochi preset defaults into `packages/personality-pet-preset/src`:
+
+- personality registry and lookup helpers;
+- static/remote influence registry helpers;
+- memory text generator runtime default;
+- `zdesagochiPetPreset`;
+- package-local preset entrypoint exports.
+
+Keep old `src/personality/*` files as compatibility shims that re-export package-owned modules.
+
+### Why
+
+This preserves the strangler path: package code becomes the real source owner first, while app/UI imports continue working through stable legacy paths until they are migrated deliberately.
+
+### Alternatives
+
+- Migrate every app/UI import in the same step: rejected, because it would mix source ownership with app integration churn.
+- Put Zdesagochi data in `personality-core`: rejected, because those defaults are product preset data, not reusable generic core.
+- Leave preset as a re-export of `src/personality`: rejected, because it hides the remaining physical ownership problem.
+
+### Consequences
+
+`packages/personality-pet-preset/src` no longer imports `src/personality`. Existing compatibility paths in `src/personality/*` still work, but those paths are now shims over preset-owned files. App/UI consumers that need Zdesagochi defaults now import the preset package entrypoint directly. The preset package still includes browser-aware runtime defaults such as on-device memory generation and remote influence fetching; those remain outside generic core.
+
+### Verification
+
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+- Boundary `rg` checks for legacy `src/personality` imports from packages, app API type imports, storage symbols, and remaining legacy default imports from app/UI.
+
+### Next
+
+Harden package build/export boundaries and reduce the remaining broad `src/personality/index.ts` compatibility surface.
+
+---
+
+## DEC-0014: Enforce package boundaries in the test flow
+
+Status: accepted  
+Date: 2026-05-14  
+Related files: `tsconfig.packages.json`, `scripts/check-personality-package-boundaries.mjs`, `package.json`  
+Related roadmap item: Package hardening / library extraction
+
+### Context
+
+Core and preset source ownership had moved under `packages/`, but boundary validation still depended on manual `rg` checks. The root app typecheck includes `src` and only checks package files that are reached from app imports, so package regressions could be missed until later extraction work.
+
+### Decision
+
+Add automated package hardening checks:
+
+- `tsconfig.packages.json` typechecks `packages/**/*.ts` directly;
+- `npm run typecheck:packages` runs that package-only typecheck;
+- `scripts/check-personality-package-boundaries.mjs` enforces forbidden package dependencies and legacy default import rules;
+- `npm test` runs both checks before the personality tests and quickstart demo.
+
+### Why
+
+The project can stay in a strangler layout while still getting feedback close to a real library boundary. This catches accidental app/storage/legacy imports in package code before package publishing exists.
+
+### Alternatives
+
+- Create full npm package manifests and builds immediately: deferred, because the repo is not publishing packages yet and runtime imports still intentionally point at source entrypoints.
+- Keep manual `rg` checks only: rejected, because they are easy to forget and do not protect future changes.
+- Remove `src/personality/index.ts` now: rejected, because it still provides compatibility exports and default-injecting wrappers used by legacy tests/callers.
+
+### Consequences
+
+`npm test` is slightly longer but now validates package boundaries by default. The remaining broad `src/personality/index.ts` compatibility surface is explicit technical debt for the next slice, not an untracked risk.
+
+### Verification
+
+- `npm run check:personality-boundaries`
+- `npm run typecheck:packages`
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+
+### Next
+
+Reduce `src/personality/index.ts` compatibility surface by moving remaining tests/callers to package entrypoints or explicit legacy wrapper modules.
+
+---
+
+## DEC-0015: Forbid broad src/personality imports from app and tests
+
+Status: accepted  
+Date: 2026-05-14  
+Related files: `tests/balanceSimulationReport.ts`, `tests/e2eSimulation.test.ts`, `tests/personalityEvolution.test.ts`, `src/api/mockApi.ts`, `scripts/check-personality-package-boundaries.mjs`  
+Related roadmap item: Compatibility surface reduction / library extraction
+
+### Context
+
+After package boundaries were automated, app/tests still imported the broad `src/personality` compatibility index. That index mixes generic core exports, Zdesagochi default-injecting wrappers, and legacy compatibility shims, making it hard to see what each caller actually depends on.
+
+### Decision
+
+Move broad-index callers to explicit imports:
+
+- generic public command/storage/version types from `packages/personality-core/src`;
+- Zdesagochi default-injecting command/evolution behavior from explicit `src/personality/commandHandlers`, `engineFacade`, or `TraitEvolutionEngine` wrappers;
+- state-layer helpers from explicit modules.
+
+Update the package boundary check to fail on new broad `src/personality` imports from app/tests.
+
+### Why
+
+The broad index is useful as temporary compatibility surface, but it should not be a normal integration path. Explicit imports make the remaining legacy behavior visible and keep package public API usage honest.
+
+### Alternatives
+
+- Delete `src/personality/index.ts`: deferred, because keeping it avoids a risky compatibility break while extraction is still in progress.
+- Move every caller directly to `personality-core`: rejected, because some callers intentionally need Zdesagochi default injection from legacy wrappers.
+- Leave broad imports and rely on discipline: rejected, because the boundary check can enforce the rule automatically.
+
+### Consequences
+
+App/tests no longer import the broad compatibility index. Remaining legacy wrappers are explicit and purposeful. The next extraction step can focus on formal package metadata/export maps instead of untangling mixed import intent.
+
+### Verification
+
+- `npm run check:personality-boundaries`
+- `npm run typecheck:packages`
+- `npx tsc --noEmit`
+- `npm test`
+- `npm run build`
+- `npm run simulate:balance`
+
+### Next
+
+Add explicit package manifests/export maps or document a package entrypoint policy for `personality-core` and `personality-pet-preset` without publishing.
+
+---
+
+## DEC-0016: Add private source-only package manifests
+
+Status: accepted  
+Date: 2026-05-14  
+Related files: `packages/personality-core/package.json`, `packages/personality-pet-preset/package.json`, `docs/personality_engine_package_entrypoints.md`, `scripts/check-personality-package-boundaries.mjs`  
+Related roadmap item: Package manifest/export hardening / library extraction
+
+### Context
+
+Core and preset code had package source ownership, package-only typecheck, and guarded imports, but package identity and entrypoint policy were still implicit. The repo is not ready to publish packages or switch app runtime imports to package names yet.
+
+### Decision
+
+Add private source-only manifests for the two package units:
+
+- `@zdesagochi/personality-core`;
+- `@zdesagochi/personality-pet-preset`.
+
+Both manifests are intentionally private, use `0.0.0-private`, and expose only `./src/index.ts` as the current source entrypoint. Add `docs/personality_engine_package_entrypoints.md` to document the import policy and pre-publish requirements. Extend the boundary check to validate the manifest policy.
+
+### Why
+
+This creates explicit package identity and public entrypoint metadata without pretending the packages are publishable artifacts. It preserves the current source-import workflow while making the next library extraction step concrete.
+
+### Alternatives
+
+- Publish or prepare full build artifacts now: rejected, because declaration generation, package-name resolution, and package integration tests are not ready.
+- Skip manifests until the final publish step: rejected, because entrypoint policy would remain implicit and easy to drift.
+- Switch app imports to package names immediately: deferred, because local resolver configuration should be proven in a controlled non-runtime path first.
+
+### Consequences
+
+Package boundaries are now represented in source layout, tests, docs, and package metadata. The manifests are private and guarded, so this does not publish packages or change runtime behavior.
+
+### Verification
+
+- `npm run check:personality-boundaries`
+- `npm run typecheck:packages`
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+
+### Next
+
+Pilot package-name imports in one non-runtime demo/test path or add local resolver config, without replacing app runtime relative source imports yet.
+
+---
+
+## DEC-0017: Prove package-name imports in a non-runtime demo first
+
+Status: accepted  
+Date: 2026-05-14  
+Related files: `scripts/personality-package-name-import-demo.mjs`, `package.json`  
+Related roadmap item: Package-name import pilot / library extraction
+
+### Context
+
+Private source-only manifests introduced future package names, but app/runtime imports still use relative source paths. Switching runtime imports to package names before resolver/build policy is settled would be a risky integration change.
+
+### Decision
+
+Add a controlled non-runtime demo that imports:
+
+- `@zdesagochi/personality-core`;
+- `@zdesagochi/personality-pet-preset`.
+
+The demo uses an esbuild resolver plugin to map package names to the current source entrypoints, then validates that the public entrypoints can create a Zdesagochi personality engine. Include the demo in `npm test`.
+
+### Why
+
+This proves package-name consumption and entrypoint shape without changing app runtime imports or pretending packages are published/build-output artifacts.
+
+### Alternatives
+
+- Add Vite/TypeScript aliases and migrate app imports immediately: deferred, because runtime import migration should be a separate decision.
+- Use Node package resolution directly: not available yet because the repo has not configured workspaces/install-time linking for these private packages.
+- Skip the pilot: rejected, because package names would remain metadata only.
+
+### Consequences
+
+`npm test` now proves package-name imports in a controlled path. App runtime imports remain unchanged until an explicit resolver/build decision is made.
+
+### Verification
+
+- `npm run demo:personality-package-imports`
+- `npm test`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npm run simulate:balance`
+
+### Next
+
+Decide whether to add app/runtime resolver aliases for package names now, or keep relative source imports until generated package build output exists.

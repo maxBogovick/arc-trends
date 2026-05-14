@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { Pet, PetStage, PetMood } from '../src/api/types';
-import { applyPersonalityCommand } from '../src/personality';
+import { applyPersonalityCommand } from '../src/personality/commandHandlers';
 import { createDefaultCounters } from '../src/personality/PersonalityEngine';
 import { createInitialTraitVector } from '../src/personality/TraitEvolutionEngine';
 import { PERSONALITY_TRAIT_MAP } from '../src/personality/personalityTraitMap';

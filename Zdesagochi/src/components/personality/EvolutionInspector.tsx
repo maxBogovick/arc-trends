@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { DAILY_BUDGET, FORMATION_THRESHOLD, SINGULARITY_THRESHOLD_SYNCS, STABILITY_SYNCS } from '../../personality/TraitEvolutionEngine';
-import { getPersonality } from '../../personality/personalities';
+import { getPersonality } from '../../../packages/personality-pet-preset/src';
 import { TRAIT_KEYS, type TraitKey } from '../../personality/types';
 import { usePetStore } from '../../store/petStore';
 
