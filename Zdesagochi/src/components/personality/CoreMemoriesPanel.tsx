@@ -7,6 +7,7 @@ const MAX_VISIBLE = 5;
 
 export function CoreMemoriesPanel() {
   const { pet } = usePetStore();
+  const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   const memories: CoreMemory[] = pet?.coreMemories ?? [];
@@ -28,7 +29,7 @@ export function CoreMemoriesPanel() {
     >
       {/* Header */}
       <button
-        onClick={() => setExpanded(e => !e)}
+        onClick={() => setCollapsed(e => !e)}
         className="w-full flex items-center justify-between"
       >
         <div className="flex items-center gap-2">
@@ -43,45 +44,58 @@ export function CoreMemoriesPanel() {
             </span>
           )}
         </div>
-        <span className="text-xs text-gray-400">{expanded ? '▲' : '▼'} {memories.length}</span>
+        <span className="text-xs text-gray-400">{collapsed ? '▼' : '▲'} {memories.length}</span>
       </button>
 
-      {/* Memory list */}
-      <div className="space-y-1.5">
-        <AnimatePresence initial={false}>
-          {visible.map((mem, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.18 }}
-              className="flex items-start gap-2 px-3 py-2 rounded-2xl"
-              style={{
-                background: mem.tier === 'rare'
-                  ? 'linear-gradient(135deg, rgba(139,92,246,0.10), rgba(236,72,153,0.08))'
-                  : 'rgba(0,0,0,0.04)',
-                border: mem.tier === 'rare' ? '1px solid rgba(139,92,246,0.2)' : '1px solid transparent',
-              }}
-            >
-              <span className="text-base leading-none mt-0.5 flex-shrink-0">{mem.emoji}</span>
-              <span className="text-xs text-gray-700 leading-relaxed">{mem.text}</span>
-              {mem.tier === 'rare' && (
-                <span className="ml-auto text-[9px] font-bold text-purple-400 flex-shrink-0">★ редкое</span>
-              )}
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="memories-body"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            {/* Memory list */}
+            <div className="space-y-1.5">
+              <AnimatePresence initial={false}>
+                {visible.map((mem, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="flex items-start gap-2 px-3 py-2 rounded-2xl"
+                    style={{
+                      background: mem.tier === 'rare'
+                        ? 'linear-gradient(135deg, rgba(139,92,246,0.10), rgba(236,72,153,0.08))'
+                        : 'rgba(0,0,0,0.04)',
+                      border: mem.tier === 'rare' ? '1px solid rgba(139,92,246,0.2)' : '1px solid transparent',
+                    }}
+                  >
+                    <span className="text-base leading-none mt-0.5 flex-shrink-0">{mem.emoji}</span>
+                    <span className="text-xs text-gray-700 leading-relaxed">{mem.text}</span>
+                    {mem.tier === 'rare' && (
+                      <span className="ml-auto text-[9px] font-bold text-purple-400 flex-shrink-0">★ редкое</span>
+                    )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
 
-      {memories.length > MAX_VISIBLE && (
-        <button
-          onClick={() => setExpanded(e => !e)}
-          className="w-full text-xs text-purple-500 font-semibold py-1 hover:text-purple-700 transition-colors"
-        >
-          {expanded ? 'Скрыть' : `Показать все ${memories.length}`}
-        </button>
-      )}
+            {memories.length > MAX_VISIBLE && (
+              <button
+                onClick={() => setExpanded(e => !e)}
+                className="w-full text-xs text-purple-500 font-semibold py-1 hover:text-purple-700 transition-colors"
+              >
+                {expanded ? 'Скрыть' : `Показать все ${memories.length}`}
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

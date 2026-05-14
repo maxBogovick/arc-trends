@@ -9,6 +9,7 @@ import { EmergentStateBanner } from '../personality/EmergentStateBanner';
 import { MoodGraph } from '../personality/MoodGraph';
 import { PersonalityCard } from '../personality/PersonalityCard';
 import { EvolutionInspector } from '../personality/EvolutionInspector';
+import { CoreMemoriesPanel } from '../personality/CoreMemoriesPanel';
 
 export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
   const { pet, isLoading } = usePetStore();
@@ -41,9 +42,11 @@ export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
 
       {/* Center — Pet */}
       <div className="flex flex-col items-center gap-4 lg:py-2">
-        <PetScene />
+        <PetScene actionPanel={<ActionPanel onPlayGame={onPlayGame} />} />
         <EmergentStateBanner />
-        <ActionPanel onPlayGame={onPlayGame} />
+        <div className="w-full" style={{ maxWidth: '520px' }}>
+          <CoreMemoriesPanel />
+        </div>
       </div>
 
       {/* Right column */}

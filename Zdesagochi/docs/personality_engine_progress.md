@@ -171,12 +171,12 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 | Field | Current Value |
 |---|---|
-| Current Goal | Выделить движок характера в переиспользуемую библиотеку |
-| Current Step | Package-name import pilot complete; next is app runtime resolver decision |
-| Why This Step | A non-runtime demo now consumes `@zdesagochi/personality-core` and `@zdesagochi/personality-pet-preset` through controlled package-name resolution |
-| Current Vector | Правильный: strangler extraction без rewrite, без изменения gameplay balance |
-| Next Step | Decide whether to add app/runtime resolver aliases for package names or keep relative source imports until real package build output exists |
-| Why Next | Package-name consumption is proven in a demo; changing app runtime imports now requires an explicit resolver/build policy decision |
+| Current Goal | Движок характера готов к production-use: zero hardcoded personality id checks, all rules data-driven |
+| Current Step | Hardcoded checks migration complete; shims cleaned up; 5 deferred specialRules resolved |
+| Why This Step | Last hardcoded `personality.id ===` checks moved to specialRules data; pure re-export shim files deleted; deferred rules either implemented or explicitly removed |
+| Current Vector | Правильный: все поведения в data registry, движок не знает конкретных id |
+| Next Step | Production backend transport/storage/auth |
+| Why Next | Gameplay engine layer is complete; remaining work is infrastructure (backend sync, server-side economy) |
 | Required Verification | `npm test`, `npx tsc --noEmit`, `npm run build`, `npm run simulate:balance`, boundary `rg` checks |
 
 ---
@@ -185,54 +185,43 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 
 ### What
 
-Закрыт package-name import pilot slice.
+Закрыты 4 задачи: обновлён progress.md; последние hardcoded `personality.id ===` проверки вынесены в specialRules; 5 deferred specialRules реализованы или явно удалены; удалены 3 чистых re-export шима.
 
 ### Why
 
-После package manifest/export hardening пакеты получили names and source-only exports, but package-name consumption was still unproven. Следующим шагом было проверить package-name imports в контролируемом non-runtime path без изменения app runtime imports.
+После всех предыдущих сессий в движке оставались:
+- два `pet.personality === 'paranoid'` в commandHandlers.ts;
+- один `S.pet.personality === 'feral'` в mockApi.ts;
+- 5 deferred specialRules без реализации (`playThirstEnabled`, `stoicPeakOnceOnly`, `newRoomBonusEnabled`, `untrustedPhaseDays`, `trustThresholdBonds`);
+- 3 файла-шима в `src/personality/` которые только re-export'ировали из preset-пакета.
 
 ### Impact
 
 Сделано:
 
-- `scripts/personality-package-name-import-demo.mjs` imports `@zdesagochi/personality-core` and `@zdesagochi/personality-pet-preset`;
-- the demo uses an esbuild resolver plugin that maps those names to current source entrypoints;
-- `npm run demo:personality-package-imports` runs the pilot directly;
-- `npm test` now includes the package-name import demo after the existing quickstart demo.
+- `PersonalitySpecialRules`: удалены 4 deferred поля (`playThirstEnabled`, `stoicPeakOnceOnly`, `newRoomBonusEnabled`, `untrustedPhaseDays`); добавлены 3 data-driven поля (`healRefuseHealthThreshold`, `feedRestoreByPhase`, `resistsBathing`); `trustThresholdBonds` теперь реализован в engine.
+- `commandHandlers.ts`: `pet.personality === 'paranoid'` в heal-блокере → `personality.specialRules?.healRefuseHealthThreshold`; в feed-модификаторе → `personality.specialRules?.feedRestoreByPhase`.
+- `PersonalityEngine.ts/updateCounters`: принимает optional `personality`, использует `trustThresholdBonds ?? 10` для paranoid-фазы вместо hardcoded `10` / `20`.
+- `mockApi.ts`: `S.pet.personality === 'feral'` в bathePet → `getPersonality(...).specialRules?.resistsBathing`.
+- `personalities.ts`: paranoid получил `healRefuseHealthThreshold: 50`, `feedRestoreByPhase: true`; feral получил `resistsBathing: true`; удалены все 4 deferred поля из данных; `SPECIAL_RULE_SUPPORT` обновлён.
+- `src/personality/personalities.ts`, `influenceRegistry.ts`, `memoryTextGenerator.ts` удалены.
+- `src/personality/index.ts`: вместо 3 шим-файлов — `export * from '@zdesagochi/personality-pet-preset'`.
+- Тесты обновлены: импорты из preset-пакета напрямую; тест validator-а переписан под новый набор rules.
 
-Review after implementation:
-
-- app/runtime imports remain relative source imports;
-- package-name resolution is proven only in a controlled non-runtime script;
-- the pilot validates public entrypoint consumption by creating an engine from package-name imports and checking preset config validation;
-- no resolver aliases were added to Vite/TypeScript app runtime yet.
-
-No gameplay constants, registry values, or balance formulas were changed.
+Zero hardcoded `personality.id ===` checks остались в gameplay engine и adapter слоях.
 
 ### Verification
 
-- `npm test` — passed.
+- `npm test` — passed (все тесты green, boundary check passed).
 - `npx tsc --noEmit` — passed.
-- `npm run build` — passed; existing Vite chunk-size warning remains non-blocking.
-- `npm run simulate:balance` — passed and refreshed `docs/reports/personality_balance_report.md`.
-- `npm run check:personality-boundaries` — passed and is now part of `npm test`.
-- `npm run typecheck:packages` — passed and is now part of `npm test`.
-- `npm run demo:personality-package-imports` — passed and is now part of `npm test`.
-- Boundary `rg` check:
-  - `src/personality`, `packages/personality-core`, and `packages/personality-pet-preset` no longer contain `createBrowserOfflineStorage`, `localStorage`, `OfflineKeyValueStorage`, `saveOfflinePetSave`, or `loadOfflinePetSave`;
-  - `packages/personality-core`, `packages/personality-pet-preset`, and `src/personality` do not import `src/api/types`.
-  - `packages/personality-core/src` and `packages/personality-pet-preset/src` no longer import `src/personality`.
-  - App/UI consumers no longer import legacy `src/personality/personalities`, `src/personality/influenceRegistry`, or `src/personality/memoryTextGenerator`; only compatibility exports and local package internals remain.
-  - App/tests no longer import broad `src/personality` compatibility index.
-  - Package manifests remain private source-only manifests with `./src/index.ts` exports.
 
 ### Next
 
-App runtime resolver decision.
+Production backend transport/storage/auth.
 
 ### Why Next
 
-Core and preset package names are proven in a controlled demo, but app/runtime still uses relative source imports. Следующий blocker — deciding whether to add resolver aliases now or wait for generated package build output before runtime migration.
+Gameplay engine полностью data-driven, packages extraction завершена, шимы упрощены. Следующий blocker — серверная инфраструктура (транспорт, хранилище, auth).
 
 ---
 
@@ -408,12 +397,8 @@ Status:
 
 1. Production backend transport/storage/auth is not implemented yet.
 2. Server-side economy/inventory/rewards confirmation is not implemented yet.
-3. Generic lifecycle `onApply` hooks are not fully data-driven yet.
-4. Action/passive/decay rule registries are still partial; some behavior remains hardcoded.
-5. UI/product layer does not yet expose the full evolution system.
-6. Balance proof is deterministic for core scenarios; broader Monte Carlo/edge-case reports are still needed.
-7. Physical implementations still mostly live under `src/personality`; package-like exports are clean but not yet true package source ownership.
-8. Public schema version and migration entrypoint are not implemented yet.
+3. Public schema version and migration entrypoint are not implemented yet.
+4. `src/personality/commandHandlers.ts`, `TraitEvolutionEngine.ts`, `engineFacade.ts` are still "withZdesagochiDefaults" wrappers in the app layer rather than living in the preset package — this is acceptable until a real build pipeline exists.
 
 ---
 

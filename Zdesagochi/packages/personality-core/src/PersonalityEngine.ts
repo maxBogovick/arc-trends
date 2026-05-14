@@ -471,6 +471,7 @@ export function updateCounters(
   action: ActionType,
   stats: Record<StatKey, number>,
   context: ActionContext,
+  personality?: PersonalityDefinition,
 ): BehavioralCounters {
   const c = normalizeRollingCounters(cloneCounters(counters), getContextNow(context));
   const now = getContextNow(context).toISOString();
@@ -543,7 +544,8 @@ export function updateCounters(
   // обновляется вызывающим кодом с текущим mood
 
   // Параноик: смена фазы
-  if (c.paranoidPhase === 'untrusted' && c.bondActionsInPhase >= 10) {
+  const trustThreshold = personality?.specialRules?.trustThresholdBonds ?? 10;
+  if (c.paranoidPhase === 'untrusted' && c.bondActionsInPhase >= trustThreshold) {
     c.paranoidPhase = 'trusted';
     c.bondActionsInPhase = 0;
     c.trustedSince = now;
@@ -551,7 +553,7 @@ export function updateCounters(
   if (c.paranoidPhase === 'trusted' && c.sessionGapHours >= 24) {
     c.paranoidPhase = 'collapsed';
   }
-  if (c.paranoidPhase === 'collapsed' && c.bondActionsInPhase >= 20) {
+  if (c.paranoidPhase === 'collapsed' && c.bondActionsInPhase >= trustThreshold * 2) {
     c.paranoidPhase = 'trusted';
     c.bondActionsInPhase = 0;
     c.trustedSince = now;

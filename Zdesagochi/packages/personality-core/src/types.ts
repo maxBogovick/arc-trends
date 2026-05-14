@@ -275,9 +275,6 @@ export interface PersonalityDefinition {
 // Специальные правила — расширяемый объект для уникальной механики характеров.
 // Добавить новое специальное правило = добавить поле сюда + обработку в engine.
 export interface PersonalitySpecialRules {
-  // Playful
-  playThirstEnabled?: boolean;          // happiness/energy decay fast без игр
-
   // Foodie
   passiveStatBonusWhenFull?: boolean;   // все статы +3/тик при hunger > 80
 
@@ -291,6 +288,7 @@ export interface PersonalitySpecialRules {
   // Feral
   nighttimeHours?: [number, number];    // [22, 6] — диапазон "ночи"
   nightEnergyDecayDisabled?: boolean;
+  resistsBathing?: boolean;             // событие купания = "против воли"
 
   // Melancholic
   xpEveryOtherAction?: boolean;         // XP начисляется только на чётные действия
@@ -300,14 +298,13 @@ export interface PersonalitySpecialRules {
 
   // Stoic
   flatXpFromPlay?: boolean;             // XP от игры всегда = константа, независимо от score
-  stoicPeakOnceOnly?: boolean;
 
   // Adventurer
   foodBoredomEnabled?: boolean;         // -% happiness за повторную еду
-  newRoomBonusEnabled?: boolean;
 
   // Paranoid
-  untrustedPhaseDays?: number;          // дней в фазе "не доверяет" (дефолт: 3)
+  healRefuseHealthThreshold?: number;   // heal заблокирован если health > этого значения
+  feedRestoreByPhase?: boolean;         // множитель восстановления зависит от paranoidPhase
   trustThresholdBonds?: number;         // bond-действий до перехода в trusted (дефолт: 10)
 }
 

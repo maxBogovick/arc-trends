@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useCallback, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { usePetStore } from '../../store/petStore';
 import type { Pet } from '../../api';
 import { useDarkness } from './RoomScene';
@@ -15,7 +16,6 @@ import { SceneProps } from './SceneProps';
 import { BehaviorEffects } from './BehaviorEffects';
 import { EvolutionProposalBanner } from '../personality/EvolutionProposalBanner';
 import { ShadowCatharsisProgress } from '../personality/ShadowCatharsisProgress';
-import { CoreMemoriesPanel } from '../personality/CoreMemoriesPanel';
 import { LegacyBadge } from '../personality/LegacyBadge';
 
 export const MOOD_LABELS: Record<PetMood, { text: string; emoji: string; color: string }> = {
@@ -122,7 +122,7 @@ function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moo
 }
 
 // ── PetScene ──────────────────────────────────────────────────────────────────
-export function PetScene() {
+export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
   const {
     pet,
     updatePetName,
@@ -443,7 +443,7 @@ export function PetScene() {
       <div className="w-full space-y-2" style={{ maxWidth: '520px' }}>
         <ShadowCatharsisProgress />
         <EvolutionProposalBanner />
-        <CoreMemoriesPanel />
+        {actionPanel}
       </div>
     </div>
   );

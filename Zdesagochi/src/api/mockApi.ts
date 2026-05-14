@@ -636,10 +636,10 @@ export class MockApiService implements ApiService {
   async bathePet() {
     await delay(rand(350, 520));
     const now = mockNow();
-    const wasFeral = S.pet.personality === 'feral';
+    const resistsBathing = getPersonality(S.pet.personality as any)?.specialRules?.resistsBathing;
     await applyMockCommandOrThrow({ type: 'bathe', at: now.toISOString() });
     S.batheCount++;
-    addEvent('bathe', wasFeral ? 'Купался против воли 😤' : 'Принял ванну', '🛁');
+    addEvent('bathe', resistsBathing ? 'Купался против воли 😤' : 'Принял ванну', '🛁');
     tickQuest('q_bathe');
     checkAchievement('clean_freak', S.batheCount);
     return finalizePet();

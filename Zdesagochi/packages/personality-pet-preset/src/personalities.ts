@@ -49,7 +49,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     emergentTriggers: [
       { stateType: 'tantrum', description: 'energy < 15 и не играл > 3ч' },
     ],
-    specialRules: { playThirstEnabled: true },
+    specialRules: {},
     visualProfile: {
       idleAnimationOverride: 'bounce',
       statBarTints: {
@@ -317,7 +317,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     emergentTriggers: [
       { stateType: 'midnight_zoomies', description: 'clientLocalHour ∈ [22,23,0,1,2,3,4,5]' },
     ],
-    specialRules: { nighttimeHours: [22, 6], nightEnergyDecayDisabled: true },
+    specialRules: { nighttimeHours: [22, 6], nightEnergyDecayDisabled: true, resistsBathing: true },
     visualProfile: {
       idleAnimationOverride: 'wild_crouch',
       eyeOverride: 'wild',
@@ -626,7 +626,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     emergentTriggers: [
       { stateType: 'stoic_peak', description: '10 дней avg > 60 при каждом sync' },
     ],
-    specialRules: { flatXpFromPlay: true, stoicPeakOnceOnly: true },
+    specialRules: { flatXpFromPlay: true },
     visualProfile: {
       idleAnimationOverride: 'minimal_idle',
       statBarTints: {},
@@ -669,7 +669,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     emergentTriggers: [
       { stateType: 'wanderlust', description: '48ч в одной комнате' },
     ],
-    specialRules: { foodBoredomEnabled: true, newRoomBonusEnabled: true },
+    specialRules: { foodBoredomEnabled: true },
     visualProfile: {
       idleAnimationOverride: 'impatient_look',
       statBarTints: {
@@ -713,7 +713,8 @@ export const PERSONALITIES: PersonalityDefinition[] = [
       { stateType: 'trust_collapse', description: 'trusted-фаза + пропуск > 24ч' },
     ],
     specialRules: {
-      untrustedPhaseDays: 3,
+      healRefuseHealthThreshold: 50,
+      feedRestoreByPhase: true,
       trustThresholdBonds: 10,
     },
     visualProfile: {
@@ -742,11 +743,6 @@ const SPECIAL_RULE_SUPPORT: Record<keyof PersonalitySpecialRules, {
   owner: string;
   message: string;
 }> = {
-  playThirstEnabled: {
-    status: 'deferred',
-    owner: 'future gameplay rule registry',
-    message: 'Declared for Playful, but no gameplay/economy effect currently consumes it.',
-  },
   passiveStatBonusWhenFull: {
     status: 'engine',
     owner: 'computeNaturalPassives',
@@ -777,6 +773,11 @@ const SPECIAL_RULE_SUPPORT: Record<keyof PersonalitySpecialRules, {
     owner: 'applyDecay',
     message: 'Supported by night energy decay calculation.',
   },
+  resistsBathing: {
+    status: 'adapter_owned',
+    owner: 'api-adapter/bathePet',
+    message: 'Read by UI adapter to choose bathe event label.',
+  },
   xpEveryOtherAction: {
     status: 'engine',
     owner: 'applyPersonalityCommand/applyActionOutcome',
@@ -792,30 +793,25 @@ const SPECIAL_RULE_SUPPORT: Record<keyof PersonalitySpecialRules, {
     owner: 'applyActionModifiers',
     message: 'Supported by action modifier calculation.',
   },
-  stoicPeakOnceOnly: {
-    status: 'deferred',
-    owner: 'future gameplay rule registry',
-    message: 'Current one-shot behavior is hardcoded through counters, not this specialRules field.',
-  },
   foodBoredomEnabled: {
     status: 'engine',
     owner: 'applyActionModifiers',
     message: 'Supported by food preference modifier calculation.',
   },
-  newRoomBonusEnabled: {
-    status: 'deferred',
-    owner: 'future gameplay rule registry',
-    message: 'Declared for Adventurer, but no new-room reward effect currently consumes it.',
+  healRefuseHealthThreshold: {
+    status: 'engine',
+    owner: 'applyPersonalityCommand/getSpecialBlockedAction',
+    message: 'Blocks heal command when health is above this threshold.',
   },
-  untrustedPhaseDays: {
-    status: 'deferred',
-    owner: 'future gameplay rule registry',
-    message: 'Declared for Paranoid, but phase timing is not data-driven yet.',
+  feedRestoreByPhase: {
+    status: 'engine',
+    owner: 'applyPersonalityCommand/applySpecialOutcomeModifiers',
+    message: 'Scales feed restore multiplier based on paranoidPhase behavioral counter.',
   },
   trustThresholdBonds: {
-    status: 'deferred',
-    owner: 'future gameplay rule registry',
-    message: 'Declared for Paranoid, but trust threshold is currently hardcoded in updateCounters.',
+    status: 'engine',
+    owner: 'updateCounters',
+    message: 'Controls how many bond actions are required to transition paranoidPhase to trusted.',
   },
 };
 

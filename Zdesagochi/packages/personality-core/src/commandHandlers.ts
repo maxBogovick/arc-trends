@@ -381,6 +381,7 @@ function applyGameplayCommand(
       actionType,
       pet.stats as Record<StatKey, number>,
       actionContext,
+      personality,
     );
   }
 
@@ -612,7 +613,7 @@ function getSpecialBlockedAction(
   if (command.type === 'heal' && pet.stats.health >= 90) {
     return { actionType, reason: 'Питомец уже здоров!', alternativeHint: 'Выбери другое действие' };
   }
-  if (command.type === 'heal' && pet.personality === 'paranoid' && pet.stats.health > 50) {
+  if (command.type === 'heal' && personality.specialRules?.healRefuseHealthThreshold !== undefined && pet.stats.health > personality.specialRules.healRefuseHealthThreshold) {
     return { actionType, reason: 'Не верит что болен!', alternativeHint: 'Сначала укрепи доверие' };
   }
   return null;
@@ -626,7 +627,7 @@ function applySpecialOutcomeModifiers(
   personalities: PersonalityDefinition[],
 ): void {
   const personality = getPersonalityFromRegistry(pet.personality, personalities);
-  if (command.type === 'feed' && pet.personality === 'paranoid') {
+  if (command.type === 'feed' && personality.specialRules?.feedRestoreByPhase) {
     const paranoidMult = getParanoidRestoreMult(pet.behavioralCounters);
     for (const [stat, value] of Object.entries(outcome.statDeltas)) {
       if (stat !== 'health') {

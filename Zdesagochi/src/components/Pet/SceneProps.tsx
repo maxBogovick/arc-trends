@@ -257,7 +257,6 @@ export function SceneProps({ activeAction, mode, archetype, petX, facingRight, t
   const { foods, petMorph } = usePetStore();
   const morphXScale = Math.max(0.35, (petMorph.scale ?? 1) * (petMorph.width ?? 1));
   const morphYScale = Math.max(0.35, (petMorph.scale ?? 1) * (petMorph.height ?? 1));
-  const morphBottomCompensation = Math.round((1 - morphYScale) * petSize * 0.5);
 
   // Pixel offsets are local to the pet anchor. Keep food close enough to read as
   // being eaten, while play/medicine props can sit a little farther out.
@@ -265,8 +264,9 @@ export function SceneProps({ activeAction, mode, archetype, petX, facingRight, t
   const tableOffset = Math.round(petSize * 0.18 * morphXScale);
   const ballOffset = Math.round(petSize * 0.29);
   const pillOffset = Math.round(petSize * 0.12);
-  const floorPropBottom = morphBottomCompensation;
-  const creatureFoodBottom = Math.round(42 * morphYScale) + morphBottomCompensation;
+  const animalFoodBottom = Math.round(petSize * 0.13 * morphYScale);
+  const tableFoodBottom = Math.round(petSize * 0.1 * morphYScale);
+  const creatureFoodBottom = Math.round(petSize * 0.25 * morphYScale);
 
   // Resolve the food emoji from the actionLoading key (e.g. 'feed_apple' → 🍎)
   const foodEmoji = (() => {
@@ -299,8 +299,8 @@ export function SceneProps({ activeAction, mode, archetype, petX, facingRight, t
         transition={{ left: { duration: transitionDuration, ease: 'easeInOut' } }}
       >
         <AnimatePresence>
-          {isEating && archetype === 'animal' && <FoodBowl key="bowl" facingRight={facingRight} emoji={foodEmoji} offsetPx={foodOffset} bottomPx={floorPropBottom} />}
-          {isEating && archetype === 'humanoid' && <FoodTable key="table" facingRight={facingRight} emoji={foodEmoji} offsetPx={tableOffset} bottomPx={floorPropBottom} />}
+          {isEating && archetype === 'animal' && <FoodBowl key="bowl" facingRight={facingRight} emoji={foodEmoji} offsetPx={foodOffset} bottomPx={animalFoodBottom} />}
+          {isEating && archetype === 'humanoid' && <FoodTable key="table" facingRight={facingRight} emoji={foodEmoji} offsetPx={tableOffset} bottomPx={tableFoodBottom} />}
           {isEating && archetype === 'creature' && <CreatureFood key="food" facingRight={facingRight} emoji={foodEmoji} offsetPx={foodOffset} bottomPx={creatureFoodBottom} />}
           {isPlaying && <PlayBall key="ball" facingRight={facingRight} offsetPx={ballOffset} />}
           {isCleaning && <SoapBubbles key="bubbles" />}

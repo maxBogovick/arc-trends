@@ -12,7 +12,7 @@ import {
   checkEvolution,
   acceptEvolution,
 } from '../src/personality/TraitEvolutionEngine';
-import { PERSONALITIES } from '../src/personality/personalities';
+import { PERSONALITIES } from '@zdesagochi/personality-pet-preset';
 
 const REPORT_PATH = resolve('docs/reports/monte_carlo_report.md');
 const SIM_DAYS = 30;

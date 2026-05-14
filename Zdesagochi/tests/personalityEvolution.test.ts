@@ -77,9 +77,9 @@ import { getEmergentStateDef } from '../src/personality/emergentStates';
 import { BASE_ACTION_RULES, validateActionRules } from '../src/personality/actionRules';
 import { PASSIVE_RULES, validatePassiveRules } from '../src/personality/passiveRules';
 import { DECAY_RULES, validateDecayRules } from '../src/personality/decayRules';
-import { validateBalancePatch, validateInfluenceRegistry, validateRemoteInfluence } from '../src/personality/influenceRegistry';
+import { validateBalancePatch, validateInfluenceRegistry, validateRemoteInfluence } from '@zdesagochi/personality-pet-preset';
 import { PATTERN_RULES, validatePatternRules } from '../src/personality/patternRules';
-import { getPersonality, getPersonalityStrict, validatePersonalitySpecialRules } from '../src/personality/personalities';
+import { getPersonality, getPersonalityStrict, validatePersonalitySpecialRules } from '@zdesagochi/personality-pet-preset';
 import { setLayeredEmergentState } from '../src/personality/stateLayers';
 import { PERSONALITY_TRAIT_MAP } from '../src/personality/personalityTraitMap';
 import {
@@ -217,20 +217,25 @@ test('depth of immersion is 1 at personality center', () => {
   assert.equal(depthOfImmersion(vector, 'bold', 3), 1);
 });
 
-test('personality specialRules validator exposes deferred and adapter-owned rules', () => {
+test('personality specialRules validator exposes adapter-owned rules', () => {
   const issues = validatePersonalitySpecialRules();
   const errors = issues.filter(issue => issue.severity === 'error');
   const warnings = issues.filter(issue => issue.severity === 'warning');
   const warningKeys = new Set(warnings.map(issue => `${issue.personalityId}:${issue.rule}:${issue.status}`));
 
+  // No errors — all rules are known
   assert.deepEqual(errors, []);
-  assert.ok(warningKeys.has('playful:playThirstEnabled:deferred'));
-  assert.equal(warningKeys.has('bold:rejectSleepWhenEnergized:adapter_owned'), false);
-  assert.equal(warningKeys.has('anxious:peakPerformanceThreshold:adapter_owned'), false);
-  assert.equal(warningKeys.has('melancholic:xpEveryOtherAction:adapter_owned'), false);
-  assert.ok(warningKeys.has('stoic:stoicPeakOnceOnly:deferred'));
-  assert.ok(warningKeys.has('adventurer:newRoomBonusEnabled:deferred'));
-  assert.ok(warningKeys.has('paranoid:trustThresholdBonds:deferred'));
+
+  // adapter_owned rules produce warnings (not engine-evaluated)
+  assert.ok(warningKeys.has('feral:resistsBathing:adapter_owned'));
+
+  // engine rules do not produce warnings
+  assert.equal(warningKeys.has('bold:rejectSleepWhenEnergized:engine'), false);
+  assert.equal(warningKeys.has('anxious:peakPerformanceThreshold:engine'), false);
+  assert.equal(warningKeys.has('melancholic:xpEveryOtherAction:engine'), false);
+  assert.equal(warningKeys.has('paranoid:trustThresholdBonds:engine'), false);
+  assert.equal(warningKeys.has('paranoid:healRefuseHealthThreshold:engine'), false);
+  assert.equal(warningKeys.has('paranoid:feedRestoreByPhase:engine'), false);
 });
 
 test('personality specialRules validator rejects unknown runtime keys', () => {
