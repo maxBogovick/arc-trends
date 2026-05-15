@@ -57,7 +57,10 @@ export function EvolutionInspector() {
   const guardian = account.memoryGuardian;
   const singularityZones = pet.singularityZones ?? [];
   const singularityProgress = pct(pet.ticksInSingularity ?? 0, SINGULARITY_THRESHOLD_SYNCS);
-  const showCatharsis = pet.emergentState === 'shadow_form' || pet.traumaLevel >= 50 || pet.catharsisProgress > 0;
+  const inShadowForm = pet.emergentState === 'shadow_form';
+  const traumaLevel = pet.traumaLevel ?? 0;
+  const traumaToShadow = Math.max(0, 75 - traumaLevel);
+  const showCatharsis = inShadowForm || traumaLevel >= 50 || pet.catharsisProgress > 0;
   const catharsisPct = pct(pet.catharsisProgress ?? 0);
   const rareMemories = memories.filter(memory => memory.tier === 'rare').slice(0, 3);
   const guardianPreviewHints = [
@@ -217,10 +220,10 @@ export function EvolutionInspector() {
         <div
           className="rounded-2xl px-3 py-3 space-y-3 border"
           style={{
-            background: pet.emergentState === 'shadow_form'
+            background: inShadowForm
               ? 'rgba(30,41,59,0.08)'
               : 'rgba(245,158,11,0.10)',
-            borderColor: pet.emergentState === 'shadow_form'
+            borderColor: inShadowForm
               ? 'rgba(30,41,59,0.18)'
               : 'rgba(245,158,11,0.22)',
           }}
@@ -229,49 +232,53 @@ export function EvolutionInspector() {
             <div>
               <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Катарсис</p>
               <p className="text-[11px] text-gray-600 mt-0.5 leading-snug">
-                {pet.emergentState === 'shadow_form'
-                  ? 'Теневая форма просит мягкой заботы. Доверие возвращается через спокойные действия.'
-                  : 'Напряжение накапливается. Сейчас лучше выбирать бережный уход.'}
+                {inShadowForm
+                  ? 'Идёт восстановление: обнимай или лечи питомца, пока шкала не дойдёт до 100.'
+                  : `Это ещё не восстановление, а риск. Снизь trauma ниже 50: обнять -3, лечить -2, не будить рано.`}
               </p>
             </div>
             <span
               className="text-[10px] font-semibold px-2 py-1 rounded-full"
               style={{
-                background: pet.emergentState === 'shadow_form' ? 'rgba(15,23,42,0.08)' : 'rgba(245,158,11,0.14)',
-                color: pet.emergentState === 'shadow_form' ? '#334155' : '#B45309',
+                background: inShadowForm ? 'rgba(15,23,42,0.08)' : 'rgba(245,158,11,0.14)',
+                color: inShadowForm ? '#334155' : '#B45309',
               }}
             >
-              trauma {Math.round(pet.traumaLevel ?? 0)}
+              trauma {Math.round(traumaLevel)}
             </span>
           </div>
 
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-gray-500">Прогресс восстановления</span>
-              <span className="text-[10px] text-gray-400">{Math.round(pet.catharsisProgress ?? 0)}/100</span>
+              <span className="text-[11px] font-semibold text-gray-500">
+                {inShadowForm ? 'Прогресс восстановления' : 'До теневой формы'}
+              </span>
+              <span className="text-[10px] text-gray-400">
+                {inShadowForm
+                  ? `${Math.round(pet.catharsisProgress ?? 0)}/100`
+                  : traumaToShadow > 0 ? `ещё ${Math.round(traumaToShadow)} trauma` : 'риск активен'}
+              </span>
             </div>
             <div className="h-2 rounded-full overflow-hidden bg-white/70">
               <motion.div
                 className="h-full rounded-full"
-                style={{ background: pet.emergentState === 'shadow_form' ? '#475569' : '#F59E0B' }}
-                animate={{ width: `${catharsisPct}%` }}
+                style={{ background: inShadowForm ? '#475569' : '#F59E0B' }}
+                animate={{ width: `${inShadowForm ? catharsisPct : pct(traumaLevel, 75)}%` }}
                 transition={{ duration: 0.35, ease: 'easeOut' }}
               />
             </div>
           </div>
 
-          {pet.emergentState === 'shadow_form' && (
-            <div className="grid grid-cols-2 gap-1.5">
-              <div className="rounded-xl px-2 py-2 bg-white/70 border border-white/80">
-                <p className="text-[11px] font-semibold text-gray-600">Обнять</p>
-                <p className="text-[10px] text-gray-400">+25 катарсис</p>
-              </div>
-              <div className="rounded-xl px-2 py-2 bg-white/70 border border-white/80">
-                <p className="text-[11px] font-semibold text-gray-600">Лечить</p>
-                <p className="text-[10px] text-gray-400">+20 катарсис</p>
-              </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <div className="rounded-xl px-2 py-2 bg-white/70 border border-white/80">
+              <p className="text-[11px] font-semibold text-gray-600">Обнять</p>
+              <p className="text-[10px] text-gray-400">{inShadowForm ? '+25 катарсис' : '-3 trauma'}</p>
             </div>
-          )}
+            <div className="rounded-xl px-2 py-2 bg-white/70 border border-white/80">
+              <p className="text-[11px] font-semibold text-gray-600">Лечить</p>
+              <p className="text-[10px] text-gray-400">{inShadowForm ? '+20 катарсис' : '-2 trauma'}</p>
+            </div>
+          </div>
         </div>
       )}
 

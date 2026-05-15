@@ -1685,6 +1685,7 @@ await testAsync('personality command sync applies gameplay decay mood history an
 await testAsync('personality command sync owns auto sleep system influence', async () => {
   const pet = makePet({
     personality: 'drowsy',
+    formationComplete: true,
     isAsleep: false,
     stats: { hunger: 80, happiness: 80, energy: 20, health: 80, cleanliness: 80, bond: 80 },
     lastUpdated: '2026-05-04T00:00:00.000Z',
@@ -1903,6 +1904,29 @@ await testAsync('personality command sync applies exact regression and daily sna
   assert.equal(result.pet.dailyTraitSnapshots[0]?.date, '2026-05-04');
   assert.deepEqual(result.pet.dailyTraitBudget, {});
   assert.equal(result.events.some(event => event.type === 'trait_vector_changed'), true);
+});
+
+await testAsync('personality command sync does not regress or evolve before formation completes', async () => {
+  const pet = makePet({
+    formationComplete: false,
+    personality: 'drowsy',
+    traitVector: createInitialTraitVector(),
+    lastUpdated: '2026-05-04T00:00:00.000Z',
+  });
+
+  const result = await applyPersonalityCommand(pet, {
+    type: 'sync',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-sync-preformation-no-regression',
+  }, {
+    currentSync: 1,
+    rng: () => 0.42,
+  });
+
+  assert.deepEqual(result.pet.traitVector, pet.traitVector);
+  assert.equal(result.pet.currentTargetZone, null);
+  assert.equal(result.pet.evolutionProposal, undefined);
+  assert.equal(result.events.some(event => event.type === 'trait_vector_changed'), false);
 });
 
 test('applyInfluence clamps daily budget and smooths vector', () => {
@@ -2278,6 +2302,110 @@ test('shadow form enters from trauma and exits through catharsis cooldown', () =
   assert.equal(pet.catharsisAchieved, true);
   assert.equal(pet.traumaCooldownUntil, '2026-05-18T01:10:00.000Z');
   assert.equal(pet.coreMemories[0]?.emoji, '🌅');
+});
+
+await testAsync('personality commands advance catharsis recovery in shadow form', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    traumaLevel: 75,
+    stats: { hunger: 80, happiness: 80, energy: 80, health: 70, cleanliness: 80, bond: 50 },
+  });
+  checkShadowForm(pet, { now: new Date('2026-05-04T00:00:00.000Z') });
+
+  const first = await applyPersonalityCommand(pet, {
+    type: 'bond',
+    at: '2026-05-04T00:10:00.000Z',
+    commandId: 'cmd-catharsis-bond-1',
+  }, {
+    currentSync: 1,
+  });
+
+  assert.equal(first.pet.catharsisProgress, 25);
+  assert.equal(first.events.some(event => event.type === 'catharsis_progress_changed' && event.from === 0 && event.to === 25), true);
+
+  const second = await applyPersonalityCommand(first.pet, {
+    type: 'heal',
+    at: '2026-05-04T00:20:00.000Z',
+    commandId: 'cmd-catharsis-heal-1',
+  }, {
+    currentSync: 2,
+    influenceCooldowns: first.influenceCooldowns,
+  });
+
+  assert.equal(second.pet.catharsisProgress, 45);
+  assert.equal(second.events.some(event => event.type === 'catharsis_progress_changed' && event.from === 25 && event.to === 45), true);
+
+  let currentPet = second.pet;
+  let cooldowns = second.influenceCooldowns;
+  for (let i = 0; i < 3; i++) {
+    const result = await applyPersonalityCommand(currentPet, {
+      type: 'bond',
+      at: `2026-05-04T00:${30 + i * 10}:00.000Z`,
+      commandId: `cmd-catharsis-bond-${i + 2}`,
+    }, {
+      currentSync: 3 + i,
+      influenceCooldowns: cooldowns,
+    });
+    currentPet = result.pet;
+    cooldowns = result.influenceCooldowns;
+  }
+
+  assert.equal(currentPet.emergentState, null);
+  assert.equal(currentPet.traumaLevel, 0);
+  assert.equal(currentPet.catharsisAchieved, true);
+  assert.equal(currentPet.catharsisProgress, 0);
+  assert.equal(currentPet.coreMemories[0]?.emoji, '🌅');
+});
+
+await testAsync('repeated care actions reduce trauma even when trait influence is on cooldown', async () => {
+  let pet = makePet({
+    formationComplete: true,
+    traumaLevel: 64,
+    stats: { hunger: 80, happiness: 80, energy: 80, health: 70, cleanliness: 80, bond: 50 },
+  });
+  let influenceCooldowns = {};
+
+  const commands: PetCommand[] = [
+    { type: 'bond', at: '2026-05-04T00:10:00.000Z', commandId: 'cmd-care-bond-1' },
+    { type: 'bond', at: '2026-05-04T00:11:00.000Z', commandId: 'cmd-care-bond-2' },
+    { type: 'bond', at: '2026-05-04T00:12:00.000Z', commandId: 'cmd-care-bond-3' },
+    { type: 'heal', at: '2026-05-04T00:13:00.000Z', commandId: 'cmd-care-heal-1' },
+    { type: 'heal', at: '2026-05-04T00:14:00.000Z', commandId: 'cmd-care-heal-2' },
+  ];
+
+  const traumaLevels: number[] = [];
+  for (const command of commands) {
+    const result = await applyPersonalityCommand(pet, command, {
+      currentSync: 1,
+      influenceCooldowns,
+    });
+    pet = result.pet;
+    influenceCooldowns = result.influenceCooldowns;
+    traumaLevels.push(pet.traumaLevel);
+  }
+
+  assert.deepEqual(traumaLevels, [61, 58, 55, 53, 51]);
+  assert.equal(pet.catharsisProgress, 0);
+  assert.equal(pet.emergentState, null);
+});
+
+await testAsync('heal remains available for trauma recovery when health is already high', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    traumaLevel: 64,
+    stats: { hunger: 80, happiness: 80, energy: 80, health: 95, cleanliness: 80, bond: 50 },
+  });
+
+  const result = await applyPersonalityCommand(pet, {
+    type: 'heal',
+    at: '2026-05-04T00:20:00.000Z',
+    commandId: 'cmd-care-heal-healthy',
+  }, {
+    currentSync: 1,
+  });
+
+  assert.equal(result.blockedAction, null);
+  assert.equal(result.pet.traumaLevel, 62);
 });
 
 test('state layers keep cognitive and evolution states from overwriting each other', () => {

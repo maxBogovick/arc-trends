@@ -27,6 +27,7 @@ import {
   checkVarianceHardReset,
   checkWeeklyDrift,
   canApplyInfluenceAtSync,
+  addCatharsisProgress,
   onStartSleep,
   onWakeFromSleep,
   rejectEvolution,
@@ -151,10 +152,14 @@ export async function applyPersonalityCommand<TState extends PersonalityState>(
       gameplayOutcome,
     );
     const prevVector = cloneTraitVector(nextPet.traitVector);
-    applyRegression(nextPet);
+    if (nextPet.formationComplete) {
+      applyRegression(nextPet);
+    }
     recordDailyTraitSnapshot(nextPet, now);
     checkVarianceHardReset(nextPet, ctx);
-    checkEvolution(nextPet, ctx);
+    if (nextPet.formationComplete) {
+      checkEvolution(nextPet, ctx);
+    }
     await checkThresholdCrossings(nextPet, prevVector, ctx);
     await checkWeeklyDrift(nextPet, ctx);
   } else if (command.type === 'sleep') {
@@ -215,7 +220,9 @@ export async function applyPersonalityCommand<TState extends PersonalityState>(
       personalities,
     });
     if (!gameplayOutcome.blockedAction) {
-      await applyCommandInfluence(nextPet, command, options, ctx, events, influenceCooldowns, currentSync);
+      const influenceApplied = await applyCommandInfluence(nextPet, command, options, ctx, events, influenceCooldowns, currentSync);
+      applyCareRecoveryForCommand(nextPet, command, influenceApplied, events);
+      applyCatharsisForCommand(nextPet, command, ctx, events);
     }
   }
 
@@ -298,7 +305,7 @@ function applyGameplayCommand(
   pet.behavioralFlags ??= [];
   pet.moodHistory ??= [];
 
-  const personality = getPersonalityFromRegistry(pet.personality, context.personalities);
+  const personality = getGameplayPersonality(pet, context.personalities);
   const actionType = toGameplayAction(command);
   outcome.actionType = actionType;
   const syncContext: SyncContext = {
@@ -438,7 +445,7 @@ function applyActionOutcome(
   outcome.actionType = actionType;
   if (actionType === 'sync') return outcome;
 
-  const personality = getPersonalityFromRegistry(pet.personality, context.personalities);
+  const personality = getGameplayPersonality(pet, context.personalities);
   const activeStates = getActiveEmergentStateTypes(pet);
   const blockedByState = isActionBlocked(actionType, activeStates);
   if (blockedByState) {
@@ -508,7 +515,7 @@ function applyActionOutcome(
     outcome.appliedModifiers.push({ source: 'state', id: activeStates.join(','), description: 'Active emergent states evaluated' });
   }
 
-  applySpecialOutcomeModifiers(pet, command, actionType, outcome, context.personalities);
+  applySpecialOutcomeModifiers(pet, command, actionType, outcome, context);
   applyStatDeltas(pet, outcome.statDeltas);
   outcome.coinDelta += applyXp(pet, outcome.xpDelta);
   return outcome;
@@ -547,7 +554,9 @@ function getBaseActionResult(
       };
     }
     case 'bathe': {
-      const personalityOverride = rule.personalityOverrides?.[pet.personality as keyof typeof rule.personalityOverrides] ?? {};
+      const personalityOverride = pet.formationComplete
+        ? rule.personalityOverrides?.[pet.personality as keyof typeof rule.personalityOverrides] ?? {}
+        : {};
       return {
         statDeltas: { ...rule.statDeltas, ...personalityOverride },
         xp: rule.xp,
@@ -591,7 +600,7 @@ function getSpecialBlockedAction(
   actionType: ActionType,
   personalities: PersonalityDefinition[],
 ): BlockedAction | null {
-  const personality = getPersonalityFromRegistry(pet.personality, personalities);
+  const personality = getGameplayPersonality(pet, personalities);
   if (command.type !== 'wake' && command.type !== 'sync' && pet.isAsleep) {
     return { actionType, reason: 'Питомец спит!', alternativeHint: 'Разбуди питомца' };
   }
@@ -610,7 +619,7 @@ function getSpecialBlockedAction(
   if (command.type === 'bathe' && pet.stats.cleanliness > 90) {
     return { actionType, reason: 'Питомец уже чистый!', alternativeHint: 'Выбери другое действие' };
   }
-  if (command.type === 'heal' && pet.stats.health >= 90) {
+  if (command.type === 'heal' && pet.stats.health >= 90 && pet.traumaLevel < 40 && pet.emergentState !== 'shadow_form') {
     return { actionType, reason: 'Питомец уже здоров!', alternativeHint: 'Выбери другое действие' };
   }
   if (command.type === 'heal' && personality.specialRules?.healRefuseHealthThreshold !== undefined && pet.stats.health > personality.specialRules.healRefuseHealthThreshold) {
@@ -624,9 +633,9 @@ function applySpecialOutcomeModifiers(
   command: PetCommand,
   actionType: ActionType,
   outcome: GameplayOutcome,
-  personalities: PersonalityDefinition[],
+  context: { now: Date; personalities: PersonalityDefinition[] },
 ): void {
-  const personality = getPersonalityFromRegistry(pet.personality, personalities);
+  const personality = getGameplayPersonality(pet, context.personalities);
   if (command.type === 'feed' && personality.specialRules?.feedRestoreByPhase) {
     const paranoidMult = getParanoidRestoreMult(pet.behavioralCounters);
     for (const [stat, value] of Object.entries(outcome.statDeltas)) {
@@ -658,7 +667,7 @@ function applySpecialOutcomeModifiers(
   // ── Catharsis XP burst (first catharsis only, 2 hours) ─────────────────────
   if (actionType && actionType !== 'sync' && pet.catharsisXpBurstExpiresAt) {
     const burstExpiry = new Date(pet.catharsisXpBurstExpiresAt).getTime();
-    const now = Date.now();
+    const now = context.now.getTime();
     if (now < burstExpiry && outcome.xpDelta > 0) {
       outcome.xpDelta = Math.round(outcome.xpDelta * CATHARSIS_XP_BURST_MULTIPLIER);
       outcome.appliedModifiers.push({ source: 'special_rule', id: 'catharsis_xp_burst', description: 'Catharsis XP burst active' });
@@ -779,11 +788,82 @@ async function applyCommandInfluence(
   events: DomainEvent[],
   influenceCooldowns: InfluenceCooldownState,
   currentSync: number,
-): Promise<void> {
+): Promise<boolean> {
   const registry = requireInfluenceRegistry(options.influenceRegistry);
   const influenceId = getInfluenceIdForCommand(pet, command, registry);
-  if (!influenceId) return;
-  await applyRegisteredInfluence(pet, influenceId, command, options, ctx, events, influenceCooldowns, currentSync);
+  if (!influenceId) return false;
+  return applyRegisteredInfluence(pet, influenceId, command, options, ctx, events, influenceCooldowns, currentSync);
+}
+
+function applyCareRecoveryForCommand(
+  pet: PersonalityState,
+  command: PetCommand,
+  influenceApplied: boolean,
+  events: DomainEvent[],
+): void {
+  if (influenceApplied || pet.emergentState === 'shadow_form') return;
+
+  const amount = getTraumaRecoveryAmountForCommand(command);
+  if (amount <= 0 || (pet.traumaLevel ?? 0) <= 0) return;
+
+  const before = pet.traumaLevel ?? 0;
+  pet.traumaLevel = Math.max(0, before - amount);
+  if (pet.traumaLevel === before) return;
+
+  events.push({
+    type: 'trauma_level_changed',
+    at: command.at,
+    commandId: command.commandId,
+    from: before,
+    to: pet.traumaLevel,
+    reason: 'care_recovery',
+  });
+}
+
+function applyCatharsisForCommand(
+  pet: PersonalityState,
+  command: PetCommand,
+  ctx: Parameters<typeof applyInfluence>[2],
+  events: DomainEvent[],
+): void {
+  const amount = getCatharsisAmountForCommand(command);
+  if (amount <= 0 || pet.emergentState !== 'shadow_form') return;
+
+  const before = pet.catharsisProgress ?? 0;
+  const completed = addCatharsisProgress(pet, amount, ctx);
+  const after = completed ? 100 : (pet.catharsisProgress ?? before);
+  if (after === before && !completed) return;
+
+  events.push({
+    type: 'catharsis_progress_changed',
+    at: command.at,
+    commandId: command.commandId,
+    from: before,
+    to: after,
+    completed,
+  });
+}
+
+function getCatharsisAmountForCommand(command: PetCommand): number {
+  switch (command.type) {
+    case 'bond':
+      return 25;
+    case 'heal':
+      return 20;
+    default:
+      return 0;
+  }
+}
+
+function getTraumaRecoveryAmountForCommand(command: PetCommand): number {
+  switch (command.type) {
+    case 'bond':
+      return 3;
+    case 'heal':
+      return 2;
+    default:
+      return 0;
+  }
 }
 
 async function applyEligibleSystemInfluences(
@@ -1047,6 +1127,42 @@ function requireInfluenceRegistry(registry: RegisteredInfluence[] | undefined): 
 
 function getPersonalityFromRegistry(id: string, personalities: PersonalityDefinition[]): PersonalityDefinition {
   return personalities.find(personality => personality.id === id) ?? personalities[0];
+}
+
+function getGameplayPersonality(
+  pet: PersonalityState,
+  personalities: PersonalityDefinition[],
+): PersonalityDefinition {
+  if (pet.formationComplete) return getPersonalityFromRegistry(pet.personality, personalities);
+
+  const base = personalities[0];
+  return {
+    ...base,
+    id: base.id,
+    name: 'Unformed',
+    tagline: '',
+    description: '',
+    rarity: 'common',
+    linkedSkinIds: [],
+    decayRates: {},
+    restoreBonus: {},
+    xpMultipliers: {},
+    coinMultipliers: {},
+    foodPreferences: {
+      lovedIds: [],
+      hatedIds: [],
+      loveBonus: {},
+      hatePenalty: {},
+    },
+    autoSleep: { enabled: false, energyThreshold: 0, probability: 0 },
+    moodBias: { ecstaticMinAvg: 85, happyMinAvg: 65, contentMinAvg: 45 },
+    naturalHealthRegen: 0,
+    negativeEffectResistance: 0,
+    possibleFlags: [],
+    emergentTriggers: [],
+    specialRules: {},
+    visualProfile: { statBarTints: {}, emergentStateAnims: {} },
+  };
 }
 
 function createDefaultMemoryTextGenerator(): PersonalityMemoryTextGenerator {

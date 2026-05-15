@@ -840,7 +840,7 @@ export function matchesInfluenceCondition(
     case 'flag_active':
       return typeof params.flag === 'string' && pet.behavioralFlags.some(flag => flag.type === params.flag);
     case 'personality_is':
-      return params.id === pet.personality;
+      return pet.formationComplete && params.id === pet.personality;
     case 'trait_above':
       return typeof params.key === 'string' && pet.traitVector[params.key as TraitKey] > Number(params.value);
     case 'trait_below':

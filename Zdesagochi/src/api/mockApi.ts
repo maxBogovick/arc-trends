@@ -18,7 +18,6 @@ import type { OfflineKeyValueStorage } from './offlineStorage';
 import { PetService, type PetCommandDraft } from './petService';
 import { calcMoodWithBias, createDefaultCounters } from '../personality/PersonalityEngine';
 import {
-  addCatharsisProgress,
   recordLegacy,
   createInitialTraitVector,
 } from '../personality/TraitEvolutionEngine';
@@ -649,7 +648,6 @@ export class MockApiService implements ApiService {
     await delay(rand(300, 480));
     const now = mockNow();
     await applyMockCommandOrThrow({ type: 'heal', at: now.toISOString() });
-    addCatharsisProgress(S.pet, 20, { now: mockNow(), memoryTextGenerator });
     S.healCount++;
     addEvent('heal', 'Получил лечение', '💊');
     tickQuest('q_heal');
@@ -661,7 +659,6 @@ export class MockApiService implements ApiService {
     await delay(rand(180, 320));
     const now = mockNow();
     await applyMockCommandOrThrow({ type: 'bond', at: now.toISOString() });
-    addCatharsisProgress(S.pet, 25, { now: mockNow(), memoryTextGenerator });
     S.bondCount++;
     addEvent('bond', 'Получил объятия', '🤗');
     tickQuest('q_bond3');

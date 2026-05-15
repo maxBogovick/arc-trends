@@ -1,6 +1,6 @@
 # Personality Balance Simulation Report
 
-Generated at: 2026-05-14T10:55:00.513Z
+Generated at: 2026-05-15T05:04:54.990Z
 
 ## Summary
 
@@ -10,7 +10,7 @@ Generated at: 2026-05-14T10:55:00.513Z
 | Evolution proposal speed | pass | stableChecksToProposal: 72<br>expectedStabilitySyncs: 72<br>targetPersonality: paranoid |
 | Shadow entry and recovery | pass | traumaToEnter: 80<br>catharsisSteps: 4<br>cooldownSet: true |
 | Singularity rarity and collapse | pass | syncsToSingularity: 48<br>zonesAtEntry: 3<br>collapsedTo: chaotic |
-| Memory generation rate | pass | rareMemoriesAcrossCoreScenarios: 6<br>expectedMinimum: 4 |
+| Memory generation rate | pass | rareMemoriesAcrossCoreScenarios: 4<br>expectedMinimum: 4 |
 
 ## Details
 
@@ -23,8 +23,8 @@ Status: pass
 | commandsToFormation | 156 |
 | simulatedDays | 20 |
 | formationThreshold | 200 |
-| formedPersonality | playful |
-| rareMemories | 3 |
+| formedPersonality | pristine |
+| rareMemories | 1 |
 
 - Balanced action loop should form a personality without requiring backend or UI state.
 
@@ -73,7 +73,7 @@ Status: pass
 
 | Metric | Value |
 |---|---|
-| rareMemoriesAcrossCoreScenarios | 6 |
+| rareMemoriesAcrossCoreScenarios | 4 |
 | expectedMinimum | 4 |
 
 - Formation, catharsis, singularity entry, and singularity collapse all leave durable rare memories.

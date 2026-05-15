@@ -161,6 +161,10 @@ function explainEvent(event: DomainEvent): string {
       return 'Trait vector changed.';
     case 'gameplay_outcome_applied':
       return `${event.actionType} outcome applied: xp ${event.xpDelta}, coins ${event.coinDelta}.`;
+    case 'trauma_level_changed':
+      return `Trauma changed: ${event.from} -> ${event.to}.`;
+    case 'catharsis_progress_changed':
+      return `Catharsis progress changed: ${event.from} -> ${event.to}.`;
     case 'core_memory_added':
       return `Core memory added: ${event.memory.id}.`;
     case 'evolution_proposed':

@@ -32,6 +32,8 @@ export type PetCommand =
 export type DomainEvent =
   | { type: 'trait_vector_changed'; at: string; commandId: string; prevVector: TraitVector; nextVector: TraitVector }
   | { type: 'gameplay_outcome_applied'; at: string; commandId: string; actionType: ActionType; statDeltas: Partial<Record<StatKey, number>>; xpDelta: number; coinDelta: number; blockedAction: BlockedAction | null }
+  | { type: 'trauma_level_changed'; at: string; commandId: string; from: number; to: number; reason: string }
+  | { type: 'catharsis_progress_changed'; at: string; commandId: string; from: number; to: number; completed: boolean }
   | { type: 'core_memory_added'; at: string; commandId: string; memory: CoreMemory }
   | { type: 'evolution_proposed'; at: string; commandId: string; proposal: EvolutionProposal }
   | { type: 'evolution_recorded'; at: string; commandId: string; record: EvolutionRecord }

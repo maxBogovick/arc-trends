@@ -20,23 +20,30 @@ const packageNameResolver = {
   },
 };
 
+const testFiles = [
+  'tests/personalityEvolution.test.ts',
+  'tests/personalityEngineInvariants.test.ts',
+];
+
 const tempDir = await mkdtemp(join(tmpdir(), 'zdesagochi-tests-'));
-const outfile = join(tempDir, 'personalityEvolution.test.mjs');
 
 try {
-  await build({
-    entryPoints: ['tests/personalityEvolution.test.ts'],
-    outfile,
-    bundle: true,
-    platform: 'node',
-    format: 'esm',
-    target: 'node20',
-    sourcemap: 'inline',
-    logLevel: 'silent',
-    plugins: [packageNameResolver],
-  });
+  for (const testFile of testFiles) {
+    const outfile = join(tempDir, `${testFile.replaceAll('/', '-').replace(/\.ts$/, '')}.mjs`);
+    await build({
+      entryPoints: [testFile],
+      outfile,
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      target: 'node20',
+      sourcemap: 'inline',
+      logLevel: 'silent',
+      plugins: [packageNameResolver],
+    });
 
-  await import(pathToFileURL(outfile).href);
+    await import(pathToFileURL(outfile).href);
+  }
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

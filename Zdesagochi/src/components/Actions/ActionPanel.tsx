@@ -16,7 +16,12 @@ const ACTIONS: ActionConfig[] = [
   { id: 'play',  gradient: 'from-violet-400 to-purple-500', disabled: (p) => p.isAsleep || p.stats.energy < 10, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.energy < 10 ? 'Нет сил' : '' },
   { id: 'sleep', gradient: 'from-purple-400 to-indigo-500' },
   { id: 'bathe', gradient: 'from-blue-400 to-cyan-400', disabled: (p) => p.isAsleep || p.stats.cleanliness > 90, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.cleanliness > 90 ? 'Чистый!' : '' },
-  { id: 'heal',  gradient: 'from-red-400 to-pink-400', disabled: (p) => p.stats.health > 85, tooltip: (p) => p.stats.health > 85 ? 'Здоров!' : '' },
+  {
+    id: 'heal',
+    gradient: 'from-red-400 to-pink-400',
+    disabled: (p) => p.isAsleep || (p.stats.health > 85 && p.traumaLevel < 40 && p.emergentState !== 'shadow_form'),
+    tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.health > 85 && p.traumaLevel < 40 && p.emergentState !== 'shadow_form' ? 'Здоров!' : '',
+  },
   { id: 'bond',  gradient: 'from-pink-400 to-rose-400', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Спит' : '' },
 ];
 

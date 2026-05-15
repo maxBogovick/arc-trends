@@ -172,9 +172,9 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 | Field | Current Value |
 |---|---|
 | Current Goal | Движок характера готов к production-use: zero hardcoded personality id checks, all rules data-driven |
-| Current Step | Hardcoded checks migration complete; shims cleaned up; 5 deferred specialRules resolved |
-| Why This Step | Last hardcoded `personality.id ===` checks moved to specialRules data; pure re-export shim files deleted; deferred rules either implemented or explicitly removed |
-| Current Vector | Правильный: все поведения в data registry, движок не знает конкретных id |
+| Current Step | Catharsis recovery moved into command pipeline; UX now separates trauma risk from recovery |
+| Why This Step | Users saw trauma 64 with recovery 0 and no actionable path; mock-only catharsis progress meant backend/replay could not prove recovery worked |
+| Current Vector | Правильный: recovery behavior is in `applyPersonalityCommand()`, explainability has a domain event, mock adapter no longer owns the effect |
 | Next Step | Production backend transport/storage/auth |
 | Why Next | Gameplay engine layer is complete; remaining work is infrastructure (backend sync, server-side economy) |
 | Required Verification | `npm test`, `npx tsc --noEmit`, `npm run build`, `npm run simulate:balance`, boundary `rg` checks |
@@ -184,6 +184,44 @@ rg "applyInfluence|canApplyInfluenceAtSync|checkThresholdCrossings|updateCounter
 ## 6. Last Completed Step
 
 ### What
+
+Закрыт пользовательский баг катарсиса:
+
+- `bond` и `heal` теперь двигают `catharsisProgress` внутри `applyPersonalityCommand()`.
+- Добавлен domain event `catharsis_progress_changed`.
+- `mockApi` больше не добавляет катарсис вручную после команды.
+- Explainability показывает изменение катарсиса.
+- UI в `EvolutionInspector` различает:
+  - trauma-риск до входа в `shadow_form`;
+  - реальное восстановление внутри `shadow_form`.
+- Уведомление о смене скина теперь явно показывает, какой характер применил скин.
+- Добавлен regression test `personality commands advance catharsis recovery in shadow form`.
+- Повторные `bond`/`heal` теперь снижают trauma даже когда trait-influence на cooldown.
+- `heal` доступен для trauma/catharsis recovery при высоком здоровье.
+- Уведомления `bond`/`heal` показывают фактическое `trauma -N` или `катарсис +N`.
+- `sync` больше не запускает regression/evolution до `formationComplete`; до завершения формирования текущий `pet.personality` больше не тянет trait vector к себе.
+- До `formationComplete` command pipeline использует нейтральный gameplay-профиль: текущая техническая метка `pet.personality` больше не включает action modifiers, blockers, autoSleep, passives или `personality_is` intensity.
+- `linkedSkinIds` в preset-данных сделаны однозначными: один skin больше не принадлежит нескольким характерам.
+- Добавлен отдельный invariant/audit suite `tests/personalityEngineInvariants.test.ts`, подключенный к `npm test`.
+- Добавлены regression tests:
+  - `repeated care actions reduce trauma even when trait influence is on cooldown`;
+  - `heal remains available for trauma recovery when health is already high`;
+  - `personality command sync does not regress or evolve before formation completes`.
+- Новый invariant suite проверяет:
+  - skin ids map to at most one personality;
+  - pre-formation sync is label-invariant for every personality id;
+  - pre-formation personality_is intensity rules are ignored;
+  - same formation history forms the same personality regardless of placeholder label;
+  - formation progress never exceeds configured threshold.
+
+### Verification
+
+- `npm run typecheck:packages` — passed.
+- `node scripts/run-personality-tests.mjs` — passed.
+- `npm test` — passed.
+- `npm run build` — passed. Vite сохранил предупреждение про chunk > 500 kB, это не ошибка.
+
+### Previous What
 
 Закрыты 4 задачи: обновлён progress.md; последние hardcoded `personality.id ===` проверки вынесены в specialRules; 5 deferred specialRules реализованы или явно удалены; удалены 3 чистых re-export шима.
 

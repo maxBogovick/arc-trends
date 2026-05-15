@@ -1,0 +1,6 @@
+/target
+.env
+.env.prod
+.env.local
+nginx/certs/
+*.tar.gz

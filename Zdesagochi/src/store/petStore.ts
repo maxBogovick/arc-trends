@@ -14,6 +14,7 @@ import { getBackground, BACKGROUNDS } from '../data/backgrounds';
 import { getAura } from '../data/auras';
 import { getAccessoriesBySlot } from '../data/accessories';
 import { FURNITURE, getFurniture } from '../data/roomFurniture';
+import { getPersonalityBySkin } from '@zdesagochi/personality-pet-preset';
 
 export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 'leaderboard' | 'skins' | 'editor' | 'room' | 'personality_test';
 
@@ -360,6 +361,20 @@ function persistRoom(customization: RoomCustomization, placed: PlacedFurnitureIt
   );
   localStorage.setItem('roomCustomization', JSON.stringify(safeCustomization));
   localStorage.setItem('placedFurniture', JSON.stringify(safePlaced));
+}
+
+function formatCareActionMessage(base: string, before: Pet | null, after: Pet): string {
+  if (!before) return base;
+
+  const parts = [base];
+  const traumaDelta = Math.round((before.traumaLevel ?? 0) - (after.traumaLevel ?? 0));
+  if (traumaDelta > 0) parts.push(`trauma -${traumaDelta}`);
+
+  const catharsisDelta = Math.round((after.catharsisProgress ?? 0) - (before.catharsisProgress ?? 0));
+  if (catharsisDelta > 0) parts.push(`катарсис +${catharsisDelta}`);
+  if (!before.catharsisAchieved && after.catharsisAchieved) parts.push('катарсис завершён');
+
+  return parts.join(' · ');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -748,15 +763,19 @@ export const usePetStore = create<PetStore>((set, get) => {
     },
     async healPet() {
       await action('heal', async () => {
-        set({ pet: await api().healPet() });
-        get().notify('💊 +35 здоровье', 'success');
+        const before = get().pet;
+        const pet = await api().healPet();
+        set({ pet });
+        get().notify(formatCareActionMessage('💊 +35 здоровье', before, pet), 'success');
         get().refreshProgress();
       });
     },
     async bondWithPet() {
       await action('bond', async () => {
-        set({ pet: await api().bondWithPet() });
-        get().notify('💜 +20 связь', 'success');
+        const before = get().pet;
+        const pet = await api().bondWithPet();
+        set({ pet });
+        get().notify(formatCareActionMessage('💜 +20 связь', before, pet), 'success');
         get().refreshProgress();
       });
     },
@@ -986,11 +1005,12 @@ export const usePetStore = create<PetStore>((set, get) => {
       get().recordHistory();
       const skin = getSkin(skinId);
       set({ equippedSkinId: skinId });
+      const linkedPersonality = getPersonalityBySkin(skinId);
       if (get().apiMode === 'mock') {
         syncPersonalityFromSkin(skinId);
         get().loadPet();
       }
-      get().notify(`🎨 Надет «${skin.name}»`, 'success');
+      get().notify(`🎨 Надет «${skin.name}» · характер: ${linkedPersonality.name}`, 'success');
     },
 
     setPersonality(personalityId) {

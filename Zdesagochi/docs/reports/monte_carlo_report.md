@@ -1,6 +1,6 @@
 # Personality Engine Monte Carlo Report
 
-Generated at: 2026-05-14T14:52:46.281Z  
+Generated at: 2026-05-15T05:05:39.145Z  
 Runs per personality/style: 20  
 Simulation days: 30
 
@@ -8,52 +8,52 @@ Simulation days: 30
 
 | Style | Formation% | Avg Formation Day | Evolution% | Shadow Entry% | Shadow Recovery% | Singularity% | Avg Memories |
 |---|---|---|---|---|---|---|---|
-| common | 38% | 18.8 | 94% | 0% | 0% | 0% | 3.4 | |
-| neglect | 0% | -1.0 | 94% | 0% | 0% | 0% | 2.7 | |
-| heavy | 22% | 11.3 | 100% | 0% | 0% | 0% | 2.8 | |
-| food_only | 6% | 0.8 | 100% | 0% | 0% | 0% | 2.9 | |
-| balanced | 41% | 18.5 | 94% | 0% | 0% | 0% | 3.3 | |
-| shadow_recovery | 0% | -1.0 | 94% | 0% | 0% | 0% | 2.7 | |
-| singularity_hunt | 82% | 17.3 | 94% | 0% | 0% | 0% | 4.1 | |
+| common | 100% | 23.0 | 0% | 0% | 0% | 0% | 1.0 | |
+| neglect | 0% | -1.0 | 0% | 0% | 0% | 0% | 0.0 | |
+| heavy | 0% | -1.0 | 0% | 0% | 0% | 0% | 0.0 | |
+| food_only | 0% | -1.0 | 0% | 0% | 0% | 0% | 0.0 | |
+| balanced | 100% | 21.0 | 0% | 0% | 0% | 0% | 1.0 | |
+| shadow_recovery | 0% | -1.0 | 0% | 0% | 0% | 0% | 0.0 | |
+| singularity_hunt | 100% | 16.0 | 100% | 0% | 0% | 0% | 3.7 | |
 
 ## Per-personality detail (common play style)
 
 | Personality | Formation% | Avg Day | Evolution% | Shadow% | Confused/30d | Memories |
 |---|---|---|---|---|---|---|
-| playful | 100% | 23.7 | 100% | 0% | 0.0 | 4.5 | |
-| drowsy | 45% | 22.1 | 100% | 0% | 0.0 | 3.5 | |
-| foodie | 30% | 23.3 | 100% | 0% | 0.0 | 3.0 | |
-| bold | 100% | 23.0 | 100% | 0% | 27.8 | 4.3 | |
-| zen | 40% | 22.4 | 100% | 0% | 0.0 | 3.6 | |
-| anxious | 20% | 25.5 | 100% | 0% | 0.0 | 2.8 | |
-| feral | 70% | 24.8 | 100% | 0% | 0.0 | 5.0 | |
-| sage | 40% | 22.0 | 100% | 0% | 0.0 | 4.0 | |
-| pristine | 40% | 21.4 | 100% | 0% | 0.0 | 3.2 | |
-| empath | 50% | 22.7 | 100% | 0% | 0.0 | 2.6 | |
-| greedy | 10% | 24.5 | 100% | 0% | 0.0 | 2.5 | |
-| melancholic | 45% | 22.1 | 100% | 0% | 0.0 | 3.0 | |
-| chaotic | 20% | 27.0 | 100% | 0% | 0.0 | 4.3 | |
-| stoic | 0% | -1.0 | 100% | 0% | 0.0 | 3.6 | |
-| adventurer | 0% | -1.0 | 100% | 0% | 0.0 | 4.4 | |
-| paranoid | 0% | -1.0 | 0% | 0% | 0.0 | 0.0 | |
+| playful | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| drowsy | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| foodie | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| bold | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| zen | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| anxious | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| feral | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| sage | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| pristine | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| empath | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| greedy | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| melancholic | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| chaotic | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| stoic | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| adventurer | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
+| paranoid | 100% | 23.0 | 0% | 0% | 0.0 | 1.0 | |
 
 ## Final personality distribution (common play style, % of runs ending as each personality)
 
-| Start \ End | playful | bold | foodie | pristine | melancholic | anxious | drowsy | paranoid |
+| Start \ End | pristine |
 |
-| playful | 70% | 10% | 20% | 0% | 0% | 0% | 0% | 0% |
-| drowsy | 0% | 0% | 10% | 45% | 45% | 0% | 0% | 0% |
-| foodie | 0% | 0% | 40% | 35% | 25% | 0% | 0% | 0% |
-| bold | 40% | 30% | 30% | 0% | 0% | 0% | 0% | 0% |
-| zen | 0% | 0% | 20% | 45% | 35% | 0% | 0% | 0% |
-| anxious | 0% | 0% | 0% | 15% | 15% | 70% | 0% | 0% |
-| feral | 25% | 0% | 50% | 25% | 0% | 0% | 0% | 0% |
-| sage | 0% | 0% | 20% | 45% | 35% | 0% | 0% | 0% |
-| pristine | 0% | 0% | 0% | 40% | 35% | 25% | 0% | 0% |
-| empath | 0% | 0% | 0% | 45% | 40% | 15% | 0% | 0% |
-| greedy | 0% | 0% | 70% | 15% | 0% | 15% | 0% | 0% |
-| melancholic | 0% | 0% | 0% | 45% | 40% | 15% | 0% | 0% |
-| chaotic | 20% | 0% | 55% | 15% | 10% | 0% | 0% | 0% |
-| stoic | 0% | 0% | 0% | 35% | 55% | 0% | 10% | 0% |
-| adventurer | 30% | 30% | 40% | 0% | 0% | 0% | 0% | 0% |
-| paranoid | 0% | 0% | 0% | 0% | 0% | 0% | 0% | 100% |
+| playful | 100% |
+| drowsy | 100% |
+| foodie | 100% |
+| bold | 100% |
+| zen | 100% |
+| anxious | 100% |
+| feral | 100% |
+| sage | 100% |
+| pristine | 100% |
+| empath | 100% |
+| greedy | 100% |
+| melancholic | 100% |
+| chaotic | 100% |
+| stoic | 100% |
+| adventurer | 100% |
+| paranoid | 100% |

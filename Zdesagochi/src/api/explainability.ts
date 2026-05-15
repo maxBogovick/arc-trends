@@ -144,6 +144,10 @@ export function explainCommandRecord(record: ExplainabilityRecord): CommandExpla
         .filter(([trait, value]) => event.prevVector[trait as keyof typeof event.prevVector] !== value)
         .map(([trait, value]) => `${trait} ${formatSigned(value - event.prevVector[trait as keyof typeof event.prevVector])}`);
       if (traits.length > 0) details.push(`Traits: ${traits.join(', ')}`);
+    } else if (event.type === 'trauma_level_changed') {
+      details.push(`Trauma: ${event.from} -> ${event.to}`);
+    } else if (event.type === 'catharsis_progress_changed') {
+      details.push(`Catharsis: ${event.from} -> ${event.to}${event.completed ? ' complete' : ''}`);
     } else if (event.type === 'emergent_state_changed') {
       details.push(`State: ${event.from ?? 'none'} -> ${event.to ?? 'none'}`);
     } else if (event.type === 'core_memory_added') {

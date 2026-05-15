@@ -159,7 +159,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Никогда не ляжет спать пока не закончит. Боль — просто данные.',
     emoji: '🦁',
     rarity: 'rare',
-    linkedSkinIds: ['thunder', 'molten'],
+    linkedSkinIds: ['thunder'],
 
     decayRates: { energy: 1.2 },
     restoreBonus: {
@@ -293,7 +293,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Не домашнее существо. Медицина, купание, укладывание — оскорбления.',
     emoji: '🐺',
     rarity: 'epic',
-    linkedSkinIds: ['void', 'shadow'],
+    linkedSkinIds: ['shadow'],
 
     decayRates: { cleanliness: 1.8 },
     restoreBonus: {
@@ -340,7 +340,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Не торопится. Накапливает. Деньги не интересуют. Знание — бесценно.',
     emoji: '🦉',
     rarity: 'rare',
-    linkedSkinIds: ['root', 'default'],
+    linkedSkinIds: ['root'],
 
     decayRates: { hunger: 0.85, energy: 0.85, happiness: 0.85 },
     restoreBonus: {
@@ -385,7 +385,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Любое пятно — катастрофа. Но в чистоте — абсолютная сила.',
     emoji: '✨',
     rarity: 'rare',
-    linkedSkinIds: ['arctic', 'chrome'],
+    linkedSkinIds: ['chrome'],
 
     decayRates: { cleanliness: 2.5 },
     restoreBonus: {
@@ -430,7 +430,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Одиночество — физический голод. С тобой рядом расцветает. Без тебя угасает.',
     emoji: '💜',
     rarity: 'epic',
-    linkedSkinIds: ['phantom', 'shadow'],
+    linkedSkinIds: [],
 
     decayRates: { bond: 0.4, hunger: 0.9, energy: 0.9 },
     restoreBonus: {
@@ -475,7 +475,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Будет работать за правильную цену. Задаром — не будет.',
     emoji: '💰',
     rarity: 'epic',
-    linkedSkinIds: ['thunder', 'chrome'],
+    linkedSkinIds: [],
 
     decayRates: { happiness: 1.3 },
     restoreBonus: {
@@ -517,7 +517,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Находит красоту в грусти. Самые ценные XP — из тихих моментов.',
     emoji: '🌧',
     rarity: 'rare',
-    linkedSkinIds: ['void', 'abyss'],
+    linkedSkinIds: ['abyss'],
 
     decayRates: { hunger: 0.8, happiness: 0.8, energy: 0.8 },
     restoreBonus: {
@@ -563,7 +563,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Всё случайно. Каждая сессия — новое существо. Даже он сам не знает что будет дальше.',
     emoji: '🌀',
     rarity: 'epic',
-    linkedSkinIds: ['toxic', 'thunder'],
+    linkedSkinIds: ['toxic'],
 
     decayRates: {},   // рандомизируются движком из dailySeed
     restoreBonus: {},
@@ -605,7 +605,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Не жалуется. Не просит. Просто существует. И в этом — невероятная сила.',
     emoji: '🪨',
     rarity: 'rare',
-    linkedSkinIds: ['anthracite', 'root'],
+    linkedSkinIds: [],
 
     decayRates: { hunger: 0.6, happiness: 0.6, energy: 0.6, health: 0.6, cleanliness: 0.6, bond: 0.6 },
     restoreBonus: {},
@@ -646,7 +646,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Повторение — его смерть. Каждая новая комната — праздник.',
     emoji: '🧭',
     rarity: 'epic',
-    linkedSkinIds: ['cyber', 'arctic'],
+    linkedSkinIds: [],
 
     decayRates: { happiness: 1.2 },
     restoreBonus: {
@@ -691,7 +691,7 @@ export const PERSONALITIES: PersonalityDefinition[] = [
     description: 'Не верит никому. Но если поверил — предан до конца. И не простит предательства.',
     emoji: '👁',
     rarity: 'legendary',
-    linkedSkinIds: ['abyss', 'chrome'],
+    linkedSkinIds: [],
 
     decayRates: {},   // модифицируются в зависимости от фазы в движке
     restoreBonus: {},
