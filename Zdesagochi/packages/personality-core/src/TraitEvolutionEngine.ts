@@ -116,7 +116,7 @@ export function getDynamicRadius(personality: PersonalityDefinition | Personalit
 
 export function euclideanDistance(a: TraitVector, b: TraitVector): number {
   const sum = TRAIT_KEYS.reduce((acc, key) => acc + (a[key] - b[key]) ** 2, 0);
-  return Math.sqrt(sum / TRAIT_KEYS.length);
+  return Math.sqrt(sum);
 }
 
 export function depthOfImmersion(vector: TraitVector, personalityId: PersonalityId, ageHours: number): number {
@@ -219,7 +219,7 @@ export function updateFormationProgress(
 
 export function completeFormation(pet: PersonalityState, ctx: TraitEvolutionContext = {}): void {
   const starter = getPersonalities(ctx)
-    .map(p => ({ id: p.id, depth: depthOfImmersion(pet.traitVector, p.id, 0) }))
+    .map(p => ({ id: p.id, depth: depthOfImmersion(pet.traitVector, p.id, pet.ageHours) }))
     .reduce((best, candidate) => (candidate.depth > best.depth ? candidate : best));
 
   pet.personality = starter.id;

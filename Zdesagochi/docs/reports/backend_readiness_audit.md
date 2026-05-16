@@ -28,12 +28,13 @@ After the initial audit:
 - `backend/src/handlers/sync.rs` now validates `baseCommandId`, rejects duplicate command IDs inside a batch, rejects invalid command shapes, parses `scoreSeed`/`foodEffect`/`itemEffect`, and scopes already-processed command handling to the current pet/user.
 - `backend/src/db/command_repo.rs` now exposes current-pet cursor lookup and scopes `get_results_since()` cursor subqueries to the current pet.
 - `backend/src/handlers/economy.rs` now routes `/api/inventory/use` through `apply_personality_command()` and persists inventory decrement, pet state, and item coin delta in one transaction.
+- `backend/src/db/economy_repo.rs` no longer references a nonexistent `user_achievements.target` column when ticking shop achievements during `/api/shop/buy`; shop achievement targets now come from the catalog.
 - `backend/src/engine/trait_evolution.rs` and `backend/src/engine/command_handlers.rs` now apply registered command influences to the Rust trait vector, daily trait budget, formation progress, confused state, trauma, and shadow/catharsis checks.
 - `backend/src/domain/pet.rs` now persists `influenceCooldowns` and `currentSync` in pet JSON state with serde defaults for old saves.
 - `backend/src/engine/types.rs` now returns cooldown/current sync/version metadata in `PetCommandResult`.
 - `backend/src/engine/command_handlers.rs` now enforces influence cooldowns, advances `currentSync` on sync commands, and includes regression tests proving influence application, cooldown blocking/re-application, and pet roundtrip persistence.
 - `backend/tests/fixtures/ts_parity_core.json` now records core TS-compatible expected outcomes, and the Rust engine test suite verifies backend command outcomes against that fixture for feed, bond cooldown, play, bathe, heal, and use-item commands.
-- `backend/tests/http_integration.rs` now provides a router-level integration harness for register, authenticated pet action, offline sync submit, and TS-shaped sync result fetch. It runs against real Postgres/Redis when `TEST_DATABASE_URL` and `TEST_REDIS_URL` are set.
+- `backend/tests/http_integration.rs` now provides a router-level integration harness for register, login, refresh rotation, logout invalidation, unauthorized access rejection, all direct pet actions, asleep action blocking, offline sync submit, sync result cursors, stale-base rejection, duplicate-in-batch rejection, explicit rejection for unsupported `equip_room`/`npc_visit` sync variants, shop buy, insufficient-funds rejection, inventory use, missing-inventory rollback, multi-user isolation, and TS-shaped sync result fetch. It runs against real Postgres/Redis when `TEST_DATABASE_URL` and `TEST_REDIS_URL` are set, and was verified against the local Docker Compose Postgres/Redis services.
 
 ## P0 Blockers
 
@@ -45,22 +46,15 @@ Initial unit tests were added for:
 - influence cooldown blocking and re-application after sync advances `currentSync`;
 - pet JSON roundtrip for `influenceCooldowns`.
 - core TS-compatible parity fixture outcomes for feed, bond cooldown, play, bathe, heal, and use-item scenarios.
-- router-level HTTP flow for register, authenticated play, offline sync submit, and sync result fetch when test Postgres/Redis env vars are provided.
+- router-level HTTP flow for register, login, refresh rotation, logout invalidation, unauthorized access rejection, all direct pet actions, asleep action blocking, offline sync submit, sync result cursors, stale-base rejection, duplicate-in-batch rejection, explicit unsupported sync variant rejection, shop buy, insufficient-funds rejection, inventory use, missing-inventory rollback, multi-user isolation, and sync result fetch when test Postgres/Redis env vars are provided.
 
 Still missing automated proof for:
 
-- auth login/refresh/logout;
-- multi-user data isolation;
-- the rest of the pet command endpoints;
-- offline sync cursor semantics beyond the happy path;
-- duplicate command handling;
-- economy transactions;
 - broader Rust/TS parity across offline sync, unsupported command variants, automatic influences, and edge cases.
 
 Required fix:
 
-- Run integration tests in CI with dedicated Postgres/Redis services.
-- Expand integration coverage beyond the first router-level flow.
+- Keep the HTTP integration harness wired into CI with dedicated Postgres/Redis services.
 - Expand parity fixtures for offline sync and remaining command variants.
 
 ### 2. Direct action result contract is still legacy-shaped
@@ -259,10 +253,10 @@ Required fix:
 | Compiles | Ready |
 | Clippy clean | Ready |
 | HTTP route surface | Mostly implemented |
-| Auth implementation | Implemented; register path covered by conditional HTTP integration harness |
+| Auth implementation | Implemented; register/login/refresh/logout covered by conditional HTTP integration harness |
 | DB migrations/repos | Implemented; migrations run in conditional HTTP integration harness |
-| Economy | Implemented; action, inventory, and sync coin side effects persist transactionally |
-| Offline sync | Implemented with stale-base validation, transactional replay, and TS-shaped persisted results; broader parity still pending |
+| Economy | Implemented; action, shop buy, inventory, and sync coin side effects persist transactionally with HTTP coverage for buy/use |
+| Offline sync | Implemented with stale-base validation, duplicate-batch handling, unsupported-variant rejection, cursor coverage, transactional replay, and TS-shaped persisted results; broader parity still pending |
 | Rust personality engine | Implemented with command influences/cooldowns, but not TS/Rust parity-proven |
 | Frontend real API compatibility | Improved for pet action responses; sync result shape covered by conditional HTTP integration harness |
 | Production readiness | Not ready |

@@ -1,4 +1,4 @@
-use crate::error::AppError;
+use crate::{engine::catalog, error::AppError};
 use sqlx::{PgPool, Postgres, Transaction};
 
 type Tx<'a> = Transaction<'a, Postgres>;
@@ -85,13 +85,24 @@ pub async fn use_inventory_item(
 }
 
 pub async fn increment_shop_buy_count(pool: &PgPool, user_id: &str) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE user_achievements SET progress = LEAST(progress + 1, target)
-         WHERE user_id = $1 AND achievement_id IN ('shopaholic', 'collector')",
-    )
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+    for achievement_id in ["shopaholic", "collector"] {
+        let target = achievement_target(achievement_id);
+        sqlx::query(
+            "INSERT INTO user_achievements (user_id, achievement_id, progress, unlocked, claimed)
+             VALUES ($1, $2, 1, 1 >= $3, false)
+             ON CONFLICT (user_id, achievement_id) DO UPDATE SET
+               progress = LEAST(user_achievements.progress + 1, $3),
+               unlocked = LEAST(user_achievements.progress + 1, $3) >= $3,
+               unlocked_at = CASE
+                 WHEN NOT user_achievements.unlocked AND LEAST(user_achievements.progress + 1, $3) >= $3
+                 THEN NOW() ELSE user_achievements.unlocked_at END",
+        )
+        .bind(user_id)
+        .bind(achievement_id)
+        .bind(target)
+        .execute(pool)
+        .await?;
+    }
     Ok(())
 }
 
@@ -161,12 +172,31 @@ pub async fn use_inventory_item_tx(
 }
 
 pub async fn increment_shop_buy_count_tx(tx: &mut Tx<'_>, user_id: &str) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE user_achievements SET progress = LEAST(progress + 1, target)
-         WHERE user_id = $1 AND achievement_id IN ('shopaholic', 'collector')",
-    )
-    .bind(user_id)
-    .execute(&mut **tx)
-    .await?;
+    for achievement_id in ["shopaholic", "collector"] {
+        let target = achievement_target(achievement_id);
+        sqlx::query(
+            "INSERT INTO user_achievements (user_id, achievement_id, progress, unlocked, claimed)
+             VALUES ($1, $2, 1, 1 >= $3, false)
+             ON CONFLICT (user_id, achievement_id) DO UPDATE SET
+               progress = LEAST(user_achievements.progress + 1, $3),
+               unlocked = LEAST(user_achievements.progress + 1, $3) >= $3,
+               unlocked_at = CASE
+                 WHEN NOT user_achievements.unlocked AND LEAST(user_achievements.progress + 1, $3) >= $3
+                 THEN NOW() ELSE user_achievements.unlocked_at END",
+        )
+        .bind(user_id)
+        .bind(achievement_id)
+        .bind(target)
+        .execute(&mut **tx)
+        .await?;
+    }
     Ok(())
+}
+
+fn achievement_target(achievement_id: &str) -> i32 {
+    catalog::achievement_defs()
+        .iter()
+        .find(|definition| definition.id == achievement_id)
+        .map(|definition| definition.target)
+        .unwrap_or(1)
 }

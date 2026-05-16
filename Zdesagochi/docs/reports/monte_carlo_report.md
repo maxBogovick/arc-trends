@@ -1,6 +1,6 @@
 # Personality Engine Monte Carlo Report
 
-Generated at: 2026-05-15T05:05:39.145Z  
+Generated at: 2026-05-16T12:17:00.529Z  
 Runs per personality/style: 20  
 Simulation days: 30
 
@@ -14,7 +14,7 @@ Simulation days: 30
 | food_only | 0% | -1.0 | 0% | 0% | 0% | 0% | 0.0 | |
 | balanced | 100% | 21.0 | 0% | 0% | 0% | 0% | 1.0 | |
 | shadow_recovery | 0% | -1.0 | 0% | 0% | 0% | 0% | 0.0 | |
-| singularity_hunt | 100% | 16.0 | 100% | 0% | 0% | 0% | 3.7 | |
+| singularity_hunt | 100% | 16.0 | 0% | 0% | 0% | 0% | 1.0 | |
 
 ## Per-personality detail (common play style)
 
