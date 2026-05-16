@@ -20,7 +20,10 @@ pub fn get_influence(id: &str) -> Option<&'static RegisteredInfluence> {
 fn cond(condition_type: &str, params: &[(&str, serde_json::Value)]) -> InfluenceCondition {
     InfluenceCondition {
         condition_type: condition_type.to_string(),
-        params: params.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
+        params: params
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect(),
     }
 }
 
@@ -127,9 +130,10 @@ fn build_registry() -> Vec<RegisteredInfluence> {
             trait_deltas: td([("sociality", -3.0), ("caution", 3.0), ("order", -1.0)]),
             trauma_delta: Some(3.0),
             cooldown_syncs: Some(48),
-            conditions: Some(vec![
-                cond("session_gap_hours", &[("min", serde_json::json!(48))]),
-            ]),
+            conditions: Some(vec![cond(
+                "session_gap_hours",
+                &[("min", serde_json::json!(48))],
+            )]),
             on_apply: None,
         },
         RegisteredInfluence {
@@ -139,9 +143,13 @@ fn build_registry() -> Vec<RegisteredInfluence> {
             trait_deltas: td([("order", 3.0), ("sociality", 2.0), ("caution", -2.0)]),
             trauma_delta: Some(-5.0),
             cooldown_syncs: Some(168),
-            conditions: Some(vec![
-                cond("streak_days", &[("action", serde_json::json!("any")), ("days", serde_json::json!(7))]),
-            ]),
+            conditions: Some(vec![cond(
+                "streak_days",
+                &[
+                    ("action", serde_json::json!("any")),
+                    ("days", serde_json::json!(7)),
+                ],
+            )]),
             on_apply: None,
         },
         RegisteredInfluence {
@@ -151,9 +159,13 @@ fn build_registry() -> Vec<RegisteredInfluence> {
             trait_deltas: td([("caution", 3.0), ("sociality", -2.0)]),
             trauma_delta: Some(5.0),
             cooldown_syncs: Some(6),
-            conditions: Some(vec![
-                cond("stat_below", &[("stat", serde_json::json!("hunger")), ("value", serde_json::json!(5))]),
-            ]),
+            conditions: Some(vec![cond(
+                "stat_below",
+                &[
+                    ("stat", serde_json::json!("hunger")),
+                    ("value", serde_json::json!(5)),
+                ],
+            )]),
             on_apply: None,
         },
         RegisteredInfluence {
@@ -223,9 +235,10 @@ fn build_registry() -> Vec<RegisteredInfluence> {
             trait_deltas: td([("curiosity", -2.0), ("order", 1.0)]),
             trauma_delta: None,
             cooldown_syncs: Some(48),
-            conditions: Some(vec![
-                cond("same_room_hours", &[("min", serde_json::json!(48))]),
-            ]),
+            conditions: Some(vec![cond(
+                "same_room_hours",
+                &[("min", serde_json::json!(48))],
+            )]),
             on_apply: None,
         },
         RegisteredInfluence {
@@ -235,9 +248,10 @@ fn build_registry() -> Vec<RegisteredInfluence> {
             trait_deltas: td([("vitality", 1.0), ("order", -1.0), ("caution", -0.5)]),
             trauma_delta: None,
             cooldown_syncs: Some(12),
-            conditions: Some(vec![
-                cond("formation_period", &[("active", serde_json::json!(false))]),
-            ]),
+            conditions: Some(vec![cond(
+                "formation_period",
+                &[("active", serde_json::json!(false))],
+            )]),
             on_apply: None,
         },
         RegisteredInfluence {
@@ -247,9 +261,10 @@ fn build_registry() -> Vec<RegisteredInfluence> {
             trait_deltas: td([("curiosity", 2.0), ("order", 1.0)]),
             trauma_delta: None,
             cooldown_syncs: Some(8),
-            conditions: Some(vec![
-                cond("formation_period", &[("active", serde_json::json!(false))]),
-            ]),
+            conditions: Some(vec![cond(
+                "formation_period",
+                &[("active", serde_json::json!(false))],
+            )]),
             on_apply: None,
         },
         RegisteredInfluence {
@@ -259,9 +274,10 @@ fn build_registry() -> Vec<RegisteredInfluence> {
             trait_deltas: td([("caution", 2.0), ("sociality", -1.0)]),
             trauma_delta: None,
             cooldown_syncs: Some(12),
-            conditions: Some(vec![
-                cond("formation_period", &[("active", serde_json::json!(false))]),
-            ]),
+            conditions: Some(vec![cond(
+                "formation_period",
+                &[("active", serde_json::json!(false))],
+            )]),
             on_apply: None,
         },
         RegisteredInfluence {
@@ -271,9 +287,10 @@ fn build_registry() -> Vec<RegisteredInfluence> {
             trait_deltas: td([("sociality", 2.0), ("caution", -1.0)]),
             trauma_delta: None,
             cooldown_syncs: Some(8),
-            conditions: Some(vec![
-                cond("formation_period", &[("active", serde_json::json!(false))]),
-            ]),
+            conditions: Some(vec![cond(
+                "formation_period",
+                &[("active", serde_json::json!(false))],
+            )]),
             on_apply: None,
         },
         RegisteredInfluence {
@@ -283,9 +300,10 @@ fn build_registry() -> Vec<RegisteredInfluence> {
             trait_deltas: td([("curiosity", 2.0), ("order", -1.5), ("vitality", 1.0)]),
             trauma_delta: None,
             cooldown_syncs: Some(12),
-            conditions: Some(vec![
-                cond("formation_period", &[("active", serde_json::json!(false))]),
-            ]),
+            conditions: Some(vec![cond(
+                "formation_period",
+                &[("active", serde_json::json!(false))],
+            )]),
             on_apply: None,
         },
         RegisteredInfluence {
@@ -295,9 +313,10 @@ fn build_registry() -> Vec<RegisteredInfluence> {
             trait_deltas: td([("vitality", 1.0), ("curiosity", 1.0), ("order", -0.5)]),
             trauma_delta: None,
             cooldown_syncs: Some(12),
-            conditions: Some(vec![
-                cond("formation_period", &[("active", serde_json::json!(false))]),
-            ]),
+            conditions: Some(vec![cond(
+                "formation_period",
+                &[("active", serde_json::json!(false))],
+            )]),
             on_apply: None,
         },
     ]

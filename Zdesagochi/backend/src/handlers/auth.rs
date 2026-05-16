@@ -1,10 +1,10 @@
-use axum::{extract::State, Json};
-use deadpool_redis::redis::AsyncCommands;
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
-use jsonwebtoken::{encode, EncodingKey, Header};
+use axum::{Json, extract::State};
+use deadpool_redis::redis::AsyncCommands;
+use jsonwebtoken::{EncodingKey, Header, encode};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -13,10 +13,7 @@ use utoipa::ToSchema;
 
 use crate::{
     db::user_repo,
-    domain::{
-        pet::Pet,
-        user::Claims,
-    },
+    domain::{pet::Pet, user::Claims},
     error::AppError,
     middleware::auth::AuthUser,
     state::AppState,
@@ -125,7 +122,9 @@ fn validate_username(username: &str) -> Result<(), AppError> {
         return Err(AppError::BadRequest("Username cannot be empty".to_string()));
     }
     if trimmed.len() < 3 || trimmed.len() > 30 {
-        return Err(AppError::BadRequest("Username must be 3-30 characters".into()));
+        return Err(AppError::BadRequest(
+            "Username must be 3-30 characters".into(),
+        ));
     }
     if !trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') {
         return Err(AppError::BadRequest(
@@ -165,7 +164,10 @@ pub async fn register(
     }
 
     // Check if email already exists
-    if user_repo::find_by_email(&state.db, &req.email).await?.is_some() {
+    if user_repo::find_by_email(&state.db, &req.email)
+        .await?
+        .is_some()
+    {
         return Err(AppError::Conflict("Email already registered".to_string()));
     }
 
@@ -195,7 +197,11 @@ pub async fn register(
     tx.commit().await?;
 
     // Tokens — only after the DB transaction succeeds
-    let token = generate_jwt(&user_id, &state.config.jwt_secret, state.config.jwt_expiry_seconds)?;
+    let token = generate_jwt(
+        &user_id,
+        &state.config.jwt_secret,
+        state.config.jwt_expiry_seconds,
+    )?;
     let refresh_token = generate_refresh_token();
     store_refresh_token(
         &state.redis,

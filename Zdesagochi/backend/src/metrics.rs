@@ -16,7 +16,11 @@ pub async fn metrics_handler(
     axum::Extension(handle): axum::Extension<PrometheusHandle>,
 ) -> impl IntoResponse {
     let body = handle.render();
-    (StatusCode::OK, [("content-type", "text/plain; version=0.0.4")], body)
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; version=0.0.4")],
+        body,
+    )
 }
 
 // ─── Counter helpers (called from handlers) ───────────────────────────────────

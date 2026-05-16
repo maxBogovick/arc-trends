@@ -2,12 +2,12 @@
 //  PERSONALITY ENGINE — Rust port of personality-core/src/PersonalityEngine.ts
 // ════════════════════════════════════════════════════════════════════════════
 
+use chrono::{DateTime, Timelike, Utc};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc, Timelike};
 
 use crate::engine::types::{
-    avg_stats, clamp, clamp_stat, BehavioralCounters, EmergentStateType,
-    PersonalityDefinition, PetStateLayers, StatKey,
+    BehavioralCounters, EmergentStateType, PersonalityDefinition, PetStateLayers, StatKey,
+    avg_stats, clamp, clamp_stat,
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -32,24 +32,36 @@ pub fn apply_decay(
     counters: &BehavioralCounters,
     local_hour: i32,
 ) {
-    let chaos_mult = if personality.special_rules.as_ref().is_some_and(|r| r.randomize_daily_seed.unwrap_or(false)) {
+    let chaos_mult = if personality
+        .special_rules
+        .as_ref()
+        .is_some_and(|r| r.randomize_daily_seed.unwrap_or(false))
+    {
         get_chaos_decay_mult(counters)
     } else {
         1.0
     };
 
     for &stat in StatKey::all() {
-        let base_decay = BASE_DECAY_PER_MINUTE.iter()
+        let base_decay = BASE_DECAY_PER_MINUTE
+            .iter()
             .find(|(k, _)| *k == stat)
             .map(|(_, v)| *v)
             .unwrap_or(0.0);
 
-        let personality_mult = personality.decay_rates.get(stat.as_str()).copied().unwrap_or(1.0);
+        let personality_mult = personality
+            .decay_rates
+            .get(stat.as_str())
+            .copied()
+            .unwrap_or(1.0);
         let rule_mult = get_decay_rule_mult(stat, stats, personality, local_hour);
         let total_mult = clamp(personality_mult * rule_mult * chaos_mult, 0.05, 3.0);
 
         let current = stats.get(&stat).copied().unwrap_or(0.0);
-        stats.insert(stat, clamp_stat(current - base_decay * elapsed_minutes * total_mult));
+        stats.insert(
+            stat,
+            clamp_stat(current - base_decay * elapsed_minutes * total_mult),
+        );
     }
 }
 
@@ -69,9 +81,16 @@ fn get_decay_rule_mult(
     // feral: night energy decay disabled
     if stat == StatKey::Energy
         && personality.id == "feral"
-        && personality.special_rules.as_ref().is_some_and(|r| r.night_energy_decay_disabled.unwrap_or(false))
+        && personality
+            .special_rules
+            .as_ref()
+            .is_some_and(|r| r.night_energy_decay_disabled.unwrap_or(false))
     {
-        let nighttime = personality.special_rules.as_ref().and_then(|r| r.nighttime_hours).unwrap_or([22, 6]);
+        let nighttime = personality
+            .special_rules
+            .as_ref()
+            .and_then(|r| r.nighttime_hours)
+            .unwrap_or([22, 6]);
         if is_night_hour(local_hour as u32, nighttime) {
             return 0.0;
         }
@@ -92,7 +111,9 @@ fn is_night_hour(hour: u32, range: [u32; 2]) -> bool {
 fn seeded_rng(seed: u64) -> impl FnMut() -> f64 {
     let mut state = seed.wrapping_add(1);
     move || {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (state >> 33) as f64 / u32::MAX as f64
     }
 }
@@ -105,27 +126,30 @@ fn get_chaos_seed(counters: &BehavioralCounters) -> u64 {
 fn get_chaos_decay_mult(counters: &BehavioralCounters) -> f64 {
     let seed = get_chaos_seed(counters);
     let mut rng = seeded_rng(seed);
-    0.5 + rng() * 2.0  // 0.5-2.5
+    0.5 + rng() * 2.0 // 0.5-2.5
 }
 
 fn get_chaos_restore_mult(counters: &BehavioralCounters) -> f64 {
     let seed = get_chaos_seed(counters);
     let mut rng = seeded_rng(seed);
-    let _ = rng();  // skip decay
+    let _ = rng(); // skip decay
     0.5 + rng() * 2.0
 }
 
 fn get_chaos_xp_mult(counters: &BehavioralCounters) -> f64 {
     let seed = get_chaos_seed(counters);
     let mut rng = seeded_rng(seed);
-    let _ = rng(); let _ = rng();  // skip decay, restore
+    let _ = rng();
+    let _ = rng(); // skip decay, restore
     0.5 + rng() * 2.0
 }
 
 fn get_chaos_coin_mult(counters: &BehavioralCounters) -> f64 {
     let seed = get_chaos_seed(counters);
     let mut rng = seeded_rng(seed);
-    let _ = rng(); let _ = rng(); let _ = rng();  // skip decay, restore, xp
+    let _ = rng();
+    let _ = rng();
+    let _ = rng(); // skip decay, restore, xp
     0.5 + rng() * 2.0
 }
 
@@ -150,7 +174,11 @@ pub fn calc_mood_with_bias(
     }
 
     // anxious: sad if any stat below threshold
-    if let Some(threshold) = personality.special_rules.as_ref().and_then(|r| r.anxious_stat_sad_threshold) {
+    if let Some(threshold) = personality
+        .special_rules
+        .as_ref()
+        .and_then(|r| r.anxious_stat_sad_threshold)
+    {
         if stats.values().any(|&v| v < threshold) {
             return "sad".to_string();
         }
@@ -186,7 +214,10 @@ pub fn compute_natural_passives(
 
     // foodie: full bonus
     if personality.id == "foodie"
-        && personality.special_rules.as_ref().is_some_and(|r| r.passive_stat_bonus_when_full.unwrap_or(false))
+        && personality
+            .special_rules
+            .as_ref()
+            .is_some_and(|r| r.passive_stat_bonus_when_full.unwrap_or(false))
         && hunger > 80.0
     {
         *bonuses.entry(StatKey::Happiness).or_insert(0.0) += 3.0;
@@ -230,10 +261,14 @@ pub fn compute_emergent_state(
     session_gap_hours: f64,
 ) -> Option<EmergentStateType> {
     let local_hour = now.hour();
-    let current_state = state_layers.gameplay.as_ref()
+    let current_state = state_layers
+        .gameplay
+        .as_ref()
         .and_then(|v| v.first())
         .map(|s| &s.state_type);
-    let entered_at = state_layers.gameplay.as_ref()
+    let entered_at = state_layers
+        .gameplay
+        .as_ref()
         .and_then(|v| v.first())
         .map(|s| s.entered_at.as_str());
 
@@ -261,23 +296,30 @@ pub fn compute_emergent_state(
             // Check if already active and should retain (2 hour window)
             let retaining = if current_state == Some(&EmergentStateType::StoicPeak) {
                 entered_at.is_some_and(|ea| {
-                    let elapsed = now.signed_duration_since(
-                        ea.parse::<DateTime<Utc>>().unwrap_or(now)
-                    ).num_seconds() as f64 / 3600.0;
+                    let elapsed = now
+                        .signed_duration_since(ea.parse::<DateTime<Utc>>().unwrap_or(now))
+                        .num_seconds() as f64
+                        / 3600.0;
                     elapsed < 2.0
                 })
             } else {
                 false
             };
             if retaining || (!counters.stoic_peak_used && counters.consecutive_good_syncs >= 10) {
-                candidates.push((EmergentStateType::StoicPeak, EmergentStateType::StoicPeak.priority()));
+                candidates.push((
+                    EmergentStateType::StoicPeak,
+                    EmergentStateType::StoicPeak.priority(),
+                ));
             }
         }
     }
 
     // enlightenment (sage)
-    candidate!(&["sage"], EmergentStateType::Enlightenment,
-        !counters.enlightenment_active && counters.consecutive_good_syncs >= 7 * 24);
+    candidate!(
+        &["sage"],
+        EmergentStateType::Enlightenment,
+        !counters.enlightenment_active && counters.consecutive_good_syncs >= 7 * 24
+    );
 
     // feast_frenzy (foodie)
     {
@@ -286,33 +328,52 @@ pub fn compute_emergent_state(
             let happiness = stats.get(&StatKey::Happiness).copied().unwrap_or(0.0);
             let recent_count = count_recent_feeds(counters, now);
             if recent_count >= 3 && happiness > 90.0 {
-                candidates.push((EmergentStateType::FeastFrenzy, EmergentStateType::FeastFrenzy.priority()));
+                candidates.push((
+                    EmergentStateType::FeastFrenzy,
+                    EmergentStateType::FeastFrenzy.priority(),
+                ));
             }
         }
     }
 
     // deep_melancholy (melancholic)
-    candidate!(&["melancholic"], EmergentStateType::DeepMelancholy,
-        counters.consecutive_bad_mood_syncs >= 5);
+    candidate!(
+        &["melancholic"],
+        EmergentStateType::DeepMelancholy,
+        counters.consecutive_bad_mood_syncs >= 5
+    );
 
     // wanderlust (adventurer)
-    candidate!(&["adventurer"], EmergentStateType::Wanderlust,
-        counters.same_room_hours >= 48.0);
+    candidate!(
+        &["adventurer"],
+        EmergentStateType::Wanderlust,
+        counters.same_room_hours >= 48.0
+    );
 
     // midnight_zoomies (feral)
     {
         let ids: &[&str] = &["feral"];
         if ids.contains(&personality.id.as_str()) {
-            let nighttime = personality.special_rules.as_ref().and_then(|r| r.nighttime_hours).unwrap_or([22, 6]);
+            let nighttime = personality
+                .special_rules
+                .as_ref()
+                .and_then(|r| r.nighttime_hours)
+                .unwrap_or([22, 6]);
             if is_night_hour(local_hour, nighttime) {
-                candidates.push((EmergentStateType::MidnightZoomies, EmergentStateType::MidnightZoomies.priority()));
+                candidates.push((
+                    EmergentStateType::MidnightZoomies,
+                    EmergentStateType::MidnightZoomies.priority(),
+                ));
             }
         }
     }
 
     // coin_obsession (greedy)
-    candidate!(&["greedy"], EmergentStateType::CoinObsession,
-        coin_balance < 50.0 && counters.play_count_today < 5);
+    candidate!(
+        &["greedy"],
+        EmergentStateType::CoinObsession,
+        coin_balance < 50.0 && counters.play_count_today < 5
+    );
 
     // food_panic (any with food_anxiety flag) - checked via flags
     // (simplified: just check if any flag counters indicate food anxiety)
@@ -321,16 +382,26 @@ pub fn compute_emergent_state(
         let hunger = stats.get(&StatKey::Hunger).copied().unwrap_or(100.0);
         // Simple approximation: food_panic if hunger very low (< 20) and some stress indicators
         if hunger < 20.0 && counters.feed_in_red_zone_7d >= 5 {
-            candidates.push((EmergentStateType::FoodPanic, EmergentStateType::FoodPanic.priority()));
+            candidates.push((
+                EmergentStateType::FoodPanic,
+                EmergentStateType::FoodPanic.priority(),
+            ));
         }
     }
 
     // trust_collapse (paranoid)
-    candidate!(&["paranoid"], EmergentStateType::TrustCollapse,
-        counters.paranoid_phase == "collapsed");
+    candidate!(
+        &["paranoid"],
+        EmergentStateType::TrustCollapse,
+        counters.paranoid_phase == "collapsed"
+    );
 
     // apathy (empath)
-    candidate!(&["empath"], EmergentStateType::Apathy, session_gap_hours >= 48.0);
+    candidate!(
+        &["empath"],
+        EmergentStateType::Apathy,
+        session_gap_hours >= 48.0
+    );
 
     // tantrum (bold, playful)
     {
@@ -338,7 +409,10 @@ pub fn compute_emergent_state(
         if ids.contains(&personality.id.as_str()) {
             let energy = stats.get(&StatKey::Energy).copied().unwrap_or(100.0);
             if energy < 15.0 {
-                candidates.push((EmergentStateType::Tantrum, EmergentStateType::Tantrum.priority()));
+                candidates.push((
+                    EmergentStateType::Tantrum,
+                    EmergentStateType::Tantrum.priority(),
+                ));
             }
         }
     }
@@ -349,7 +423,10 @@ pub fn compute_emergent_state(
         if ids.contains(&personality.id.as_str()) {
             let cleanliness = stats.get(&StatKey::Cleanliness).copied().unwrap_or(100.0);
             if cleanliness < 20.0 {
-                candidates.push((EmergentStateType::ContaminationCrisis, EmergentStateType::ContaminationCrisis.priority()));
+                candidates.push((
+                    EmergentStateType::ContaminationCrisis,
+                    EmergentStateType::ContaminationCrisis.priority(),
+                ));
             }
         }
     }
@@ -358,11 +435,15 @@ pub fn compute_emergent_state(
     {
         let ids: &[&str] = &["anxious"];
         if ids.contains(&personality.id.as_str()) {
-            let low_count = StatKey::all().iter()
+            let low_count = StatKey::all()
+                .iter()
                 .filter(|&&s| stats.get(&s).copied().unwrap_or(100.0) < 30.0)
                 .count();
             if low_count >= 3 {
-                candidates.push((EmergentStateType::Breakdown, EmergentStateType::Breakdown.priority()));
+                candidates.push((
+                    EmergentStateType::Breakdown,
+                    EmergentStateType::Breakdown.priority(),
+                ));
             }
         }
     }
@@ -370,8 +451,13 @@ pub fn compute_emergent_state(
     // chaos_surge (chaotic)
     {
         let ids: &[&str] = &["chaotic"];
-        if ids.contains(&personality.id.as_str()) && is_chaos_surge_active(personality, counters, now) {
-            candidates.push((EmergentStateType::ChaosSurge, EmergentStateType::ChaosSurge.priority()));
+        if ids.contains(&personality.id.as_str())
+            && is_chaos_surge_active(personality, counters, now)
+        {
+            candidates.push((
+                EmergentStateType::ChaosSurge,
+                EmergentStateType::ChaosSurge.priority(),
+            ));
         }
     }
 
@@ -384,14 +470,16 @@ pub fn compute_emergent_state(
 fn count_recent_feeds(counters: &BehavioralCounters, now: DateTime<Utc>) -> usize {
     let window_ms = 60 * 60 * 1000i64; // 1 hour in ms
     counters.recent_feed_timestamps.as_ref().map_or(0, |ts| {
-        ts.iter().filter(|t| {
-            if let Ok(parsed) = t.parse::<DateTime<Utc>>() {
-                let diff = now.signed_duration_since(parsed).num_milliseconds();
-                diff >= 0 && diff <= window_ms
-            } else {
-                false
-            }
-        }).count()
+        ts.iter()
+            .filter(|t| {
+                if let Ok(parsed) = t.parse::<DateTime<Utc>>() {
+                    let diff = now.signed_duration_since(parsed).num_milliseconds();
+                    diff >= 0 && diff <= window_ms
+                } else {
+                    false
+                }
+            })
+            .count()
     })
 }
 
@@ -400,7 +488,11 @@ fn is_chaos_surge_active(
     counters: &BehavioralCounters,
     now: DateTime<Utc>,
 ) -> bool {
-    if !personality.special_rules.as_ref().is_some_and(|r| r.randomize_daily_seed.unwrap_or(false)) {
+    if !personality
+        .special_rules
+        .as_ref()
+        .is_some_and(|r| r.randomize_daily_seed.unwrap_or(false))
+    {
         return false;
     }
 
@@ -413,7 +505,8 @@ fn is_chaos_surge_active(
     let minute_in_bucket = minute_in_day % chaos_surge_interval_minutes;
 
     let date_key = now.format("%Y%m%d").to_string().parse::<u64>().unwrap_or(0);
-    let seed = ((counters.chaos_daily_seed * 1_000_000_000.0) as u64).max(1)
+    let seed = ((counters.chaos_daily_seed * 1_000_000_000.0) as u64)
+        .max(1)
         .wrapping_add(date_key)
         .wrapping_add(bucket);
 
@@ -443,7 +536,10 @@ pub fn update_counters(
     // Update stats snapshot
     let mut snap = HashMap::new();
     for &stat in StatKey::all() {
-        snap.insert(stat.as_str().to_string(), stats.get(&stat).copied().unwrap_or(0.0));
+        snap.insert(
+            stat.as_str().to_string(),
+            stats.get(&stat).copied().unwrap_or(0.0),
+        );
     }
     counters.last_stats_snapshot = Some(snap);
 
@@ -451,9 +547,8 @@ pub fn update_counters(
     if let Some(ref mut ts) = counters.recent_feed_timestamps {
         let window_ms = 3600 * 1000i64;
         ts.retain(|t| {
-            t.parse::<DateTime<Utc>>().is_ok_and(|dt| {
-                now.signed_duration_since(dt).num_milliseconds() <= window_ms
-            })
+            t.parse::<DateTime<Utc>>()
+                .is_ok_and(|dt| now.signed_duration_since(dt).num_milliseconds() <= window_ms)
         });
     }
 
@@ -495,15 +590,21 @@ pub fn update_counters(
                     counters.unique_foods_tried.push(fid.to_string());
                 }
             }
-            if hunger < 20.0 { increment_rolling(counters, &today, "feed_red"); }
-            if hunger > 60.0 { increment_rolling(counters, &today, "feed_green"); }
+            if hunger < 20.0 {
+                increment_rolling(counters, &today, "feed_red");
+            }
+            if hunger > 60.0 {
+                increment_rolling(counters, &today, "feed_green");
+            }
         }
         "play" => {
             counters.play_count_today += 1;
             increment_rolling(counters, &today, "play");
         }
         "sleep" => {
-            if energy > 70.0 { increment_rolling(counters, &today, "sleep_forced"); }
+            if energy > 70.0 {
+                increment_rolling(counters, &today, "sleep_forced");
+            }
         }
         "wake" => {
             if local_hour <= 2 {
@@ -511,14 +612,18 @@ pub fn update_counters(
             }
         }
         "heal" => {
-            if health > 90.0 { increment_rolling(counters, &today, "heal_healthy"); }
+            if health > 90.0 {
+                increment_rolling(counters, &today, "heal_healthy");
+            }
         }
         "bond" => {
             counters.total_bond_actions += 1;
             counters.bond_actions_in_phase += 1;
         }
         "sync" => {
-            if cleanliness < 10.0 { increment_rolling(counters, &today, "filth_crisis"); }
+            if cleanliness < 10.0 {
+                increment_rolling(counters, &today, "filth_crisis");
+            }
         }
         _ => {}
     }
@@ -544,7 +649,9 @@ pub fn update_counters(
     if counters.paranoid_phase == "trusted" && counters.session_gap_hours >= 24.0 {
         counters.paranoid_phase = "collapsed".to_string();
     }
-    if counters.paranoid_phase == "collapsed" && counters.bond_actions_in_phase >= trust_threshold * 2 {
+    if counters.paranoid_phase == "collapsed"
+        && counters.bond_actions_in_phase >= trust_threshold * 2
+    {
         counters.paranoid_phase = "trusted".to_string();
         counters.bond_actions_in_phase = 0;
         counters.trusted_since = Some(now_str.clone());
@@ -574,24 +681,29 @@ pub fn update_counters(
 }
 
 fn increment_rolling(counters: &mut BehavioralCounters, date: &str, key: &str) {
-    let windows = counters.rolling_windows.get_or_insert_with(Default::default);
+    let windows = counters
+        .rolling_windows
+        .get_or_insert_with(Default::default);
     if let Some(bucket) = windows.daily_buckets.iter_mut().find(|b| b.date == date) {
         *bucket.counts.entry(key.to_string()).or_insert(0) += 1;
     } else {
         let mut counts = HashMap::new();
         counts.insert(key.to_string(), 1u32);
-        windows.daily_buckets.push(crate::engine::types::RollingDailyBucket {
-            date: date.to_string(),
-            counts,
-            food_counts: None,
-        });
+        windows
+            .daily_buckets
+            .push(crate::engine::types::RollingDailyBucket {
+                date: date.to_string(),
+                counts,
+                food_counts: None,
+            });
     }
 }
 
 fn rolling_count(counters: &BehavioralCounters, key: &str, days: i64, now: DateTime<Utc>) -> u32 {
     let today = now.format("%Y-%m-%d").to_string();
     counters.rolling_windows.as_ref().map_or(0, |rw| {
-        rw.daily_buckets.iter()
+        rw.daily_buckets
+            .iter()
             .filter(|b| {
                 if let (Ok(bdate), Ok(tdate)) = (
                     chrono::NaiveDate::parse_from_str(&b.date, "%Y-%m-%d"),
@@ -619,9 +731,7 @@ fn materialize_rolling(counters: &mut BehavioralCounters, now: DateTime<Utc>) {
     // Compute play streaks
     counters.current_high_play_days = compute_current_high_play_streak(counters, now);
     counters.max_consec_high_play_days = compute_max_high_play_streak(counters, now);
-    counters.night_single_interaction_days_7d = Some(
-        compute_consec_single_night(counters, now)
-    );
+    counters.night_single_interaction_days_7d = Some(compute_consec_single_night(counters, now));
 }
 
 fn compute_current_high_play_streak(counters: &BehavioralCounters, now: DateTime<Utc>) -> u32 {
@@ -630,7 +740,8 @@ fn compute_current_high_play_streak(counters: &BehavioralCounters, now: DateTime
     loop {
         let date_str = cursor.format("%Y-%m-%d").to_string();
         let play_count = counters.rolling_windows.as_ref().map_or(0, |rw| {
-            rw.daily_buckets.iter()
+            rw.daily_buckets
+                .iter()
                 .find(|b| b.date == date_str)
                 .and_then(|b| b.counts.get("play"))
                 .copied()
@@ -653,7 +764,8 @@ fn compute_max_high_play_streak(counters: &BehavioralCounters, now: DateTime<Utc
         let date = now.date_naive() - chrono::Duration::days(i);
         let date_str = date.format("%Y-%m-%d").to_string();
         let play_count = counters.rolling_windows.as_ref().map_or(0, |rw| {
-            rw.daily_buckets.iter()
+            rw.daily_buckets
+                .iter()
                 .find(|b| b.date == date_str)
                 .and_then(|b| b.counts.get("play"))
                 .copied()
@@ -675,7 +787,8 @@ fn compute_consec_single_night(counters: &BehavioralCounters, now: DateTime<Utc>
     loop {
         let date_str = cursor.format("%Y-%m-%d").to_string();
         let night_count = counters.rolling_windows.as_ref().map_or(0, |rw| {
-            rw.daily_buckets.iter()
+            rw.daily_buckets
+                .iter()
                 .find(|b| b.date == date_str)
                 .and_then(|b| b.counts.get("night_interaction"))
                 .copied()
@@ -708,7 +821,11 @@ pub fn get_peak_performance_mult(
     stats: &HashMap<StatKey, f64>,
     personality: &PersonalityDefinition,
 ) -> (f64, f64) {
-    if let Some(threshold) = personality.special_rules.as_ref().and_then(|r| r.peak_performance_threshold) {
+    if let Some(threshold) = personality
+        .special_rules
+        .as_ref()
+        .and_then(|r| r.peak_performance_threshold)
+    {
         if avg_stats(stats) >= threshold {
             return (2.5, 2.0);
         }
@@ -735,16 +852,33 @@ pub fn apply_action_modifiers(
 ) -> ActionResult {
     let mut result = base;
 
-    let is_chaotic = personality.special_rules.as_ref().is_some_and(|r| r.randomize_daily_seed.unwrap_or(false));
-    let chaos_restore_mult = if is_chaotic { get_chaos_restore_mult(counters) } else { 1.0 };
-    let chaos_xp_mult = if is_chaotic { get_chaos_xp_mult(counters) } else { 1.0 };
-    let chaos_coin_mult = if is_chaotic { get_chaos_coin_mult(counters) } else { 1.0 };
+    let is_chaotic = personality
+        .special_rules
+        .as_ref()
+        .is_some_and(|r| r.randomize_daily_seed.unwrap_or(false));
+    let chaos_restore_mult = if is_chaotic {
+        get_chaos_restore_mult(counters)
+    } else {
+        1.0
+    };
+    let chaos_xp_mult = if is_chaotic {
+        get_chaos_xp_mult(counters)
+    } else {
+        1.0
+    };
+    let chaos_coin_mult = if is_chaotic {
+        get_chaos_coin_mult(counters)
+    } else {
+        1.0
+    };
 
     // 1. Restore bonus from personality
     if let Some(action_bonus) = personality.restore_bonus.get(action) {
         for (stat, bonus) in action_bonus {
             let existing = result.stat_deltas.get(stat).copied().unwrap_or(0.0);
-            result.stat_deltas.insert(stat.clone(), existing + bonus * chaos_restore_mult);
+            result
+                .stat_deltas
+                .insert(stat.clone(), existing + bonus * chaos_restore_mult);
         }
     }
 
@@ -759,7 +893,11 @@ pub fn apply_action_modifiers(
         }
 
         if let Some(fid) = food_id {
-            if personality.special_rules.as_ref().is_some_and(|r| r.food_boredom_enabled.unwrap_or(false)) {
+            if personality
+                .special_rules
+                .as_ref()
+                .is_some_and(|r| r.food_boredom_enabled.unwrap_or(false))
+            {
                 // Adventurer: first time = loveBonus, second time = nothing, third+ = hatePenalty
                 let count_today = counters.daily_food_log.get(fid).copied().unwrap_or(0);
                 let source = if count_today == 0 {
@@ -774,12 +912,22 @@ pub fn apply_action_modifiers(
                     let existing = result.stat_deltas.get(stat).copied().unwrap_or(0.0);
                     result.stat_deltas.insert(stat.clone(), existing + bonus);
                 }
-            } else if personality.food_preferences.loved_ids.iter().any(|id| id == fid) {
+            } else if personality
+                .food_preferences
+                .loved_ids
+                .iter()
+                .any(|id| id == fid)
+            {
                 for (stat, bonus) in &personality.food_preferences.love_bonus {
                     let existing = result.stat_deltas.get(stat).copied().unwrap_or(0.0);
                     result.stat_deltas.insert(stat.clone(), existing + bonus);
                 }
-            } else if personality.food_preferences.hated_ids.iter().any(|id| id == fid) {
+            } else if personality
+                .food_preferences
+                .hated_ids
+                .iter()
+                .any(|id| id == fid)
+            {
                 for (stat, penalty) in &personality.food_preferences.hate_penalty {
                     let existing = result.stat_deltas.get(stat).copied().unwrap_or(0.0);
                     result.stat_deltas.insert(stat.clone(), existing + penalty);
@@ -789,18 +937,29 @@ pub fn apply_action_modifiers(
     }
 
     // 3. XP multipliers
-    if personality.special_rules.as_ref().is_some_and(|r| r.flat_xp_from_play.unwrap_or(false))
+    if personality
+        .special_rules
+        .as_ref()
+        .is_some_and(|r| r.flat_xp_from_play.unwrap_or(false))
         && action == "play"
     {
         result.xp = STOIC_FLAT_PLAY_XP;
     } else {
-        let xp_mult = personality.xp_multipliers.get(action).copied().unwrap_or(1.0);
+        let xp_mult = personality
+            .xp_multipliers
+            .get(action)
+            .copied()
+            .unwrap_or(1.0);
         let total_xp_mult = clamp(xp_mult * chaos_xp_mult, 0.1, 4.0);
         result.xp = (result.xp * total_xp_mult).round();
     }
 
     // 4. Coin multipliers
-    let coin_mult = personality.coin_multipliers.get(action).copied().unwrap_or(1.0);
+    let coin_mult = personality
+        .coin_multipliers
+        .get(action)
+        .copied()
+        .unwrap_or(1.0);
     let total_coin_mult = clamp(coin_mult * chaos_coin_mult, 0.0, 3.0);
     result.coins = (result.coins * total_coin_mult).round();
 

@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{
+    Extension, Router,
     http::{HeaderValue, Method},
     middleware,
     routing::{get, patch, post},
-    Extension, Router,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
 use tower_http::{
@@ -119,12 +119,24 @@ fn build_cors_layer(config: &Config) -> CorsLayer {
              This is unsafe for production deployments."
         );
         CorsLayer::new()
-            .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PATCH,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
             .allow_headers(Any)
             .allow_origin(Any)
     } else {
         CorsLayer::new()
-            .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PATCH,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
             .allow_headers(Any)
             .allow_origin(origins)
     }

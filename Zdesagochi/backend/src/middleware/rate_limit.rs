@@ -1,10 +1,10 @@
 use axum::{
+    Extension,
     body::Body,
     extract::ConnectInfo,
     http::{Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
-    Extension,
 };
 use deadpool_redis::Pool as RedisPool;
 use deadpool_redis::redis::AsyncCommands;

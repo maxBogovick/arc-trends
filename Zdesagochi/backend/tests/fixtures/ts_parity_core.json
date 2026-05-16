@@ -1,0 +1,193 @@
+{
+  "description": "Expected outcomes mirrored from the TypeScript personality-core command pipeline for a neutral default pet using the playful preset.",
+  "cases": [
+    {
+      "name": "feed_apple_applies_action_feed_influence",
+      "commands": [
+        {
+          "type": "feed",
+          "commandId": "cmd-feed-1",
+          "foodId": "apple",
+          "at": "2026-05-16T12:00:00Z"
+        }
+      ],
+      "expected": {
+        "currentSync": 0,
+        "xpDelta": 6,
+        "coinDelta": 0,
+        "statDeltas": {
+          "hunger": 20.0,
+          "happiness": 5.0,
+          "health": 10.0
+        },
+        "traitVector": {
+          "appetite": 50.16,
+          "sociality": 50.04
+        },
+        "formationProgress": 2.5,
+        "influenceCooldowns": {
+          "action:feed": 0
+        },
+        "appliedModifiers": ["action:feed"]
+      }
+    },
+    {
+      "name": "bond_cooldown_blocks_second_bond_until_sync",
+      "commands": [
+        {
+          "type": "bond",
+          "commandId": "cmd-bond-1",
+          "at": "2026-05-16T12:00:00Z"
+        },
+        {
+          "type": "bond",
+          "commandId": "cmd-bond-2",
+          "at": "2026-05-16T12:00:00Z"
+        },
+        {
+          "type": "sync",
+          "commandId": "cmd-sync-1",
+          "at": "2026-05-16T12:00:00Z"
+        },
+        {
+          "type": "bond",
+          "commandId": "cmd-bond-3",
+          "at": "2026-05-16T12:00:00Z"
+        }
+      ],
+      "expected": {
+        "currentSync": 1,
+        "traitVector": {
+          "sociality": 50.32,
+          "caution": 49.84
+        },
+        "formationProgress": 6.0,
+        "influenceCooldowns": {
+          "action:bond": 1
+        },
+        "commandInfluenceApplied": [true, false, false, true]
+      }
+    },
+    {
+      "name": "play_score_100_applies_playful_modifiers_and_action_play_influence",
+      "commands": [
+        {
+          "type": "play",
+          "commandId": "cmd-play-100",
+          "scoreSeed": 100,
+          "at": "2026-05-16T12:00:00Z"
+        }
+      ],
+      "expected": {
+        "currentSync": 0,
+        "xpDelta": 80,
+        "coinDelta": 17,
+        "statDeltas": {
+          "happiness": 40.0,
+          "energy": -20.0,
+          "bond": 8.0
+        },
+        "traitVector": {
+          "vitality": 50.16,
+          "curiosity": 50.08,
+          "order": 49.92
+        },
+        "formationProgress": 4.0,
+        "influenceCooldowns": {
+          "action:play": 0
+        },
+        "appliedModifiers": ["action:play"]
+      }
+    },
+    {
+      "name": "bathe_applies_stat_restore_and_action_bathe_influence",
+      "commands": [
+        {
+          "type": "bathe",
+          "commandId": "cmd-bathe-1",
+          "at": "2026-05-16T12:00:00Z"
+        }
+      ],
+      "expected": {
+        "currentSync": 0,
+        "xpDelta": 12,
+        "coinDelta": 0,
+        "statDeltas": {
+          "cleanliness": 40.0,
+          "happiness": 5.0,
+          "health": 5.0
+        },
+        "traitVector": {
+          "order": 50.16,
+          "caution": 49.96
+        },
+        "formationProgress": 2.5,
+        "influenceCooldowns": {
+          "action:bathe": 0
+        },
+        "appliedModifiers": ["action:bathe"]
+      }
+    },
+    {
+      "name": "heal_applies_health_restore_and_action_heal_influence",
+      "commands": [
+        {
+          "type": "heal",
+          "commandId": "cmd-heal-1",
+          "at": "2026-05-16T12:00:00Z"
+        }
+      ],
+      "expected": {
+        "currentSync": 0,
+        "xpDelta": 18,
+        "coinDelta": 0,
+        "statDeltas": {
+          "health": 35.0,
+          "happiness": -5.0
+        },
+        "traitVector": {
+          "caution": 50.08,
+          "sociality": 50.04
+        },
+        "formationProgress": 1.5,
+        "influenceCooldowns": {
+          "action:heal": 0
+        },
+        "appliedModifiers": ["action:heal"]
+      }
+    },
+    {
+      "name": "use_item_puzzle_applies_item_effect_and_item_influence",
+      "commands": [
+        {
+          "type": "use_item",
+          "commandId": "cmd-item-puzzle-1",
+          "itemId": "puzzle",
+          "itemEffect": {
+            "happiness": 20.0,
+            "xp": 30.0
+          },
+          "at": "2026-05-16T12:00:00Z"
+        }
+      ],
+      "expected": {
+        "currentSync": 0,
+        "xpDelta": 30,
+        "coinDelta": 0,
+        "statDeltas": {
+          "happiness": 20.0
+        },
+        "traitVector": {
+          "curiosity": 50.32,
+          "order": 50.16,
+          "vitality": 49.92
+        },
+        "formationProgress": 10.5,
+        "influenceCooldowns": {
+          "item:puzzle": 0
+        },
+        "appliedModifiers": ["item:puzzle"]
+      }
+    }
+  ]
+}

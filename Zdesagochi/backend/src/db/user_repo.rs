@@ -21,15 +21,13 @@ pub async fn create_user(
     email: &str,
     password_hash: &str,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, $4)",
-    )
-    .bind(id)
-    .bind(username)
-    .bind(email)
-    .bind(password_hash)
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, $4)")
+        .bind(id)
+        .bind(username)
+        .bind(email)
+        .bind(password_hash)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -50,15 +48,13 @@ pub async fn create_user_tx(
     email: &str,
     password_hash: &str,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, $4)",
-    )
-    .bind(id)
-    .bind(username)
-    .bind(email)
-    .bind(password_hash)
-    .execute(&mut **tx)
-    .await?;
+    sqlx::query("INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, $4)")
+        .bind(id)
+        .bind(username)
+        .bind(email)
+        .bind(password_hash)
+        .execute(&mut **tx)
+        .await?;
     Ok(())
 }
 

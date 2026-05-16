@@ -7,11 +7,7 @@ use std::convert::Infallible;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::{
-    error::AppError,
-    middleware::auth::AuthUser,
-    state::AppState,
-};
+use crate::{error::AppError, middleware::auth::AuthUser, state::AppState};
 
 pub async fn pet_stream(
     State(state): State<AppState>,

@@ -18,14 +18,12 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-        let jwt_secret = std::env::var("JWT_SECRET")
-            .context("JWT_SECRET must be set")?;
+        let jwt_secret = std::env::var("JWT_SECRET").context("JWT_SECRET must be set")?;
         if jwt_secret.len() < 32 {
             anyhow::bail!("JWT_SECRET must be at least 32 characters");
         }
         Ok(Self {
-            database_url: std::env::var("DATABASE_URL")
-                .context("DATABASE_URL must be set")?,
+            database_url: std::env::var("DATABASE_URL").context("DATABASE_URL must be set")?,
             redis_url: std::env::var("REDIS_URL")
                 .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
             jwt_secret,
@@ -42,15 +40,13 @@ impl Config {
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
                 .context("PORT must be a number")?,
-            environment: std::env::var("ENVIRONMENT")
-                .unwrap_or_else(|_| "development".to_string()),
+            environment: std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
             cors_origins: std::env::var("CORS_ORIGINS")
                 .unwrap_or_else(|_| "http://localhost:5173".to_string())
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect(),
-            log_level: std::env::var("LOG_LEVEL")
-                .unwrap_or_else(|_| "info".to_string()),
+            log_level: std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
             rate_limit_requests_per_minute: std::env::var("RATE_LIMIT_REQUESTS_PER_MINUTE")
                 .unwrap_or_else(|_| "60".to_string())
                 .parse()

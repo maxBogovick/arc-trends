@@ -1,9 +1,5 @@
-use axum::{
-    async_trait,
-    extract::FromRequestParts,
-    http::request::Parts,
-};
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use axum::{async_trait, extract::FromRequestParts, http::request::Parts};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 
 use crate::{domain::user::Claims, error::AppError, state::AppState};
 
@@ -17,7 +13,10 @@ pub struct AuthUser {
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AppError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         // Extract Authorization header
         let auth_header = parts
             .headers
@@ -34,12 +33,8 @@ impl FromRequestParts<AppState> for AuthUser {
         let secret = state.config.jwt_secret.as_bytes();
         let mut validation = Validation::new(Algorithm::HS256);
         validation.set_required_spec_claims(&["exp", "sub"]);
-        let token_data = decode::<Claims>(
-            token,
-            &DecodingKey::from_secret(secret),
-            &validation,
-        )
-        .map_err(|_| AppError::Unauthorized)?;
+        let token_data = decode::<Claims>(token, &DecodingKey::from_secret(secret), &validation)
+            .map_err(|_| AppError::Unauthorized)?;
 
         Ok(AuthUser {
             user_id: token_data.claims.sub,

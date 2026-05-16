@@ -2,20 +2,8 @@ use std::net::SocketAddr;
 
 use tokio::net::TcpListener;
 use tokio::signal;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-
-mod config;
-mod db;
-mod domain;
-mod engine;
-mod error;
-mod handlers;
-mod jobs;
-mod metrics;
-mod middleware;
-mod openapi;
-mod router;
-mod state;
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use zdesagochi_backend::{config, jobs, metrics, router, state};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -25,8 +13,8 @@ async fn main() -> anyhow::Result<()> {
 
     // ── OpenTelemetry / OTLP (only when endpoint env var is set) ─────────────
     let otel_layer = if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
-        use opentelemetry_otlp::WithExportConfig;
         use opentelemetry::trace::TracerProvider as _;
+        use opentelemetry_otlp::WithExportConfig;
         let provider = opentelemetry_otlp::new_pipeline()
             .tracing()
             .with_exporter(
@@ -34,14 +22,12 @@ async fn main() -> anyhow::Result<()> {
                     .tonic()
                     .with_endpoint(endpoint),
             )
-            .with_trace_config(
-                opentelemetry_sdk::trace::Config::default().with_resource(
-                    opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new(
-                        "service.name",
-                        "zdesagochi-backend",
-                    )]),
-                ),
-            )
+            .with_trace_config(opentelemetry_sdk::trace::Config::default().with_resource(
+                opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new(
+                    "service.name",
+                    "zdesagochi-backend",
+                )]),
+            ))
             .install_batch(opentelemetry_sdk::runtime::Tokio)
             .map_err(|e| anyhow::anyhow!("OTLP init error: {}", e))?;
 
@@ -83,8 +69,12 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Database migrations applied");
 
     // Spawn background jobs under panic-restart supervision
-    spawn_supervised("auto_decay", state.clone(), |s| Box::pin(jobs::auto_decay::run(s)));
-    spawn_supervised("quest_reset", state.clone(), |s| Box::pin(jobs::quest_reset::run(s)));
+    spawn_supervised("auto_decay", state.clone(), |s| {
+        Box::pin(jobs::auto_decay::run(s))
+    });
+    spawn_supervised("quest_reset", state.clone(), |s| {
+        Box::pin(jobs::quest_reset::run(s))
+    });
     tracing::info!("Background jobs started");
 
     let app = router::build_router(state, prometheus_handle);
@@ -120,7 +110,10 @@ where
             let result = std::panic::AssertUnwindSafe(fut).catch_unwind().await;
             match result {
                 Ok(()) => {
-                    tracing::warn!(job = name, "background job exited normally; restarting in 10s");
+                    tracing::warn!(
+                        job = name,
+                        "background job exited normally; restarting in 10s"
+                    );
                 }
                 Err(_) => {
                     tracing::error!(job = name, "background job panicked; restarting in 10s");

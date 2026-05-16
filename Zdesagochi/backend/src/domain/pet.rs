@@ -137,6 +137,11 @@ pub struct Pet {
     // Singularity
     pub ticks_in_singularity: i32,
     pub singularity_zones: Vec<String>,
+
+    #[serde(default)]
+    pub influence_cooldowns: Value,
+    #[serde(default)]
+    pub current_sync: i32,
 }
 
 impl Pet {
@@ -198,6 +203,8 @@ impl Pet {
             last_sleep_timestamp: None,
             ticks_in_singularity: 0,
             singularity_zones: vec![],
+            influence_cooldowns: serde_json::json!({}),
+            current_sync: 0,
         }
     }
 }

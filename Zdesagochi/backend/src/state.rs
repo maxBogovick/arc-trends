@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use deadpool_redis::{Config as RedisConfig, Runtime};
-use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 
 use crate::config::Config;
 
@@ -14,7 +14,6 @@ pub struct AppState {
     pub redis: deadpool_redis::Pool,
     pub config: Arc<Config>,
 }
-
 
 impl AppState {
     pub async fn new(config: Config) -> Result<Self> {

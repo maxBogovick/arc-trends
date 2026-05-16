@@ -1,6 +1,3 @@
-use axum::{extract::State, response::IntoResponse, Json};
-use serde::Deserialize;
-use utoipa::ToSchema;
 use crate::{
     db::{economy_repo, room_repo},
     engine::catalog,
@@ -8,6 +5,9 @@ use crate::{
     middleware::auth::AuthUser,
     state::AppState,
 };
+use axum::{Json, extract::State, response::IntoResponse};
+use serde::Deserialize;
+use utoipa::ToSchema;
 
 /// Get rooms (owned and catalog)
 #[utoipa::path(

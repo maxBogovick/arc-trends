@@ -9,6 +9,13 @@ import type {
   NewLifeResult,
 } from './types';
 
+interface PetActionResult {
+  pet: Pet;
+  xpGained: number;
+  coinsGained: number;
+  events: string[];
+}
+
 export class RealApiService implements ApiService {
   private readonly base: string;
 
@@ -30,16 +37,20 @@ export class RealApiService implements ApiService {
 
   private post<T>(path: string, body?: unknown)  { return this.req<T>(path, { method: 'POST',  body: body ? JSON.stringify(body) : undefined }); }
   private patch<T>(path: string, body?: unknown) { return this.req<T>(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined }); }
+  private async postPetAction(path: string, body?: unknown): Promise<Pet> {
+    const result = await this.post<PetActionResult>(path, body);
+    return result.pet;
+  }
 
   // Питомец
   getPet()                  { return this.req<Pet>('/api/pet'); }
-  feedPet(foodId: string)   { return this.post<Pet>('/api/pet/feed', { foodId }); }
+  feedPet(foodId: string)   { return this.postPetAction('/api/pet/feed', { foodId }); }
   playWithPet()             { return this.post<PlayResult>('/api/pet/play'); }
-  sleepPet()                { return this.post<Pet>('/api/pet/sleep'); }
-  wakePet()                 { return this.post<Pet>('/api/pet/wake'); }
-  bathePet()                { return this.post<Pet>('/api/pet/bathe'); }
-  healPet()                 { return this.post<Pet>('/api/pet/heal'); }
-  bondWithPet()             { return this.post<Pet>('/api/pet/bond'); }
+  sleepPet()                { return this.postPetAction('/api/pet/sleep'); }
+  wakePet()                 { return this.postPetAction('/api/pet/wake'); }
+  bathePet()                { return this.postPetAction('/api/pet/bathe'); }
+  healPet()                 { return this.postPetAction('/api/pet/heal'); }
+  bondWithPet()             { return this.postPetAction('/api/pet/bond'); }
   syncPet()                 { return this.post<Pet>('/api/pet/sync'); }
   acceptEvolution()         { return this.post<Pet>('/api/pet/evolution/accept'); }
   rejectEvolution()         { return this.post<Pet>('/api/pet/evolution/reject'); }

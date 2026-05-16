@@ -1,11 +1,7 @@
 use std::time::Duration;
 use tracing::{error, info};
 
-use crate::{
-    db::pet_repo,
-    handlers::sync::publish_pet_update,
-    state::AppState,
-};
+use crate::{db::pet_repo, handlers::sync::publish_pet_update, state::AppState};
 
 const TICK_INTERVAL_SECS: u64 = 300; // 5 minutes
 

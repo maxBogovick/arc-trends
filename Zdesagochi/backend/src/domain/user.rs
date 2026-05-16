@@ -15,7 +15,7 @@ pub struct User {
 /// JWT claims payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,  // user_id
+    pub sub: String, // user_id
     pub exp: u64,
     pub iat: u64,
 }

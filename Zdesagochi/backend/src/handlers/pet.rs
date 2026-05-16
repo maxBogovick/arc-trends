@@ -1,7 +1,4 @@
-use axum::{
-    extract::State,
-    Json,
-};
+use axum::{Json, extract::State};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,9 +8,7 @@ use utoipa::ToSchema;
 use crate::{
     db::{economy_repo, pet_repo, progress_repo},
     domain::pet::{Account, NewLifeResult, Pet, PetEvent},
-    engine::{
-        apply_personality_command, EngineState, FoodEffect, PetCommand,
-    },
+    engine::{EngineState, FoodEffect, PetCommand, apply_personality_command},
     error::AppError,
     middleware::auth::AuthUser,
     state::AppState,
@@ -98,16 +93,14 @@ async fn load_coin_balance(state: &AppState, user_id: &str) -> Result<f64, AppEr
     Ok(coins as f64)
 }
 
-async fn insert_pet_event(
-    state: &AppState,
-    pet_id: &str,
+fn build_pet_event(
     event_type: &str,
     description: &str,
     emoji: &str,
     xp: Option<i32>,
     coins: Option<i32>,
-) -> Result<(), AppError> {
-    let event = PetEvent {
+) -> PetEvent {
+    PetEvent {
         id: Ulid::new().to_string(),
         timestamp: Utc::now().to_rfc3339(),
         event_type: event_type.to_string(),
@@ -115,8 +108,40 @@ async fn insert_pet_event(
         emoji: emoji.to_string(),
         xp_gained: xp,
         coins_gained: coins,
-    };
-    pet_repo::insert_event(&state.db, &event, pet_id).await
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn persist_action_tx(
+    state: &AppState,
+    user_id: &str,
+    pet: &Pet,
+    coin_delta: i32,
+    achievement_ticks: &[(&str, i32)],
+    quest_ticks: &[&str],
+    event_type: &str,
+    description: &str,
+    emoji: &str,
+    xp: Option<i32>,
+    coins: Option<i32>,
+) -> Result<(), AppError> {
+    let event = build_pet_event(event_type, description, emoji, xp, coins);
+    let mut tx = state.db.begin().await?;
+
+    pet_repo::upsert_pet_tx(&mut tx, user_id, pet).await?;
+    if coin_delta != 0 {
+        economy_repo::add_coins_tx(&mut tx, user_id, coin_delta).await?;
+    }
+    for (achievement_id, increment) in achievement_ticks {
+        progress_repo::tick_achievement_tx(&mut tx, user_id, achievement_id, *increment).await?;
+    }
+    for quest_id in quest_ticks {
+        progress_repo::tick_quest_tx(&mut tx, user_id, quest_id).await?;
+    }
+    pet_repo::insert_event_tx(&mut tx, &event, &pet.id).await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -128,10 +153,7 @@ async fn insert_pet_event(
     responses((status = 200, body = Pet), (status = 404, description = "Not found")),
     security(("bearerAuth" = []))
 )]
-pub async fn get_pet(
-    State(state): State<AppState>,
-    auth: AuthUser,
-) -> Result<Json<Pet>, AppError> {
+pub async fn get_pet(State(state): State<AppState>, auth: AuthUser) -> Result<Json<Pet>, AppError> {
     let pet = pet_repo::get_pet(&state.db, &auth.user_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pet not found".to_string()))?;
@@ -179,7 +201,9 @@ pub async fn import_pet(
     Json(body): Json<Value>,
 ) -> Result<Json<Pet>, AppError> {
     if pet_repo::get_pet(&state.db, &auth.user_id).await?.is_some() {
-        return Err(AppError::Conflict("Pet already exists for this user".to_string()));
+        return Err(AppError::Conflict(
+            "Pet already exists for this user".to_string(),
+        ));
     }
 
     let mut pet: Pet = serde_json::from_value(body)
@@ -203,9 +227,11 @@ pub async fn begin_new_life(
 
     let account = Account {
         legacy_vector: Some(existing_pet.trait_vector.clone()),
-        legacy_coefficient: Some(
-            if existing_pet.catharsis_achieved { 1.2 } else { 1.0 }
-        ),
+        legacy_coefficient: Some(if existing_pet.catharsis_achieved {
+            1.2
+        } else {
+            1.0
+        }),
         legacy_generation: Some(existing_pet.evolution_history.len() as i32 + 1),
         legacy_description: Some(format!(
             "Legacy from {} (stage: {:?}, level: {})",
@@ -280,15 +306,20 @@ pub async fn feed_pet(
     }
 
     engine_state.apply_to_pet(&mut pet);
-    pet_repo::upsert_pet(&state.db, &auth.user_id, &pet).await?;
-
-    // Achievements / quest ticks (best-effort)
-    let _ = progress_repo::tick_achievement(&state.db, &auth.user_id, "first_meal", 1).await;
-    let _ = progress_repo::tick_achievement(&state.db, &auth.user_id, "food_lover", 1).await;
-    let _ = progress_repo::tick_quest(&state.db, &auth.user_id, "q_feed3").await;
-
-    insert_pet_event(&state, &pet.id, "feed", "Питомца покормили", "🍕",
-        Some(result.xp_delta), Some(result.coin_delta)).await.ok();
+    persist_action_tx(
+        &state,
+        &auth.user_id,
+        &pet,
+        result.coin_delta,
+        &[("first_meal", 1), ("food_lover", 1)],
+        &["q_feed3"],
+        "feed",
+        "Питомца покормили",
+        "🍕",
+        Some(result.xp_delta),
+        Some(result.coin_delta),
+    )
+    .await?;
 
     Ok(Json(ActionResult {
         pet,
@@ -337,16 +368,27 @@ pub async fn play_with_pet(
         return Err(AppError::BadRequest(blocked.reason.clone()));
     }
 
-    let score = result.meta.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let score = result
+        .meta
+        .get("score")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
 
     engine_state.apply_to_pet(&mut pet);
-    pet_repo::upsert_pet(&state.db, &auth.user_id, &pet).await?;
-
-    let _ = progress_repo::tick_achievement(&state.db, &auth.user_id, "playful", 1).await;
-    let _ = progress_repo::tick_quest(&state.db, &auth.user_id, "q_play2").await;
-
-    insert_pet_event(&state, &pet.id, "play", "Поиграли с питомцем", "🎮",
-        Some(result.xp_delta), Some(result.coin_delta)).await.ok();
+    persist_action_tx(
+        &state,
+        &auth.user_id,
+        &pet,
+        result.coin_delta,
+        &[("playful", 1)],
+        &["q_play2"],
+        "play",
+        "Поиграли с питомцем",
+        "🎮",
+        Some(result.xp_delta),
+        Some(result.coin_delta),
+    )
+    .await?;
 
     let message = if result.xp_delta > 50 {
         "Отличная игра! Питомец в восторге".to_string()
@@ -400,11 +442,20 @@ pub async fn sleep_pet(
     }
 
     engine_state.apply_to_pet(&mut pet);
-    pet_repo::upsert_pet(&state.db, &auth.user_id, &pet).await?;
-
-    let _ = progress_repo::tick_achievement(&state.db, &auth.user_id, "sweet_dreams", 1).await;
-
-    insert_pet_event(&state, &pet.id, "sleep", "Питомец заснул", "😴", None, None).await.ok();
+    persist_action_tx(
+        &state,
+        &auth.user_id,
+        &pet,
+        result.coin_delta,
+        &[("sweet_dreams", 1)],
+        &[],
+        "sleep",
+        "Питомец заснул",
+        "😴",
+        None,
+        None,
+    )
+    .await?;
 
     Ok(Json(ActionResult {
         pet,
@@ -451,9 +502,20 @@ pub async fn wake_pet(
     }
 
     engine_state.apply_to_pet(&mut pet);
-    pet_repo::upsert_pet(&state.db, &auth.user_id, &pet).await?;
-
-    insert_pet_event(&state, &pet.id, "wake", "Питомец проснулся", "☀️", None, None).await.ok();
+    persist_action_tx(
+        &state,
+        &auth.user_id,
+        &pet,
+        result.coin_delta,
+        &[],
+        &[],
+        "wake",
+        "Питомец проснулся",
+        "☀️",
+        None,
+        None,
+    )
+    .await?;
 
     Ok(Json(ActionResult {
         pet,
@@ -500,13 +562,20 @@ pub async fn bathe_pet(
     }
 
     engine_state.apply_to_pet(&mut pet);
-    pet_repo::upsert_pet(&state.db, &auth.user_id, &pet).await?;
-
-    let _ = progress_repo::tick_achievement(&state.db, &auth.user_id, "clean_freak", 1).await;
-    let _ = progress_repo::tick_quest(&state.db, &auth.user_id, "q_bathe").await;
-
-    insert_pet_event(&state, &pet.id, "bathe", "Питомец помылся", "🛁",
-        Some(result.xp_delta), None).await.ok();
+    persist_action_tx(
+        &state,
+        &auth.user_id,
+        &pet,
+        result.coin_delta,
+        &[("clean_freak", 1)],
+        &["q_bathe"],
+        "bathe",
+        "Питомец помылся",
+        "🛁",
+        Some(result.xp_delta),
+        None,
+    )
+    .await?;
 
     Ok(Json(ActionResult {
         pet,
@@ -553,13 +622,20 @@ pub async fn heal_pet(
     }
 
     engine_state.apply_to_pet(&mut pet);
-    pet_repo::upsert_pet(&state.db, &auth.user_id, &pet).await?;
-
-    let _ = progress_repo::tick_achievement(&state.db, &auth.user_id, "good_doctor", 1).await;
-    let _ = progress_repo::tick_quest(&state.db, &auth.user_id, "q_heal").await;
-
-    insert_pet_event(&state, &pet.id, "heal", "Питомца подлечили", "💊",
-        Some(result.xp_delta), None).await.ok();
+    persist_action_tx(
+        &state,
+        &auth.user_id,
+        &pet,
+        result.coin_delta,
+        &[("good_doctor", 1)],
+        &["q_heal"],
+        "heal",
+        "Питомца подлечили",
+        "💊",
+        Some(result.xp_delta),
+        None,
+    )
+    .await?;
 
     Ok(Json(ActionResult {
         pet,
@@ -606,13 +682,20 @@ pub async fn bond_with_pet(
     }
 
     engine_state.apply_to_pet(&mut pet);
-    pet_repo::upsert_pet(&state.db, &auth.user_id, &pet).await?;
-
-    let _ = progress_repo::tick_achievement(&state.db, &auth.user_id, "best_friends", 1).await;
-    let _ = progress_repo::tick_quest(&state.db, &auth.user_id, "q_bond3").await;
-
-    insert_pet_event(&state, &pet.id, "bond", "Провели время вместе", "💜",
-        Some(result.xp_delta), None).await.ok();
+    persist_action_tx(
+        &state,
+        &auth.user_id,
+        &pet,
+        result.coin_delta,
+        &[("best_friends", 1)],
+        &["q_bond3"],
+        "bond",
+        "Провели время вместе",
+        "💜",
+        Some(result.xp_delta),
+        None,
+    )
+    .await?;
 
     Ok(Json(ActionResult {
         pet,
@@ -682,12 +765,23 @@ pub async fn accept_evolution(
         coin_balance,
     };
 
-    let _result = apply_personality_command(&mut engine_state, &command, now);
+    let result = apply_personality_command(&mut engine_state, &command, now);
 
     engine_state.apply_to_pet(&mut pet);
-    pet_repo::upsert_pet(&state.db, &auth.user_id, &pet).await?;
-
-    insert_pet_event(&state, &pet.id, "evolution", "Принята эволюция", "✨", None, None).await.ok();
+    persist_action_tx(
+        &state,
+        &auth.user_id,
+        &pet,
+        result.coin_delta,
+        &[],
+        &[],
+        "evolution",
+        "Принята эволюция",
+        "✨",
+        None,
+        None,
+    )
+    .await?;
 
     Ok(Json(pet))
 }

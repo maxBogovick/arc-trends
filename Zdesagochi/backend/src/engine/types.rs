@@ -2,8 +2,8 @@
 //  PERSONALITY ENGINE — Core Types (Rust port of personality-core/src/types.ts)
 // ════════════════════════════════════════════════════════════════════════════
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ── Stat keys ────────────────────────────────────────────────────────────────
 
@@ -41,15 +41,23 @@ impl StatKey {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<StatKey> {
+    pub fn parse_key(s: &str) -> Option<StatKey> {
+        s.parse().ok()
+    }
+}
+
+impl std::str::FromStr for StatKey {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "hunger" => Some(StatKey::Hunger),
-            "happiness" => Some(StatKey::Happiness),
-            "energy" => Some(StatKey::Energy),
-            "health" => Some(StatKey::Health),
-            "cleanliness" => Some(StatKey::Cleanliness),
-            "bond" => Some(StatKey::Bond),
-            _ => None,
+            "hunger" => Ok(StatKey::Hunger),
+            "happiness" => Ok(StatKey::Happiness),
+            "energy" => Ok(StatKey::Energy),
+            "health" => Ok(StatKey::Health),
+            "cleanliness" => Ok(StatKey::Cleanliness),
+            "bond" => Ok(StatKey::Bond),
+            _ => Err(()),
         }
     }
 }
@@ -90,15 +98,23 @@ impl TraitKey {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<TraitKey> {
+    pub fn parse_key(s: &str) -> Option<TraitKey> {
+        s.parse().ok()
+    }
+}
+
+impl std::str::FromStr for TraitKey {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "vitality" => Some(TraitKey::Vitality),
-            "sociality" => Some(TraitKey::Sociality),
-            "order" => Some(TraitKey::Order),
-            "appetite" => Some(TraitKey::Appetite),
-            "caution" => Some(TraitKey::Caution),
-            "curiosity" => Some(TraitKey::Curiosity),
-            _ => None,
+            "vitality" => Ok(TraitKey::Vitality),
+            "sociality" => Ok(TraitKey::Sociality),
+            "order" => Ok(TraitKey::Order),
+            "appetite" => Ok(TraitKey::Appetite),
+            "caution" => Ok(TraitKey::Caution),
+            "curiosity" => Ok(TraitKey::Curiosity),
+            _ => Err(()),
         }
     }
 }
@@ -178,7 +194,7 @@ pub struct BehavioralCounters {
     pub last_room_check_ts: String,
 
     // Paranoid phase
-    pub paranoid_phase: String,  // "untrusted" | "trusted" | "collapsed"
+    pub paranoid_phase: String, // "untrusted" | "trusted" | "collapsed"
     pub bond_actions_in_phase: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trusted_since: Option<String>,
@@ -236,7 +252,9 @@ impl Default for BehavioralCounters {
             chaos_daily_seed: 0.5,
             chaos_seed_date: today,
             melancholic_action_count: 0,
-            rolling_windows: Some(BehavioralRollingWindows { daily_buckets: Vec::new() }),
+            rolling_windows: Some(BehavioralRollingWindows {
+                daily_buckets: Vec::new(),
+            }),
         }
     }
 }
@@ -343,12 +361,12 @@ pub struct ActiveEmergentState {
 pub struct CoreMemory {
     pub id: String,
     pub timestamp: String,
-    pub tier: String,  // "rare" | "common"
+    pub tier: String, // "rare" | "common"
     pub emoji: String,
     pub text: String,
     pub category: String,
     pub trait_key: String,
-    pub direction: String,  // "up" | "down" | "origin"
+    pub direction: String, // "up" | "down" | "origin"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub personality_hint: Option<String>,
 }
@@ -373,7 +391,7 @@ pub struct EvolutionRecord {
     pub from_personality_id: String,
     pub to_personality_id: String,
     pub evolved_at: String,
-    pub trigger: String,  // "formation" | "stability" | "singularity" | "manual"
+    pub trigger: String, // "formation" | "stability" | "singularity" | "manual"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub core_memory_ids: Option<Vec<String>>,
 }
@@ -459,7 +477,11 @@ pub struct AutoSleepConfig {
 
 impl Default for AutoSleepConfig {
     fn default() -> Self {
-        Self { enabled: false, energy_threshold: 0.0, probability: 0.0 }
+        Self {
+            enabled: false,
+            energy_threshold: 0.0,
+            probability: 0.0,
+        }
     }
 }
 
@@ -475,7 +497,11 @@ pub struct MoodBiasConfig {
 
 impl Default for MoodBiasConfig {
     fn default() -> Self {
-        Self { ecstatic_min_avg: 85.0, happy_min_avg: 65.0, content_min_avg: 45.0 }
+        Self {
+            ecstatic_min_avg: 85.0,
+            happy_min_avg: 65.0,
+            content_min_avg: 45.0,
+        }
     }
 }
 
@@ -547,6 +573,11 @@ pub struct PetCommandResult {
     pub events: Vec<String>,
     pub active_emergent_states: Vec<String>,
     pub meta: HashMap<String, serde_json::Value>,
+    pub influence_cooldowns: HashMap<String, u32>,
+    pub current_sync: u32,
+    pub schema_version: i32,
+    pub engine_version: String,
+    pub registry_version: String,
 }
 
 // ── Registered influence ──────────────────────────────────────────────────────

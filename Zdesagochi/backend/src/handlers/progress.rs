@@ -1,6 +1,3 @@
-use axum::{extract::State, response::IntoResponse, Json};
-use serde::Deserialize;
-use utoipa::ToSchema;
 use crate::{
     db::{economy_repo, progress_repo},
     domain::progress::{ClaimResult, QuestClaimResult},
@@ -8,6 +5,9 @@ use crate::{
     middleware::auth::AuthUser,
     state::AppState,
 };
+use axum::{Json, extract::State, response::IntoResponse};
+use serde::Deserialize;
+use utoipa::ToSchema;
 
 /// Get achievements
 #[utoipa::path(
@@ -44,11 +44,18 @@ pub async fn claim_achievement(
     Json(body): Json<ClaimAchievementBody>,
 ) -> Result<impl IntoResponse, AppError> {
     let mut tx = state.db.begin().await?;
-    let achievement = progress_repo::mark_achievement_claimed_tx(&mut tx, &auth.user_id, &body.achievement_id).await?;
-    let new_balance = economy_repo::add_coins_tx(&mut tx, &auth.user_id, achievement.reward).await?;
+    let achievement =
+        progress_repo::mark_achievement_claimed_tx(&mut tx, &auth.user_id, &body.achievement_id)
+            .await?;
+    let new_balance =
+        economy_repo::add_coins_tx(&mut tx, &auth.user_id, achievement.reward).await?;
     tx.commit().await?;
 
-    Ok(Json(ClaimResult { achievement, coins: new_balance, new_balance }))
+    Ok(Json(ClaimResult {
+        achievement,
+        coins: new_balance,
+        new_balance,
+    }))
 }
 
 /// Get daily quests
@@ -86,8 +93,10 @@ pub async fn claim_quest_reward(
     Json(body): Json<ClaimQuestBody>,
 ) -> Result<impl IntoResponse, AppError> {
     let mut tx = state.db.begin().await?;
-    let quest = progress_repo::mark_quest_claimed_tx(&mut tx, &auth.user_id, &body.quest_id).await?;
-    let new_balance = economy_repo::add_coins_tx(&mut tx, &auth.user_id, quest.reward.coins).await?;
+    let quest =
+        progress_repo::mark_quest_claimed_tx(&mut tx, &auth.user_id, &body.quest_id).await?;
+    let new_balance =
+        economy_repo::add_coins_tx(&mut tx, &auth.user_id, quest.reward.coins).await?;
     tx.commit().await?;
 
     Ok(Json(QuestClaimResult {
