@@ -9,19 +9,17 @@ use std::collections::HashMap;
 use crate::domain::pet::{Pet, PetMood, PetStats};
 use crate::engine::personalities::get_personality_or_default;
 use crate::engine::personality_engine::{
-    ActionResult, apply_action_modifiers, apply_decay, calc_mood_with_bias,
-    compute_natural_passives, create_default_counters, get_paranoid_restore_mult,
-    get_peak_performance_mult,
+    apply_action_modifiers, apply_decay, calc_mood_with_bias, compute_natural_passives,
+    create_default_counters, get_paranoid_restore_mult, get_peak_performance_mult, ActionResult,
 };
 use crate::engine::trait_evolution::{
-    CATHARSIS_XP_BURST_MULTIPLIER, accept_evolution as te_accept_evolution,
-    apply_registered_influence, check_evolution, check_shadow_form,
-    reject_evolution as te_reject_evolution,
+    accept_evolution as te_accept_evolution, apply_registered_influence, check_evolution,
+    check_shadow_form, reject_evolution as te_reject_evolution, CATHARSIS_XP_BURST_MULTIPLIER,
 };
 use crate::engine::types::{
-    ActiveEmergentState, AppliedModifier, BehavioralCounters, BlockedAction, CoreMemory,
-    EmergentStateType, EvolutionProposal, EvolutionRecord, MoodSnapshot, PetCommandResult,
-    PetStateLayers, StatKey, TraitKey, TraitSnapshot, TraitVector, clamp_stat,
+    clamp_stat, ActiveEmergentState, AppliedModifier, BehavioralCounters, BlockedAction,
+    CoreMemory, EmergentStateType, EvolutionProposal, EvolutionRecord, MoodSnapshot,
+    PetCommandResult, PetStateLayers, StatKey, TraitKey, TraitSnapshot, TraitVector,
 };
 
 // ── Engine State ──────────────────────────────────────────────────────────────
@@ -133,7 +131,6 @@ impl EngineState {
             .and_then(|v| v.first())
             .map(|s| s.state_type.clone());
 
-
         // Parse daily_trait_budget from JSON
         let mut daily_trait_budget = HashMap::new();
         if let Some(obj) = pet.daily_trait_budget.as_object() {
@@ -206,7 +203,7 @@ impl EngineState {
             .as_ref()
             .map(|s| serde_json::to_value(s).unwrap_or(serde_json::Value::Null));
         pet.trait_vector = trait_vector_to_json(&self.trait_vector);
-        
+
         let mut dtb_obj = serde_json::Map::new();
         for (k, v) in &self.daily_trait_budget {
             dtb_obj.insert(k.as_str().to_string(), serde_json::json!(v));
@@ -595,11 +592,16 @@ pub fn apply_personality_command(
             state.last_sleep_timestamp = Some(now.to_rfc3339());
         }
         state.sleep_started_at = None;
-        if let Some(influence_id) = apply_command_influence(state, command, now) {
+        let wake_influence_id = if natural_wake {
+            "action:wake_natural"
+        } else {
+            "action:wake_early"
+        };
+        if let Some(influence_id) = apply_influence_id(state, wake_influence_id, command, now) {
             result.applied_modifiers.push(AppliedModifier {
                 source: "base".to_string(),
                 id: influence_id,
-                description: "Command influence applied".to_string(),
+                description: "Sleep lifecycle influence applied".to_string(),
             });
         }
 
@@ -738,9 +740,18 @@ fn apply_command_influence(
     now: DateTime<Utc>,
 ) -> Option<String> {
     let influence_id = get_influence_id_for_command(state, command)?;
-    let influence = crate::engine::influence_registry::get_influence(&influence_id)?;
+    apply_influence_id(state, &influence_id, command, now)
+}
+
+fn apply_influence_id(
+    state: &mut EngineState,
+    influence_id: &str,
+    command: &PetCommand,
+    now: DateTime<Utc>,
+) -> Option<String> {
+    let influence = crate::engine::influence_registry::get_influence(influence_id)?;
     let cooldown_syncs = influence.cooldown_syncs.unwrap_or(0);
-    let last_applied_sync = state.influence_cooldowns.get(&influence_id).copied();
+    let last_applied_sync = state.influence_cooldowns.get(influence_id).copied();
     let in_singularity_item = command.command_type == "use_item"
         && active_emergent_state_list(state).contains(&EmergentStateType::Singularity);
     if !in_singularity_item
@@ -754,7 +765,7 @@ fn apply_command_influence(
     if applied {
         state
             .influence_cooldowns
-            .insert(influence_id.clone(), state.current_sync);
+            .insert(influence_id.to_string(), state.current_sync);
     }
     if applied
         && command.command_type == "bond"
@@ -768,7 +779,7 @@ fn apply_command_influence(
     {
         crate::engine::trait_evolution::add_catharsis_progress(state, 20.0, now);
     }
-    applied.then_some(influence_id)
+    applied.then_some(influence_id.to_string())
 }
 
 fn get_influence_id_for_command(state: &EngineState, command: &PetCommand) -> Option<String> {
@@ -1097,7 +1108,7 @@ fn finalize_command(
     local_hour: i32,
 ) {
     let food_id = command.food_id.as_deref();
-    
+
     let today = now.format("%Y-%m-%d").to_string();
     if state.behavioral_counters.last_day_reset != today {
         state.daily_trait_budget.clear();
@@ -1477,12 +1488,10 @@ mod tests {
         assert!(state.formation_progress > 0.0);
         assert_eq!(state.influence_cooldowns.get("action:feed"), Some(&0));
         assert_eq!(result.influence_cooldowns.get("action:feed"), Some(&0));
-        assert!(
-            result
-                .applied_modifiers
-                .iter()
-                .any(|m| m.id == "action:feed")
-        );
+        assert!(result
+            .applied_modifiers
+            .iter()
+            .any(|m| m.id == "action:feed"));
     }
 
     #[test]
@@ -1499,12 +1508,10 @@ mod tests {
             state.trait_vector[&TraitKey::Sociality],
             after_first_sociality
         );
-        assert!(
-            !second_result
-                .applied_modifiers
-                .iter()
-                .any(|m| m.id == "action:bond")
-        );
+        assert!(!second_result
+            .applied_modifiers
+            .iter()
+            .any(|m| m.id == "action:bond"));
 
         let sync = command("sync", "cmd-sync-1");
         apply_personality_command(&mut state, &sync, fixed_now());
@@ -1513,12 +1520,10 @@ mod tests {
         let third = command("bond", "cmd-bond-3");
         let third_result = apply_personality_command(&mut state, &third, fixed_now());
         assert!(state.trait_vector[&TraitKey::Sociality] > after_first_sociality);
-        assert!(
-            third_result
-                .applied_modifiers
-                .iter()
-                .any(|m| m.id == "action:bond")
-        );
+        assert!(third_result
+            .applied_modifiers
+            .iter()
+            .any(|m| m.id == "action:bond"));
     }
 
     #[test]
@@ -1533,5 +1538,57 @@ mod tests {
 
         assert_eq!(restored.influence_cooldowns.get("action:play"), Some(&0));
         assert_eq!(restored.current_sync, 0);
+    }
+
+    #[test]
+    fn early_wake_applies_wake_early_lifecycle_influence() {
+        let mut state = default_state();
+        state.is_asleep = true;
+        state.sleep_started_at = Some(fixed_now().to_rfc3339());
+        let before_caution = state.trait_vector[&TraitKey::Caution];
+        let before_order = state.trait_vector[&TraitKey::Order];
+
+        let wake = command("wake", "cmd-wake-early");
+        let result = apply_personality_command(
+            &mut state,
+            &wake,
+            fixed_now() + chrono::Duration::minutes(30),
+        );
+
+        assert!(!state.is_asleep);
+        assert!(state.trait_vector[&TraitKey::Caution] > before_caution);
+        assert!(state.trait_vector[&TraitKey::Order] < before_order);
+        assert_eq!(state.influence_cooldowns.get("action:wake_early"), Some(&0));
+        assert!(result
+            .applied_modifiers
+            .iter()
+            .any(|m| m.id == "action:wake_early"));
+    }
+
+    #[test]
+    fn natural_wake_applies_wake_natural_lifecycle_influence() {
+        let mut state = default_state();
+        state.is_asleep = true;
+        state.sleep_started_at = Some(fixed_now().to_rfc3339());
+        state.trauma_level = 5.0;
+
+        let wake = command("wake", "cmd-wake-natural");
+        let result =
+            apply_personality_command(&mut state, &wake, fixed_now() + chrono::Duration::hours(6));
+
+        assert!(!state.is_asleep);
+        assert_eq!(
+            state.last_sleep_timestamp,
+            Some((fixed_now() + chrono::Duration::hours(6)).to_rfc3339())
+        );
+        assert!(state.trauma_level < 5.0);
+        assert_eq!(
+            state.influence_cooldowns.get("action:wake_natural"),
+            Some(&0)
+        );
+        assert!(result
+            .applied_modifiers
+            .iter()
+            .any(|m| m.id == "action:wake_natural"));
     }
 }

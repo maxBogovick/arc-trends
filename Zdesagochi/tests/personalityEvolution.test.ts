@@ -2114,13 +2114,13 @@ test('checkEvolution creates proposal after stable target zone', () => {
 test('checkEvolution respects hysteresis boundary before proposing', () => {
   const belowHysteresisVector = interpolateVector(
     PERSONALITY_TRAIT_MAP.playful.position,
-    PERSONALITY_TRAIT_MAP.paranoid.position,
-    0.67,
+    PERSONALITY_TRAIT_MAP.bold.position,
+    0.91,
   );
   const aboveHysteresisVector = interpolateVector(
     PERSONALITY_TRAIT_MAP.playful.position,
-    PERSONALITY_TRAIT_MAP.paranoid.position,
-    0.68,
+    PERSONALITY_TRAIT_MAP.bold.position,
+    0.96,
   );
   const pet = makePet({
     traitVector: belowHysteresisVector,

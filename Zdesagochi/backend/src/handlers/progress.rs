@@ -5,7 +5,7 @@ use crate::{
     middleware::auth::AuthUser,
     state::AppState,
 };
-use axum::{Json, extract::State, response::IntoResponse};
+use axum::{extract::State, response::IntoResponse, Json};
 use serde::Deserialize;
 use utoipa::ToSchema;
 

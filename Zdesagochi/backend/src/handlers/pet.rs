@@ -1,4 +1,4 @@
-use axum::{Json, extract::State};
+use axum::{extract::State, Json};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 use crate::{
     db::{economy_repo, pet_repo, progress_repo},
     domain::pet::{Account, NewLifeResult, Pet, PetEvent},
-    engine::{EngineState, FoodEffect, PetCommand, apply_personality_command},
+    engine::{apply_personality_command, EngineState, FoodEffect, PetCommand},
     error::AppError,
     middleware::auth::AuthUser,
     state::AppState,

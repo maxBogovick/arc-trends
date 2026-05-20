@@ -1,5 +1,5 @@
 use axum::{async_trait, extract::FromRequestParts, http::request::Parts};
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 
 use crate::{domain::user::Claims, error::AppError, state::AppState};
 

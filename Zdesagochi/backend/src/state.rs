@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use deadpool_redis::{Config as RedisConfig, Runtime};
-use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
 
 use crate::config::Config;
 

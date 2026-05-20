@@ -6,8 +6,8 @@ use chrono::{DateTime, Timelike, Utc};
 use std::collections::HashMap;
 
 use crate::engine::types::{
-    BehavioralCounters, EmergentStateType, PersonalityDefinition, PetStateLayers, StatKey,
-    avg_stats, clamp, clamp_stat,
+    avg_stats, clamp, clamp_stat, BehavioralCounters, EmergentStateType, PersonalityDefinition,
+    PetStateLayers, StatKey,
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────

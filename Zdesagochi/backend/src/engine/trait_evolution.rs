@@ -7,8 +7,8 @@ use std::collections::HashMap;
 
 use crate::engine::command_handlers::EngineState;
 use crate::engine::types::{
-    ActiveEmergentState, CoreMemory, EmergentStateType, EvolutionRecord, InfluenceCondition,
-    RegisteredInfluence, StatKey, TraitKey, TraitVector, clamp,
+    clamp, ActiveEmergentState, CoreMemory, EmergentStateType, EvolutionRecord, InfluenceCondition,
+    RegisteredInfluence, StatKey, TraitKey, TraitVector,
 };
 
 pub const FORMATION_THRESHOLD: f64 = 200.0;
@@ -129,7 +129,7 @@ fn complete_formation(state: &mut EngineState, now: DateTime<Utc>) {
         .map(|p| {
             (
                 p.id.clone(),
-                depth_of_immersion(&state.trait_vector, &p.id, 0.0),
+                depth_of_immersion(&state.trait_vector, &p.id, state.age_hours),
             )
         })
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -262,138 +262,138 @@ fn evaluate_influence_condition(state: &EngineState, condition: &InfluenceCondit
     }
 }
 
-// Personality trait positions (simplified map for evolution decisions)
-// Each personality has a "home" trait vector position
+// Personality trait positions. Keep in parity with
+// packages/personality-core/src/personalityTraitMap.ts.
 fn personality_position(id: &str) -> TraitVector {
     let mut map: HashMap<TraitKey, f64> = HashMap::new();
     match id {
         "playful" => {
-            map.insert(TraitKey::Vitality, 70.0);
+            map.insert(TraitKey::Vitality, 90.0);
             map.insert(TraitKey::Sociality, 60.0);
-            map.insert(TraitKey::Order, 30.0);
-            map.insert(TraitKey::Appetite, 50.0);
-            map.insert(TraitKey::Caution, 25.0);
-            map.insert(TraitKey::Curiosity, 75.0);
+            map.insert(TraitKey::Order, 20.0);
+            map.insert(TraitKey::Appetite, 40.0);
+            map.insert(TraitKey::Caution, 20.0);
+            map.insert(TraitKey::Curiosity, 60.0);
         }
         "drowsy" => {
-            map.insert(TraitKey::Vitality, 30.0);
-            map.insert(TraitKey::Sociality, 50.0);
-            map.insert(TraitKey::Order, 60.0);
-            map.insert(TraitKey::Appetite, 45.0);
-            map.insert(TraitKey::Caution, 55.0);
-            map.insert(TraitKey::Curiosity, 35.0);
+            map.insert(TraitKey::Vitality, 10.0);
+            map.insert(TraitKey::Sociality, 40.0);
+            map.insert(TraitKey::Order, 55.0);
+            map.insert(TraitKey::Appetite, 35.0);
+            map.insert(TraitKey::Caution, 40.0);
+            map.insert(TraitKey::Curiosity, 15.0);
         }
         "foodie" => {
             map.insert(TraitKey::Vitality, 55.0);
-            map.insert(TraitKey::Sociality, 55.0);
-            map.insert(TraitKey::Order, 40.0);
-            map.insert(TraitKey::Appetite, 90.0);
-            map.insert(TraitKey::Caution, 35.0);
-            map.insert(TraitKey::Curiosity, 60.0);
+            map.insert(TraitKey::Sociality, 50.0);
+            map.insert(TraitKey::Order, 50.0);
+            map.insert(TraitKey::Appetite, 95.0);
+            map.insert(TraitKey::Caution, 30.0);
+            map.insert(TraitKey::Curiosity, 45.0);
         }
         "bold" => {
-            map.insert(TraitKey::Vitality, 85.0);
-            map.insert(TraitKey::Sociality, 45.0);
-            map.insert(TraitKey::Order, 25.0);
-            map.insert(TraitKey::Appetite, 50.0);
-            map.insert(TraitKey::Caution, 10.0);
-            map.insert(TraitKey::Curiosity, 65.0);
-        }
-        "zen" => {
-            map.insert(TraitKey::Vitality, 45.0);
-            map.insert(TraitKey::Sociality, 65.0);
-            map.insert(TraitKey::Order, 75.0);
-            map.insert(TraitKey::Appetite, 40.0);
-            map.insert(TraitKey::Caution, 70.0);
-            map.insert(TraitKey::Curiosity, 55.0);
-        }
-        "anxious" => {
-            map.insert(TraitKey::Vitality, 40.0);
+            map.insert(TraitKey::Vitality, 80.0);
             map.insert(TraitKey::Sociality, 40.0);
             map.insert(TraitKey::Order, 35.0);
-            map.insert(TraitKey::Appetite, 50.0);
-            map.insert(TraitKey::Caution, 85.0);
+            map.insert(TraitKey::Appetite, 45.0);
+            map.insert(TraitKey::Caution, 5.0);
+            map.insert(TraitKey::Curiosity, 55.0);
+        }
+        "zen" => {
+            map.insert(TraitKey::Vitality, 30.0);
+            map.insert(TraitKey::Sociality, 75.0);
+            map.insert(TraitKey::Order, 85.0);
+            map.insert(TraitKey::Appetite, 30.0);
+            map.insert(TraitKey::Caution, 25.0);
+            map.insert(TraitKey::Curiosity, 45.0);
+        }
+        "anxious" => {
+            map.insert(TraitKey::Vitality, 60.0);
+            map.insert(TraitKey::Sociality, 50.0);
+            map.insert(TraitKey::Order, 40.0);
+            map.insert(TraitKey::Appetite, 55.0);
+            map.insert(TraitKey::Caution, 90.0);
             map.insert(TraitKey::Curiosity, 50.0);
         }
         "feral" => {
-            map.insert(TraitKey::Vitality, 80.0);
-            map.insert(TraitKey::Sociality, 25.0);
+            map.insert(TraitKey::Vitality, 75.0);
+            map.insert(TraitKey::Sociality, 10.0);
             map.insert(TraitKey::Order, 15.0);
-            map.insert(TraitKey::Appetite, 65.0);
-            map.insert(TraitKey::Caution, 30.0);
-            map.insert(TraitKey::Curiosity, 70.0);
+            map.insert(TraitKey::Appetite, 60.0);
+            map.insert(TraitKey::Caution, 15.0);
+            map.insert(TraitKey::Curiosity, 55.0);
         }
         "sage" => {
-            map.insert(TraitKey::Vitality, 50.0);
-            map.insert(TraitKey::Sociality, 60.0);
+            map.insert(TraitKey::Vitality, 35.0);
+            map.insert(TraitKey::Sociality, 65.0);
             map.insert(TraitKey::Order, 70.0);
-            map.insert(TraitKey::Appetite, 45.0);
-            map.insert(TraitKey::Caution, 65.0);
+            map.insert(TraitKey::Appetite, 40.0);
+            map.insert(TraitKey::Caution, 45.0);
             map.insert(TraitKey::Curiosity, 80.0);
         }
         "pristine" => {
             map.insert(TraitKey::Vitality, 50.0);
-            map.insert(TraitKey::Sociality, 45.0);
-            map.insert(TraitKey::Order, 90.0);
-            map.insert(TraitKey::Appetite, 40.0);
-            map.insert(TraitKey::Caution, 60.0);
-            map.insert(TraitKey::Curiosity, 45.0);
-        }
-        "empath" => {
-            map.insert(TraitKey::Vitality, 50.0);
-            map.insert(TraitKey::Sociality, 90.0);
-            map.insert(TraitKey::Order, 50.0);
-            map.insert(TraitKey::Appetite, 45.0);
-            map.insert(TraitKey::Caution, 40.0);
-            map.insert(TraitKey::Curiosity, 55.0);
-        }
-        "greedy" => {
-            map.insert(TraitKey::Vitality, 60.0);
-            map.insert(TraitKey::Sociality, 35.0);
-            map.insert(TraitKey::Order, 55.0);
-            map.insert(TraitKey::Appetite, 70.0);
-            map.insert(TraitKey::Caution, 50.0);
-            map.insert(TraitKey::Curiosity, 65.0);
-        }
-        "melancholic" => {
-            map.insert(TraitKey::Vitality, 35.0);
             map.insert(TraitKey::Sociality, 55.0);
-            map.insert(TraitKey::Order, 45.0);
-            map.insert(TraitKey::Appetite, 40.0);
-            map.insert(TraitKey::Caution, 60.0);
-            map.insert(TraitKey::Curiosity, 60.0);
-        }
-        "chaotic" => {
-            map.insert(TraitKey::Vitality, 60.0);
-            map.insert(TraitKey::Sociality, 50.0);
-            map.insert(TraitKey::Order, 10.0);
-            map.insert(TraitKey::Appetite, 55.0);
-            map.insert(TraitKey::Caution, 20.0);
-            map.insert(TraitKey::Curiosity, 85.0);
-        }
-        "stoic" => {
-            map.insert(TraitKey::Vitality, 55.0);
-            map.insert(TraitKey::Sociality, 30.0);
             map.insert(TraitKey::Order, 80.0);
             map.insert(TraitKey::Appetite, 40.0);
-            map.insert(TraitKey::Caution, 75.0);
+            map.insert(TraitKey::Caution, 65.0);
             map.insert(TraitKey::Curiosity, 40.0);
+        }
+        "empath" => {
+            map.insert(TraitKey::Vitality, 45.0);
+            map.insert(TraitKey::Sociality, 95.0);
+            map.insert(TraitKey::Order, 55.0);
+            map.insert(TraitKey::Appetite, 40.0);
+            map.insert(TraitKey::Caution, 55.0);
+            map.insert(TraitKey::Curiosity, 50.0);
+        }
+        "greedy" => {
+            map.insert(TraitKey::Vitality, 70.0);
+            map.insert(TraitKey::Sociality, 30.0);
+            map.insert(TraitKey::Order, 55.0);
+            map.insert(TraitKey::Appetite, 85.0);
+            map.insert(TraitKey::Caution, 35.0);
+            map.insert(TraitKey::Curiosity, 60.0);
+        }
+        "melancholic" => {
+            map.insert(TraitKey::Vitality, 20.0);
+            map.insert(TraitKey::Sociality, 55.0);
+            map.insert(TraitKey::Order, 60.0);
+            map.insert(TraitKey::Appetite, 35.0);
+            map.insert(TraitKey::Caution, 60.0);
+            map.insert(TraitKey::Curiosity, 65.0);
+        }
+        "chaotic" => {
+            map.insert(TraitKey::Vitality, 70.0);
+            map.insert(TraitKey::Sociality, 40.0);
+            map.insert(TraitKey::Order, 5.0);
+            map.insert(TraitKey::Appetite, 50.0);
+            map.insert(TraitKey::Caution, 20.0);
+            map.insert(TraitKey::Curiosity, 80.0);
+        }
+        "stoic" => {
+            map.insert(TraitKey::Vitality, 15.0);
+            map.insert(TraitKey::Sociality, 35.0);
+            map.insert(TraitKey::Order, 95.0);
+            map.insert(TraitKey::Appetite, 20.0);
+            map.insert(TraitKey::Caution, 30.0);
+            map.insert(TraitKey::Curiosity, 20.0);
         }
         "adventurer" => {
             map.insert(TraitKey::Vitality, 75.0);
-            map.insert(TraitKey::Sociality, 50.0);
-            map.insert(TraitKey::Order, 20.0);
-            map.insert(TraitKey::Appetite, 55.0);
-            map.insert(TraitKey::Caution, 15.0);
-            map.insert(TraitKey::Curiosity, 90.0);
+            map.insert(TraitKey::Sociality, 55.0);
+            map.insert(TraitKey::Order, 25.0);
+            map.insert(TraitKey::Appetite, 45.0);
+            map.insert(TraitKey::Caution, 10.0);
+            map.insert(TraitKey::Curiosity, 95.0);
         }
         "paranoid" => {
-            map.insert(TraitKey::Vitality, 45.0);
+            map.insert(TraitKey::Vitality, 40.0);
             map.insert(TraitKey::Sociality, 20.0);
-            map.insert(TraitKey::Order, 60.0);
-            map.insert(TraitKey::Appetite, 45.0);
-            map.insert(TraitKey::Caution, 90.0);
-            map.insert(TraitKey::Curiosity, 50.0);
+            map.insert(TraitKey::Order, 65.0);
+            map.insert(TraitKey::Appetite, 35.0);
+            map.insert(TraitKey::Caution, 95.0);
+            map.insert(TraitKey::Curiosity, 55.0);
         }
         _ => {
             for &key in TraitKey::all() {
@@ -406,10 +406,11 @@ fn personality_position(id: &str) -> TraitVector {
 
 fn personality_radius_base(id: &str) -> f64 {
     match id {
-        "playful" | "bold" | "feral" | "adventurer" => 20.0,
-        "drowsy" | "stoic" | "zen" => 18.0,
-        "chaotic" | "paranoid" => 22.0,
-        _ => 18.0,
+        "playful" | "drowsy" | "foodie" => 25.0,
+        "bold" | "zen" | "anxious" | "sage" | "pristine" | "melancholic" | "stoic" => 22.0,
+        "feral" | "empath" | "greedy" | "chaotic" | "adventurer" => 20.0,
+        "paranoid" => 18.0,
+        _ => 22.0,
     }
 }
 
@@ -793,4 +794,77 @@ pub fn add_core_memory(
         .core_memories
         .sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     let _ = (rare, common); // silence unused warnings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "actual {actual} expected {expected}"
+        );
+    }
+
+    fn best_personality(vector: &TraitVector, age_hours: f64) -> String {
+        crate::engine::personalities::get_personalities()
+            .iter()
+            .map(|p| (p.id.clone(), depth_of_immersion(vector, &p.id, age_hours)))
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(id, _)| id)
+            .expect("personalities must not be empty")
+    }
+
+    #[test]
+    fn personality_positions_match_typescript_trait_map() {
+        let cases = [
+            ("playful", [90.0, 60.0, 20.0, 40.0, 20.0, 60.0], 25.0),
+            ("drowsy", [10.0, 40.0, 55.0, 35.0, 40.0, 15.0], 25.0),
+            ("foodie", [55.0, 50.0, 50.0, 95.0, 30.0, 45.0], 25.0),
+            ("bold", [80.0, 40.0, 35.0, 45.0, 5.0, 55.0], 22.0),
+            ("zen", [30.0, 75.0, 85.0, 30.0, 25.0, 45.0], 22.0),
+            ("anxious", [60.0, 50.0, 40.0, 55.0, 90.0, 50.0], 22.0),
+            ("feral", [75.0, 10.0, 15.0, 60.0, 15.0, 55.0], 20.0),
+            ("sage", [35.0, 65.0, 70.0, 40.0, 45.0, 80.0], 22.0),
+            ("pristine", [50.0, 55.0, 80.0, 40.0, 65.0, 40.0], 22.0),
+            ("empath", [45.0, 95.0, 55.0, 40.0, 55.0, 50.0], 20.0),
+            ("greedy", [70.0, 30.0, 55.0, 85.0, 35.0, 60.0], 20.0),
+            ("melancholic", [20.0, 55.0, 60.0, 35.0, 60.0, 65.0], 22.0),
+            ("chaotic", [70.0, 40.0, 5.0, 50.0, 20.0, 80.0], 20.0),
+            ("stoic", [15.0, 35.0, 95.0, 20.0, 30.0, 20.0], 22.0),
+            ("adventurer", [75.0, 55.0, 25.0, 45.0, 10.0, 95.0], 20.0),
+            ("paranoid", [40.0, 20.0, 65.0, 35.0, 95.0, 55.0], 18.0),
+        ];
+
+        for (id, expected, radius) in cases {
+            let position = personality_position(id);
+            assert_close(position[&TraitKey::Vitality], expected[0]);
+            assert_close(position[&TraitKey::Sociality], expected[1]);
+            assert_close(position[&TraitKey::Order], expected[2]);
+            assert_close(position[&TraitKey::Appetite], expected[3]);
+            assert_close(position[&TraitKey::Caution], expected[4]);
+            assert_close(position[&TraitKey::Curiosity], expected[5]);
+            assert_close(personality_radius_base(id), radius);
+        }
+    }
+
+    #[test]
+    fn neutral_formation_vector_is_not_closest_to_drowsy_after_parity_fix() {
+        let vector = create_initial_trait_vector();
+
+        assert_eq!(best_personality(&vector, 3.0), "pristine");
+        assert!(
+            depth_of_immersion(&vector, "pristine", 3.0)
+                > depth_of_immersion(&vector, "drowsy", 3.0)
+        );
+    }
+
+    #[test]
+    fn dynamic_radius_uses_typescript_radius_bases_and_age_bands() {
+        assert_close(dynamic_radius("drowsy", 3.0 * 24.0), 22.0);
+        assert_close(dynamic_radius("drowsy", 10.0 * 24.0), 25.0);
+        assert_close(dynamic_radius("drowsy", 45.0 * 24.0), 29.0);
+        assert_close(dynamic_radius("drowsy", 100.0 * 24.0), 33.0);
+    }
 }

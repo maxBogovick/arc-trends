@@ -1,6 +1,6 @@
 # Personality Engine Monte Carlo Report
 
-Generated at: 2026-05-16T12:17:00.529Z  
+Generated at: 2026-05-16T12:29:20.987Z  
 Runs per personality/style: 20  
 Simulation days: 30
 

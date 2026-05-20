@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use tokio::net::TcpListener;
 use tokio::signal;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use zdesagochi_backend::{config, jobs, metrics, router, state};
 
 #[tokio::main]

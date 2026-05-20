@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{
-    Extension, Router,
     http::{HeaderValue, Method},
     middleware,
     routing::{get, patch, post},
+    Extension, Router,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
 use tower_http::{
