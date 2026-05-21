@@ -26,6 +26,7 @@ export {
   DEFAULT_EXPLAINABILITY_LOG_KEY,
   DEFAULT_EXPLAINABILITY_LOG_LIMIT,
   createExplainabilityRecord,
+  createPersonalityTelemetrySample,
   explainCommandRecord,
 } from './explainability';
 export { PetService } from './petService';
@@ -35,7 +36,7 @@ export { fromPersonalityState, toPersonalityState } from './personalityPetAdapte
 export type { LocalInventoryEntry, LocalSaveSnapshot, LocalSaveState, LocalSaveLoadResult } from './localSave';
 export type { SyncQueueLoadResult } from './syncQueue';
 export type { OfflineKeyValueStorage, OfflinePetSaveLoadResult, OfflinePetSaveResult } from './offlineStorage';
-export type { CommandExplanation, ExplainabilityLogLoadResult, ExplainabilityRecord } from './explainability';
+export type { CommandExplanation, ExplainabilityLogLoadResult, ExplainabilityRecord, PersonalityTelemetrySample } from './explainability';
 export type {
   ServerApi,
   ServerCommandAck,

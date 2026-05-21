@@ -7,8 +7,8 @@ use std::collections::HashMap;
 
 use crate::engine::command_handlers::EngineState;
 use crate::engine::types::{
-    clamp, ActiveEmergentState, CoreMemory, EmergentStateType, EvolutionRecord, InfluenceCondition,
-    RegisteredInfluence, StatKey, TraitKey, TraitVector,
+    clamp, ActiveEmergentState, BehaviorAxis, CoreMemory, EmergentStateType, EvolutionRecord,
+    InfluenceCondition, RegisteredInfluence, StatKey, TraitKey, TraitVector,
 };
 
 pub const FORMATION_THRESHOLD: f64 = 200.0;
@@ -25,6 +25,17 @@ pub const REGRESSION_RATE: f64 = 0.02;
 pub const LEGACY_BLEND_RATIO: f64 = 0.70;
 pub const SINGULARITY_EPSILON: f64 = 0.15;
 pub const CONFUSED_VARIANCE_THRESHOLD: f64 = 25.0;
+pub const PRE_FORMATION_SENSITIVITY_MULTIPLIER: f64 = 5.0;
+pub const POST_FORMATION_ADAPTATION_MULTIPLIER: f64 = 4.0;
+pub const BEHAVIOR_PROFILE_DECAY_PER_DAY: f64 = 0.96;
+pub const BEHAVIOR_PROFILE_EVOLUTION_MIN_SAMPLES: u32 = 24;
+pub const BEHAVIOR_PROFILE_EVOLUTION_THRESHOLD: f64 = 28.0;
+pub const EVOLUTION_READINESS_THRESHOLD: f64 = 100.0;
+pub const EVOLUTION_READINESS_GAIN_PER_CONFIRMED_SYNC: f64 = 35.0;
+pub const EVOLUTION_READINESS_DECAY_PER_SYNC: f64 = 2.0;
+pub const NEAR_TARGET_READINESS_MARGIN: f64 = 0.25;
+pub const NEAR_TARGET_READINESS_GAIN_MULTIPLIER: f64 = 0.60;
+pub const BEHAVIOR_TARGET_DEPTH_BONUS: f64 = 0.45;
 
 fn daily_budget(key: TraitKey) -> f64 {
     match key {
@@ -72,7 +83,8 @@ pub fn apply_registered_influence(
             .copied()
             .unwrap_or(0.0);
         let remaining = (daily_budget(trait_key) - spent).max(0.0);
-        let applied = clamp(*raw_delta, -remaining, remaining);
+        let context_multiplier = context_sensitivity_multiplier(state, &influence.id, trait_key);
+        let applied = clamp(*raw_delta * context_multiplier, -remaining, remaining);
         if applied == 0.0 {
             continue;
         }
@@ -83,9 +95,18 @@ pub fn apply_registered_influence(
             .insert(trait_key, spent + applied.abs());
 
         let current = state.trait_vector.get(&trait_key).copied().unwrap_or(50.0);
+        let sensitivity_multiplier = if state.formation_complete {
+            POST_FORMATION_ADAPTATION_MULTIPLIER
+        } else {
+            PRE_FORMATION_SENSITIVITY_MULTIPLIER
+        };
         state.trait_vector.insert(
             trait_key,
-            clamp(current + applied * SMOOTHING_ALPHA, 0.0, 100.0),
+            clamp(
+                current + applied * SMOOTHING_ALPHA * sensitivity_multiplier,
+                0.0,
+                100.0,
+            ),
         );
     }
 
@@ -99,7 +120,268 @@ pub fn apply_registered_influence(
     }
 
     update_formation_progress(state, influence, &budgeted_delta, now);
+    update_behavior_profile(state, &influence.id, now);
     true
+}
+
+fn context_sensitivity_multiplier(
+    state: &EngineState,
+    influence_id: &str,
+    trait_key: TraitKey,
+) -> f64 {
+    match influence_id {
+        "action:feed" => {
+            let hunger = state.stats.get(&StatKey::Hunger).copied().unwrap_or(50.0);
+            if hunger <= 30.0 {
+                if trait_key == TraitKey::Appetite {
+                    0.5
+                } else {
+                    1.4
+                }
+            } else if hunger >= 90.0 {
+                if trait_key == TraitKey::Appetite {
+                    1.2
+                } else {
+                    0.65
+                }
+            } else {
+                1.0
+            }
+        }
+        "action:play" => {
+            let happiness = state
+                .stats
+                .get(&StatKey::Happiness)
+                .copied()
+                .unwrap_or(50.0);
+            let energy = state.stats.get(&StatKey::Energy).copied().unwrap_or(50.0);
+            if energy <= 25.0 {
+                0.65
+            } else if happiness <= 45.0 && energy >= 35.0 {
+                1.35
+            } else {
+                1.0
+            }
+        }
+        "action:sleep_natural" => {
+            let energy = state.stats.get(&StatKey::Energy).copied().unwrap_or(50.0);
+            if energy <= 30.0 {
+                1.5
+            } else {
+                1.0
+            }
+        }
+        "action:sleep_forced" => {
+            let energy = state.stats.get(&StatKey::Energy).copied().unwrap_or(50.0);
+            if energy >= 80.0 {
+                1.35
+            } else {
+                1.0
+            }
+        }
+        "action:bathe" => {
+            let cleanliness = state
+                .stats
+                .get(&StatKey::Cleanliness)
+                .copied()
+                .unwrap_or(50.0);
+            if cleanliness <= 35.0 {
+                1.4
+            } else if cleanliness >= 90.0 {
+                0.7
+            } else {
+                1.0
+            }
+        }
+        "action:heal" => {
+            let health = state.stats.get(&StatKey::Health).copied().unwrap_or(50.0);
+            if health <= 45.0 {
+                1.4
+            } else if health >= 90.0 {
+                0.75
+            } else {
+                1.0
+            }
+        }
+        "action:bond" => {
+            let bond = state.stats.get(&StatKey::Bond).copied().unwrap_or(50.0);
+            if bond <= 45.0 {
+                1.35
+            } else {
+                1.0
+            }
+        }
+        _ => 1.0,
+    }
+}
+
+fn update_behavior_profile(state: &mut EngineState, influence_id: &str, now: DateTime<Utc>) {
+    let signal = behavior_signal_for_influence(influence_id);
+    if signal.is_empty() {
+        return;
+    }
+
+    let elapsed_days = state
+        .behavior_profile
+        .last_updated_at
+        .as_ref()
+        .and_then(|value| value.parse::<DateTime<Utc>>().ok())
+        .map(|last| (now - last).num_seconds().max(0) as f64 / 86_400.0)
+        .unwrap_or(0.0);
+    let decay = if elapsed_days > 0.0 {
+        BEHAVIOR_PROFILE_DECAY_PER_DAY.powf(elapsed_days)
+    } else {
+        1.0
+    };
+
+    for axis in BehaviorAxis::all() {
+        let current = state
+            .behavior_profile
+            .axes
+            .get(axis)
+            .copied()
+            .unwrap_or(0.0)
+            * decay;
+        let added = signal.get(axis).copied().unwrap_or(0.0);
+        state
+            .behavior_profile
+            .axes
+            .insert(*axis, clamp(current + added, 0.0, 100.0));
+    }
+
+    state.behavior_profile.sample_count = state
+        .behavior_profile
+        .sample_count
+        .saturating_add(1)
+        .min(10_000);
+    state.behavior_profile.last_updated_at = Some(now.to_rfc3339());
+}
+
+fn behavior_signal_for_influence(influence_id: &str) -> HashMap<BehaviorAxis, f64> {
+    use BehaviorAxis::*;
+    let pairs: &[(BehaviorAxis, f64)] = match influence_id {
+        "action:feed" => &[(Care, 2.0), (Social, 0.5)],
+        "action:play" => &[(Play, 2.0), (Exploration, 1.0)],
+        "action:bond" => &[(Social, 2.0), (Care, 0.5)],
+        "action:bathe" => &[(Order, 2.0), (Care, 0.5)],
+        "action:heal" => &[(Recovery, 2.0), (Care, 1.0)],
+        "action:sleep_natural" => &[(Order, 1.2), (Care, 0.6)],
+        "action:sleep_forced" => &[(Disruption, 2.0), (Order, -0.5)],
+        "action:wake_early" => &[(Disruption, 2.0), (Order, -1.0)],
+        "item:puzzle" => &[(Exploration, 2.0), (Order, 1.0)],
+        "item:magic_potion" => &[(Exploration, 1.5), (Recovery, 0.8)],
+        "item:music_box" => &[(Social, 2.5), (Recovery, 0.5)],
+        "item:magic_wand" => &[(Exploration, 2.5), (Play, 1.5)],
+        "item:crystal_ball" => &[(Exploration, 2.0), (Social, 1.0)],
+        "env:new_room" => &[(Exploration, 2.0), (Play, 0.5)],
+        _ if influence_id.starts_with("social:") => &[(Social, 1.5), (Exploration, 0.5)],
+        _ => &[],
+    };
+
+    pairs.iter().copied().collect()
+}
+
+fn behavior_evidence_for_personality(state: &EngineState, personality_id: &str) -> f64 {
+    if state.behavior_profile.sample_count < BEHAVIOR_PROFILE_EVOLUTION_MIN_SAMPLES {
+        return f64::INFINITY;
+    }
+
+    let axis = |key: BehaviorAxis| {
+        state
+            .behavior_profile
+            .axes
+            .get(&key)
+            .copied()
+            .unwrap_or(0.0)
+    };
+
+    match personality_id {
+        "playful" => axis(BehaviorAxis::Play) + axis(BehaviorAxis::Exploration) * 0.4,
+        "drowsy" => {
+            axis(BehaviorAxis::Disruption) + (25.0 - axis(BehaviorAxis::Play)).max(0.0) * 0.5
+        }
+        "foodie" => axis(BehaviorAxis::Care) + axis(BehaviorAxis::Social) * 0.25,
+        "bold" => {
+            axis(BehaviorAxis::Play)
+                + axis(BehaviorAxis::Exploration) * 0.6
+                + axis(BehaviorAxis::Disruption) * 0.2
+        }
+        "zen" => {
+            axis(BehaviorAxis::Order) + axis(BehaviorAxis::Care) * 0.5
+                - axis(BehaviorAxis::Disruption) * 0.6
+        }
+        "anxious" => axis(BehaviorAxis::Disruption) + axis(BehaviorAxis::Recovery) * 0.5,
+        "feral" => {
+            axis(BehaviorAxis::Play)
+                + axis(BehaviorAxis::Disruption) * 0.8
+                + (30.0 - axis(BehaviorAxis::Social)).max(0.0) * 0.3
+        }
+        "sage" => {
+            axis(BehaviorAxis::Exploration)
+                + axis(BehaviorAxis::Order) * 0.7
+                + axis(BehaviorAxis::Social) * 0.3
+        }
+        "pristine" => axis(BehaviorAxis::Order) + axis(BehaviorAxis::Care) * 0.4,
+        "empath" => {
+            axis(BehaviorAxis::Social)
+                + axis(BehaviorAxis::Care) * 0.5
+                + axis(BehaviorAxis::Recovery) * 0.3
+        }
+        "greedy" => axis(BehaviorAxis::Care) + axis(BehaviorAxis::Exploration) * 0.5,
+        "melancholic" => axis(BehaviorAxis::Disruption) + axis(BehaviorAxis::Social) * 0.2,
+        "chaotic" => {
+            axis(BehaviorAxis::Disruption)
+                + axis(BehaviorAxis::Play) * 0.7
+                + axis(BehaviorAxis::Exploration) * 0.7
+        }
+        "stoic" => axis(BehaviorAxis::Order) + (25.0 - axis(BehaviorAxis::Social)).max(0.0) * 0.4,
+        "adventurer" => {
+            axis(BehaviorAxis::Exploration)
+                + axis(BehaviorAxis::Play) * 0.6
+                + axis(BehaviorAxis::Care) * 0.2
+        }
+        "paranoid" => axis(BehaviorAxis::Disruption) + axis(BehaviorAxis::Order) * 0.4,
+        _ => 0.0,
+    }
+}
+
+fn decay_evolution_readiness(state: &mut EngineState, target: Option<&str>) {
+    if let Some(target) = target {
+        if state.evolution_readiness_target.as_deref() != Some(target) {
+            state.evolution_readiness_target = Some(target.to_string());
+            state.evolution_readiness = 0.0;
+            return;
+        }
+    }
+
+    state.evolution_readiness =
+        (state.evolution_readiness - EVOLUTION_READINESS_DECAY_PER_SYNC).max(0.0);
+    if state.evolution_readiness == 0.0 && target.is_none() {
+        state.evolution_readiness_target = None;
+    }
+}
+
+fn near_target_readiness_ratio(depth: f64) -> f64 {
+    if depth > 0.0 {
+        1.0
+    } else {
+        clamp(
+            (depth + NEAR_TARGET_READINESS_MARGIN) / NEAR_TARGET_READINESS_MARGIN,
+            0.0,
+            1.0,
+        )
+    }
+}
+
+fn behavior_target_depth_bonus(evidence: f64) -> f64 {
+    if !evidence.is_finite() {
+        return BEHAVIOR_TARGET_DEPTH_BONUS;
+    }
+    clamp(
+        evidence / BEHAVIOR_PROFILE_EVOLUTION_THRESHOLD.max(1.0),
+        0.0,
+        1.0,
+    ) * BEHAVIOR_TARGET_DEPTH_BONUS
 }
 
 fn update_formation_progress(
@@ -566,24 +848,44 @@ pub fn check_evolution(state: &mut EngineState) {
         state.ticks_in_target_zone = 0;
         state.evolution_proposal = None;
         state.void_syncs = 0;
+        decay_evolution_readiness(state, None);
         return;
     }
 
     // Find best candidate
     let personalities = crate::engine::personalities::get_personalities();
-    let best = personalities
+    let mut candidates: Vec<_> = personalities
         .iter()
         .filter(|p| p.id != current_id)
         .map(|p| {
             let depth = depth_of_immersion(&state.trait_vector, &p.id, age_hours);
-            (p.id.clone(), p.emoji.clone(), p.name.clone(), depth)
+            let evidence = behavior_evidence_for_personality(state, &p.id);
+            let adjusted_depth = depth + behavior_target_depth_bonus(evidence);
+            (
+                p.id.clone(),
+                p.emoji.clone(),
+                p.name.clone(),
+                depth,
+                adjusted_depth,
+            )
         })
-        .max_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
+        .collect();
+    candidates.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap_or(std::cmp::Ordering::Equal));
 
-    let (best_id, _best_emoji, best_name, best_depth) = match best {
-        Some(b) if b.3 > 0.0 => b,
+    let best = candidates
+        .iter()
+        .find(|candidate| {
+            near_target_readiness_ratio(candidate.4) > 0.0
+                && behavior_evidence_for_personality(state, &candidate.0)
+                    >= BEHAVIOR_PROFILE_EVOLUTION_THRESHOLD
+        })
+        .or_else(|| candidates.first())
+        .cloned();
+
+    let (best_id, _best_emoji, best_name, best_depth, best_adjusted_depth) = match best {
+        Some(b) => b,
         _ => {
-            // Void state
+            decay_evolution_readiness(state, None);
             state.current_target_zone = None;
             state.ticks_in_target_zone = 0;
             state.evolution_proposal = None;
@@ -595,25 +897,75 @@ pub fn check_evolution(state: &mut EngineState) {
         }
     };
 
+    let readiness_ratio = near_target_readiness_ratio(best_adjusted_depth);
+    if readiness_ratio <= 0.0 {
+        // Void state
+        decay_evolution_readiness(state, None);
+        state.current_target_zone = None;
+        state.ticks_in_target_zone = 0;
+        state.evolution_proposal = None;
+        state.void_syncs += 1;
+        if state.void_syncs >= VOID_THRESHOLD_SYNCS {
+            state.emergent_state = Some(EmergentStateType::IdentityCrisis);
+        }
+        return;
+    }
+
     state.void_syncs = 0;
+
+    if behavior_evidence_for_personality(state, &best_id) < BEHAVIOR_PROFILE_EVOLUTION_THRESHOLD {
+        decay_evolution_readiness(state, Some(&best_id));
+        state.current_target_zone = Some(best_id);
+        state.ticks_in_target_zone = 0;
+        state.evolution_proposal = None;
+        return;
+    }
 
     if state.current_target_zone.as_deref() != Some(&best_id) {
         state.current_target_zone = Some(best_id.clone());
         state.ticks_in_target_zone = 0;
+        state.evolution_readiness = if state.evolution_readiness_target.as_deref() == Some(&best_id)
+        {
+            state.evolution_readiness
+        } else {
+            0.0
+        };
+        state.evolution_readiness_target = Some(best_id.clone());
     }
-    state.ticks_in_target_zone += 1;
+    if best_depth > 0.0 {
+        state.ticks_in_target_zone += 1;
+    } else {
+        state.ticks_in_target_zone = 0;
+    }
 
     let current_depth_abs = current_depth.abs() * dynamic_radius(&current_id, age_hours);
     if current_depth_abs < HYSTERESIS {
         return;
     }
-    if state.ticks_in_target_zone < STABILITY_SYNCS {
+    state.evolution_readiness_target = Some(best_id.clone());
+    let readiness_gain = EVOLUTION_READINESS_GAIN_PER_CONFIRMED_SYNC
+        * if best_depth > 0.0 {
+            1.0
+        } else {
+            readiness_ratio * NEAR_TARGET_READINESS_GAIN_MULTIPLIER
+        };
+    state.evolution_readiness = clamp(
+        state.evolution_readiness + readiness_gain,
+        0.0,
+        EVOLUTION_READINESS_THRESHOLD,
+    );
+
+    let strict_readiness = ((state.ticks_in_target_zone as f64 / STABILITY_SYNCS as f64) * 100.0)
+        .min(100.0)
+        .round();
+    let accumulated_readiness = state.evolution_readiness.round();
+    if state.ticks_in_target_zone < STABILITY_SYNCS
+        && state.evolution_readiness < EVOLUTION_READINESS_THRESHOLD
+    {
         return;
     }
 
-    let readiness = ((state.ticks_in_target_zone as f64 / STABILITY_SYNCS as f64) * 100.0)
-        .min(100.0)
-        .round();
+    let readiness = strict_readiness.max(accumulated_readiness);
     let relevant_memories: Vec<String> = state
         .core_memories
         .iter()
@@ -654,6 +1006,8 @@ pub fn accept_evolution(state: &mut EngineState) -> bool {
     state.personality = to.clone();
     state.current_target_zone = None;
     state.ticks_in_target_zone = 0;
+    state.evolution_readiness = 0.0;
+    state.evolution_readiness_target = None;
     state.evolution_proposal = None;
     state.void_syncs = 0;
 
@@ -699,6 +1053,8 @@ pub fn reject_evolution(state: &mut EngineState) -> bool {
     state.evolution_proposal = None;
     state.current_target_zone = None;
     state.ticks_in_target_zone = 0;
+    state.evolution_readiness = 0.0;
+    state.evolution_readiness_target = None;
     true
 }
 

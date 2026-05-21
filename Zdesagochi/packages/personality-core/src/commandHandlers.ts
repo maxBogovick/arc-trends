@@ -28,13 +28,15 @@ import {
   checkWeeklyDrift,
   canApplyInfluenceAtSync,
   addCatharsisProgress,
+  createInitialBehaviorProfile,
   onStartSleep,
   onWakeFromSleep,
   rejectEvolution,
   recordDailyTraitSnapshot,
+  updateBehaviorProfile,
   CATHARSIS_XP_BURST_MULTIPLIER,
 } from './TraitEvolutionEngine';
-import type { ActionContext, ActionType, BlockedAction, PersonalityDefinition, RegisteredInfluence, StatKey, SyncContext, TraitVector } from './types';
+import type { ActionContext, ActionType, BehaviorProfile, BlockedAction, PersonalityDefinition, RegisteredInfluence, StatKey, SyncContext, TraitVector } from './types';
 
 export interface PersonalityCommandHandlerOptions {
   personalities?: PersonalityDefinition[];
@@ -113,6 +115,10 @@ export async function applyPersonalityCommand<TState extends PersonalityState>(
   const influenceCooldowns = { ...(options.influenceCooldowns ?? {}) };
   const currentSync = options.currentSync ?? 0;
   const beforeVector = cloneTraitVector(nextPet.traitVector);
+  const beforeBehaviorProfile = cloneBehaviorProfile(nextPet.behaviorProfile ?? createInitialBehaviorProfile());
+  const beforeEvolutionReadiness = nextPet.evolutionReadiness ?? 0;
+  const beforeEvolutionReadinessTarget = nextPet.evolutionReadinessTarget ?? null;
+  const sensitivityStats = { ...nextPet.stats };
   const beforeMemoryIds = new Set(nextPet.coreMemories.map(memory => memory.id));
   const beforeEmergentState = nextPet.emergentState;
   const beforeProposal = nextPet.evolutionProposal;
@@ -127,6 +133,9 @@ export async function applyPersonalityCommand<TState extends PersonalityState>(
     getIntensityMultiplier: options.getIntensityMultiplier ?? (() => 1),
     memoryTextGenerator,
     dominantInfluences: [command.type],
+    sensitivityStats,
+    enableContextSensitivity: true,
+    enablePreFormationSensitivity: true,
     rng,
   };
 
@@ -244,6 +253,9 @@ export async function applyPersonalityCommand<TState extends PersonalityState>(
     command,
     pet: nextPet,
     beforeVector,
+    beforeBehaviorProfile,
+    beforeEvolutionReadiness,
+    beforeEvolutionReadinessTarget,
     beforeMemoryIds,
     beforeEmergentState,
     beforeProposal,
@@ -302,6 +314,7 @@ function applyGameplayCommand(
 ): GameplayOutcome {
   const outcome = createEmptyGameplayOutcome();
   pet.behavioralCounters ??= createDefaultCounters({ now: context.now, rng: context.rng });
+  pet.behaviorProfile ??= createInitialBehaviorProfile();
   pet.behavioralFlags ??= [];
   pet.moodHistory ??= [];
 
@@ -329,14 +342,14 @@ function applyGameplayCommand(
         syncContext,
       );
       if (pet.stats.cleanliness < 30) {
-        decayed.health = clampStat(decayed.health - 0.5 * elapsedMinutes);
+        decayed.health = clampStat(decayed.health - 0.5 * (elapsedMinutes / 60));
       }
       pet.stats = decayed;
     } else {
       const restoreBonus = personality.restoreBonus.sleep?.energy ?? 0;
-      pet.stats.energy = clampStat(pet.stats.energy + (5 + restoreBonus) * (elapsedMinutes / 15));
-      pet.stats.hunger = clampStat(pet.stats.hunger - 0.8 * (elapsedMinutes / 15));
-      pet.stats.health = clampStat(pet.stats.health + 0.5 * (elapsedMinutes / 15));
+      pet.stats.energy = clampStat(pet.stats.energy + (2.5 + restoreBonus) * (elapsedMinutes / 15));
+      pet.stats.hunger = clampStat(pet.stats.hunger - 0.5 * (elapsedMinutes / 15));
+      pet.stats.health = clampStat(pet.stats.health + 0.125 * (elapsedMinutes / 15));
     }
 
     const passives = computeNaturalPassives(
@@ -975,6 +988,7 @@ async function applyRegisteredInfluence(
   }
 
   influenceCooldowns[influence.id] = currentSync;
+  updateBehaviorProfile(pet, influence.id, ctx);
   events.push({
     type: 'influence_applied',
     at: command.at,
@@ -1042,11 +1056,25 @@ function collectStateEvents(args: {
   command: PetCommand;
   pet: PersonalityState;
   beforeVector: TraitVector;
+  beforeBehaviorProfile?: BehaviorProfile;
+  beforeEvolutionReadiness: number;
+  beforeEvolutionReadinessTarget: PersonalityState['evolutionReadinessTarget'];
   beforeMemoryIds: Set<string>;
   beforeEmergentState: PersonalityState['emergentState'];
   beforeProposal: PersonalityState['evolutionProposal'];
 }): void {
-  const { events, command, pet, beforeVector, beforeMemoryIds, beforeEmergentState, beforeProposal } = args;
+  const {
+    events,
+    command,
+    pet,
+    beforeVector,
+    beforeBehaviorProfile,
+    beforeEvolutionReadiness,
+    beforeEvolutionReadinessTarget,
+    beforeMemoryIds,
+    beforeEmergentState,
+    beforeProposal,
+  } = args;
 
   if (!sameTraitVector(beforeVector, pet.traitVector)) {
     events.push({
@@ -1055,6 +1083,31 @@ function collectStateEvents(args: {
       commandId: command.commandId,
       prevVector: beforeVector,
       nextVector: cloneTraitVector(pet.traitVector),
+    });
+  }
+
+  const nextBehaviorProfile = cloneBehaviorProfile(pet.behaviorProfile);
+  if (beforeBehaviorProfile && nextBehaviorProfile && !sameBehaviorProfile(beforeBehaviorProfile, nextBehaviorProfile)) {
+    events.push({
+      type: 'behavior_profile_changed',
+      at: command.at,
+      commandId: command.commandId,
+      prevProfile: beforeBehaviorProfile,
+      nextProfile: nextBehaviorProfile,
+    });
+  }
+
+  const nextReadiness = pet.evolutionReadiness ?? 0;
+  const nextReadinessTarget = pet.evolutionReadinessTarget ?? null;
+  if (beforeEvolutionReadiness !== nextReadiness || beforeEvolutionReadinessTarget !== nextReadinessTarget) {
+    events.push({
+      type: 'evolution_readiness_changed',
+      at: command.at,
+      commandId: command.commandId,
+      from: beforeEvolutionReadiness,
+      to: nextReadiness,
+      targetFrom: beforeEvolutionReadinessTarget ?? null,
+      targetTo: nextReadinessTarget,
     });
   }
 
@@ -1109,6 +1162,28 @@ function sameTraitVector(a: TraitVector, b: TraitVector): boolean {
 
 function cloneTraitVector(vector: TraitVector): TraitVector {
   return { ...vector };
+}
+
+function cloneBehaviorProfile(profile: BehaviorProfile | undefined): BehaviorProfile | undefined {
+  if (!profile) return undefined;
+  return {
+    axes: { ...profile.axes },
+    sampleCount: profile.sampleCount,
+    lastUpdatedAt: profile.lastUpdatedAt,
+  };
+}
+
+function sameBehaviorProfile(a: BehaviorProfile, b: BehaviorProfile): boolean {
+  if (a.sampleCount !== b.sampleCount || a.lastUpdatedAt !== b.lastUpdatedAt) return false;
+  return (
+    a.axes.care === b.axes.care &&
+    a.axes.play === b.axes.play &&
+    a.axes.social === b.axes.social &&
+    a.axes.order === b.axes.order &&
+    a.axes.exploration === b.axes.exploration &&
+    a.axes.disruption === b.axes.disruption &&
+    a.axes.recovery === b.axes.recovery
+  );
 }
 
 function clonePet<TState extends PersonalityState>(pet: TState): TState {

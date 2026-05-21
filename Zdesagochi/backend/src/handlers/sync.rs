@@ -1,5 +1,5 @@
 use crate::{
-    db::{command_repo, economy_repo, pet_repo},
+    db::{command_repo, economy_repo, personality_telemetry_repo, pet_repo},
     domain::pet::Pet,
     engine::{
         self,
@@ -280,6 +280,19 @@ pub async fn submit_commands(
         )
         .await?;
 
+        if let Some(sample) = result_json.get("personalityTelemetry") {
+            personality_telemetry_repo::insert_sample_tx(
+                &mut tx,
+                &ulid::Ulid::new().to_string(),
+                &pet.id,
+                &auth.user_id,
+                &command.command_id,
+                &command.command_type,
+                sample,
+            )
+            .await?;
+        }
+
         last_accepted = Some(cmd_id.clone());
         accepted.push(cmd_id);
     }
@@ -325,12 +338,71 @@ fn command_result_json(
         })?,
     );
     object.insert("command".to_string(), raw_command.clone());
+    let events = command_events(result, command, at);
     object.insert(
         "events".to_string(),
-        serde_json::Value::Array(command_events(result, command, at)),
+        serde_json::Value::Array(events.clone()),
+    );
+    object.insert(
+        "personalityTelemetry".to_string(),
+        personality_telemetry_sample(pet, result, command, &events, at),
     );
 
     Ok(value)
+}
+
+fn personality_telemetry_sample(
+    pet: &Pet,
+    result: &PetCommandResult,
+    command: &PetCommand,
+    events: &[serde_json::Value],
+    at: DateTime<Utc>,
+) -> serde_json::Value {
+    let behavior_axes = pet
+        .behavior_profile
+        .get("axes")
+        .and_then(|value| value.as_object());
+    let dominant_behavior_axis = behavior_axes.and_then(|axes| {
+        axes.iter()
+            .filter_map(|(axis, value)| value.as_f64().map(|score| (axis.as_str(), score)))
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(axis, _)| axis)
+    });
+    let behavior_sample_count = pet
+        .behavior_profile
+        .get("sampleCount")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0);
+    let event_types: Vec<serde_json::Value> = events
+        .iter()
+        .filter_map(|event| event.get("type").and_then(|value| value.as_str()))
+        .map(|event_type| serde_json::Value::String(event_type.to_string()))
+        .collect();
+    let evolution_proposal_target = pet
+        .evolution_proposal
+        .as_ref()
+        .and_then(|proposal| proposal.get("targetPersonalityId"))
+        .and_then(|value| value.as_str());
+
+    serde_json::json!({
+        "commandId": command.command_id,
+        "commandType": command.command_type,
+        "recordedAt": at.to_rfc3339(),
+        "personalityId": pet.personality,
+        "formationComplete": pet.formation_complete,
+        "formationProgress": pet.formation_progress,
+        "currentTargetZone": pet.current_target_zone,
+        "evolutionReadiness": pet.evolution_readiness,
+        "evolutionReadinessTarget": pet.evolution_readiness_target,
+        "dominantBehaviorAxis": dominant_behavior_axis,
+        "behaviorSampleCount": behavior_sample_count,
+        "traitDrift": {},
+        "behaviorDrift": {},
+        "eventTypes": event_types,
+        "evolutionProposalTarget": evolution_proposal_target,
+        "engineVersion": result.engine_version,
+        "registryVersion": result.registry_version,
+    })
 }
 
 fn command_events(
@@ -493,6 +565,30 @@ pub async fn get_sync_results(
     Ok(Json(results))
 }
 
+#[derive(Deserialize)]
+pub struct TelemetryQuery {
+    pub limit: Option<i64>,
+}
+
+pub async fn get_personality_telemetry(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(query): Query<TelemetryQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let pet = pet_repo::get_pet(&state.db, &auth.user_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Pet not found".into()))?;
+
+    let samples = personality_telemetry_repo::get_recent_samples(
+        &state.db,
+        &pet.id,
+        query.limit.unwrap_or(50),
+    )
+    .await?;
+
+    Ok(Json(samples))
+}
+
 pub async fn publish_pet_update(state: &AppState, user_id: &str, pet: &crate::domain::pet::Pet) {
     let channel = format!("pet_updates:{}", user_id);
     let json = match serde_json::to_string(pet) {
@@ -578,6 +674,13 @@ mod tests {
         assert_eq!(value["events"][0]["influenceId"], "action:play");
         assert_eq!(value["events"][1]["type"], "gameplay_outcome_applied");
         assert_eq!(value["events"][1]["actionType"], "play");
+        assert_eq!(value["personalityTelemetry"]["commandId"], "cmd-play-1");
+        assert_eq!(value["personalityTelemetry"]["commandType"], "play");
+        assert_eq!(value["personalityTelemetry"]["personalityId"], "playful");
+        assert_eq!(
+            value["personalityTelemetry"]["eventTypes"][0],
+            "influence_applied"
+        );
     }
 
     #[test]

@@ -25,6 +25,7 @@
  *  POST   /api/pet/new-life        → NewLifeResult
  *  PATCH  /api/pet/name             → Pet         body: { name }
  *  GET    /api/pet/events           → PetEvent[]
+ *  GET    /api/pet/personality/telemetry → PersonalityTelemetrySample[]
  *  ─── Экономика ──────────────────────────────────────────────
  *  GET    /api/coins                → { coins: number }
  *  GET    /api/shop                 → ShopItem[]
@@ -86,6 +87,7 @@ export interface Pet {
   emergentStateEnteredAt?: string;
   stateLayers?: import('../personality/types').PetStateLayers;
   behavioralCounters: import('../personality/types').BehavioralCounters;
+  behaviorProfile?: import('../personality/types').BehaviorProfile;
   moodHistory: import('../personality/types').MoodSnapshot[];
 
   // ── Trait Evolution System v5.0 (§13 field checklist) ───────────
@@ -95,6 +97,8 @@ export interface Pet {
   // O(1) evolution counters: currentTargetZone, ticksInTargetZone, voidSyncs
   currentTargetZone: import('../personality/types').PersonalityId | null;
   ticksInTargetZone: number;
+  evolutionReadiness?: number;
+  evolutionReadinessTarget?: import('../personality/types').PersonalityId | null;
   voidSyncs: number;
   // UI snapshots: dailyTraitSnapshots
   dailyTraitSnapshots: import('../personality/types').TraitSnapshot[];
@@ -159,6 +163,26 @@ export interface PetEvent {
   emoji: string;
   xpGained?: number;
   coinsGained?: number;
+}
+
+export interface PersonalityTelemetrySample {
+  commandId: string;
+  commandType: string;
+  recordedAt: string;
+  personalityId: string;
+  formationComplete: boolean;
+  formationProgress: number;
+  currentTargetZone: import('../personality/types').PersonalityId | null;
+  evolutionReadiness: number;
+  evolutionReadinessTarget: import('../personality/types').PersonalityId | null;
+  dominantBehaviorAxis: import('../personality/types').BehaviorAxis | null;
+  behaviorSampleCount: number;
+  traitDrift: Partial<Record<import('../personality/types').TraitKey, number>>;
+  behaviorDrift: Partial<Record<import('../personality/types').BehaviorAxis, number>>;
+  eventTypes: string[];
+  evolutionProposalTarget: import('../personality/types').PersonalityId | null;
+  engineVersion?: string;
+  registryVersion?: string;
 }
 
 // ─── Еда ─────────────────────────────────────────────────────────────────────
@@ -309,6 +333,7 @@ export interface ApiService {
   beginNewLife(): Promise<NewLifeResult>;
   updatePetName(name: string): Promise<Pet>;
   getPetEvents(): Promise<PetEvent[]>;
+  getPersonalityTelemetry?(): Promise<PersonalityTelemetrySample[]>;
 
   // Магазин / Инвентарь
   getCoins(): Promise<{ coins: number }>;

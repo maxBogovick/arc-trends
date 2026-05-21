@@ -10,7 +10,7 @@ import {
 } from '../src/api/mockApi';
 import { LocalSave } from '../src/api/localSave';
 import { SyncQueue } from '../src/api/syncQueue';
-import { ExplainabilityLog, explainCommandRecord } from '../src/api/explainability';
+import { ExplainabilityLog, createExplainabilityRecord, explainCommandRecord } from '../src/api/explainability';
 import { BackendReplayServerApi } from '../src/api/backendReplayServer';
 import { PetService, type PetServiceState } from '../src/api/petService';
 import { fromPersonalityState, toPersonalityState } from '../src/api/personalityPetAdapter';
@@ -60,6 +60,7 @@ import {
   checkEvolution,
   checkWeeklyDrift,
   collapseSingularity,
+  createInitialBehaviorProfile,
   createInitialTraitVector,
   detectSingularity,
   depthOfImmersion,
@@ -72,6 +73,8 @@ import {
   rejectEvolution,
   triggerCatharsis,
   CATHARSIS_XP_BURST_MULTIPLIER,
+  POST_FORMATION_ADAPTATION_MULTIPLIER,
+  PRE_FORMATION_SENSITIVITY_MULTIPLIER,
 } from '../src/personality/TraitEvolutionEngine';
 import { getEmergentStateDef } from '../src/personality/emergentStates';
 import { BASE_ACTION_RULES, validateActionRules } from '../src/personality/actionRules';
@@ -711,25 +714,62 @@ test('explainability selector summarizes command result events', async () => {
     commandId: 'cmd-explain-feed',
   });
 
-  const explanation = explainCommandRecord({
-    command: result.command,
-    events: result.events,
-    statDeltas: result.statDeltas,
-    xpDelta: result.xpDelta,
-    coinDelta: result.coinDelta,
-    blockedAction: result.blockedAction,
-    appliedModifiers: result.appliedModifiers,
-    meta: result.meta,
-    engineVersion: result.engineVersion,
-    registryVersion: result.registryVersion,
-    recordedAt: '2026-05-04T01:00:01.000Z',
-  });
+  const explanation = explainCommandRecord(createExplainabilityRecord(result, '2026-05-04T01:00:01.000Z'));
 
   assert.equal(explanation.commandId, 'cmd-explain-feed');
   assert.equal(explanation.blocked, false);
   assert.equal(explanation.details.some(detail => detail.includes('Stats: hunger +10')), true);
   assert.equal(explanation.details.some(detail => detail.includes('XP:')), true);
   assert.equal(explanation.details.some(detail => detail.includes('Traits:')), true);
+});
+
+test('explainability records personality telemetry and player-facing character reasons', async () => {
+  const result = await applyPersonalityCommand(makePet({ formationComplete: true }), {
+    type: 'bond',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-explain-bond',
+  });
+
+  const explanation = explainCommandRecord(createExplainabilityRecord(result, '2026-05-04T01:00:01.000Z'));
+
+  assert.equal(result.events.some(event => event.type === 'behavior_profile_changed'), true);
+  assert.equal(explanation.record.personalityTelemetry?.commandId, 'cmd-explain-bond');
+  assert.equal(explanation.record.personalityTelemetry?.dominantBehaviorAxis, 'social');
+  assert.equal((explanation.record.personalityTelemetry?.behaviorDrift.social ?? 0) > 0, true);
+  assert.equal(explanation.personalityDetails.some(detail => detail.includes('Поведенческий профиль')), true);
+  assert.equal(typeof explanation.personalitySummary, 'string');
+});
+
+test('explainability telemetry captures evolution readiness movement', async () => {
+  const result = await applyPersonalityCommand(makePet({
+    personality: 'playful',
+    traitVector: { ...PERSONALITY_TRAIT_MAP.paranoid.position },
+    formationComplete: true,
+    behaviorProfile: createInitialBehaviorProfile({
+      axes: {
+        care: 0,
+        play: 0,
+        social: 0,
+        order: 40,
+        exploration: 0,
+        disruption: 40,
+        recovery: 0,
+      },
+      sampleCount: 24,
+    }),
+  }), {
+    type: 'sync',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-explain-sync-readiness',
+  });
+
+  const explanation = explainCommandRecord(createExplainabilityRecord(result, '2026-05-04T01:00:01.000Z'));
+
+  assert.equal(result.events.some(event => event.type === 'evolution_readiness_changed'), true);
+  assert.equal(explanation.record.personalityTelemetry?.evolutionReadinessTarget, 'paranoid');
+  assert.equal((explanation.record.personalityTelemetry?.evolutionReadiness ?? 0) > 0, true);
+  assert.equal(explanation.personalityDetails.some(detail => detail.includes('Готовность к смене характера')), true);
+  assert.equal(explanation.personalitySummary?.includes('paranoid'), true);
 });
 
 test('offline command log can be compacted before persistence', () => {
@@ -1296,8 +1336,8 @@ await testAsync('personality command feed applies exact trait deltas without mut
 
   assert.equal(pet.traitVector.appetite, 50);
   assert.equal(pet.traitVector.sociality, 50);
-  closeTo(result.pet.traitVector.appetite, 50 + 2 * 0.08);
-  closeTo(result.pet.traitVector.sociality, 50 + 0.5 * 0.08);
+  closeTo(result.pet.traitVector.appetite, 50 + 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(result.pet.traitVector.sociality, 50 + 0.5 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   assert.equal(result.pet.dailyTraitBudget.appetite, 2);
   assert.equal(result.pet.dailyTraitBudget.sociality, 0.5);
   assert.equal(result.pet.dailyVectorVariance, 2.5);
@@ -1305,6 +1345,20 @@ await testAsync('personality command feed applies exact trait deltas without mut
   assert.equal(result.engineVersion, PERSONALITY_ENGINE_VERSION);
   assert.equal(result.registryVersion, STATIC_REGISTRY_VERSION);
   assert.equal(result.schemaVersion, PERSONALITY_STATE_SCHEMA_VERSION);
+});
+
+await testAsync('personality command records long-term behavior profile separately from traits', async () => {
+  const result = await applyPersonalityCommand(makePet({ formationComplete: true }), {
+    type: 'play',
+    scoreSeed: '100',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-play-behavior-profile',
+  });
+
+  assert.equal(result.pet.behaviorProfile?.sampleCount, 1);
+  assert.equal((result.pet.behaviorProfile?.axes.play ?? 0) > 0, true);
+  assert.equal((result.pet.behaviorProfile?.axes.exploration ?? 0) > 0, true);
+  assert.equal(result.pet.behaviorProfile?.axes.care ?? 0, 0);
 });
 
 await testAsync('personality command play returns full gameplay outcome', async () => {
@@ -1530,8 +1584,8 @@ await testAsync('personality command use_item food falls back to feed influence 
     commandId: 'cmd-use-food-fallback',
   });
 
-  closeTo(result.pet.traitVector.appetite, 50 + 2 * 0.08);
-  closeTo(result.pet.traitVector.sociality, 50 + 0.5 * 0.08);
+  closeTo(result.pet.traitVector.appetite, 50 + 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(result.pet.traitVector.sociality, 50 + 0.5 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   closeTo(result.pet.traitVector.curiosity, 50);
   assert.equal(result.influenceCooldowns['action:feed'], 0);
   assert.equal(result.influenceCooldowns['item:premium_burger'], undefined);
@@ -1548,8 +1602,8 @@ await testAsync('personality command use_item prefers item influence over food f
     commandId: 'cmd-use-food-item-influence',
   });
 
-  closeTo(result.pet.traitVector.curiosity, 50 + 3 * 0.08);
-  closeTo(result.pet.traitVector.appetite, 50 + 2 * 0.08);
+  closeTo(result.pet.traitVector.curiosity, 50 + 3 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(result.pet.traitVector.appetite, 50 + 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   closeTo(result.pet.traitVector.sociality, 50);
   assert.equal(result.influenceCooldowns['item:magic_potion'], 0);
   assert.equal(result.influenceCooldowns['action:feed'], undefined);
@@ -1566,8 +1620,8 @@ await testAsync('personality command handler gates influences with serializable 
     currentSync: 10,
   });
 
-  closeTo(first.pet.traitVector.sociality, 50 + 2 * 0.08);
-  closeTo(first.pet.traitVector.caution, 50 - 1 * 0.08);
+  closeTo(first.pet.traitVector.sociality, 50 + 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(first.pet.traitVector.caution, 50 - 1 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   assert.equal(first.influenceCooldowns['action:bond'], 10);
 
   const blocked = await applyPersonalityCommand(first.pet, {
@@ -1600,8 +1654,8 @@ await testAsync('personality command handler gates influences with serializable 
     influenceCooldowns: blocked.influenceCooldowns,
   });
 
-  closeTo(afterCooldown.pet.traitVector.sociality, first.pet.traitVector.sociality + 2 * 0.08);
-  closeTo(afterCooldown.pet.traitVector.caution, first.pet.traitVector.caution - 1 * 0.08);
+  closeTo(afterCooldown.pet.traitVector.sociality, first.pet.traitVector.sociality + 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(afterCooldown.pet.traitVector.caution, first.pet.traitVector.caution - 1 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   assert.equal(afterCooldown.influenceCooldowns['action:bond'], 11);
 });
 
@@ -1619,16 +1673,16 @@ await testAsync('personality replay advances sync buckets and preserves cooldown
 
   const result = await replayPersonalityCommands(pet, commands, { initialSync: 0 });
 
-  const socialityAfterFirstBond = 50 + 2 * 0.08;
-  const cautionAfterFirstBond = 50 - 1 * 0.08;
+  const socialityAfterFirstBond = 50 + 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER;
+  const cautionAfterFirstBond = 50 - 1 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER;
   const socialityAfterSync = socialityAfterFirstBond + (PERSONALITY_TRAIT_MAP.playful.position.sociality - socialityAfterFirstBond) * REGRESSION_RATE;
   const cautionAfterSync = cautionAfterFirstBond + (PERSONALITY_TRAIT_MAP.playful.position.caution - cautionAfterFirstBond) * REGRESSION_RATE;
 
   assert.equal(result.currentSync, 1);
   assert.equal(result.commandResults.length, 4);
   assert.equal(result.influenceCooldowns['action:bond'], 1);
-  closeTo(result.pet.traitVector.sociality, socialityAfterSync + 2 * 0.08);
-  closeTo(result.pet.traitVector.caution, cautionAfterSync - 1 * 0.08);
+  closeTo(result.pet.traitVector.sociality, socialityAfterSync + 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(result.pet.traitVector.caution, cautionAfterSync - 1 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   assert.equal(result.pet.dailyVectorVariance, 6);
   assert.equal(result.pet.dailyTraitBudget.sociality, 2);
   assert.equal(result.pet.dailyTraitBudget.caution, 1);
@@ -1801,7 +1855,7 @@ await testAsync('personality command replay uses deterministic rng for singulari
   assert.equal(second.pet.evolutionHistory.at(-1)?.trigger, 'singularity');
 });
 
-await testAsync('personality command forced sleep records sleep start and exact forced sleep influence', async () => {
+await testAsync('personality command forced sleep records sleep start and energized context influence', async () => {
   const pet = makePet({
     formationComplete: true,
     stats: { hunger: 80, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
@@ -1814,11 +1868,11 @@ await testAsync('personality command forced sleep records sleep start and exact 
   });
 
   assert.equal(result.pet.sleepStartedAt, '2026-05-04T02:00:00.000Z');
-  closeTo(result.pet.traitVector.vitality, 50 - 2 * 0.08);
-  closeTo(result.pet.traitVector.order, 50 - 1 * 0.08);
-  closeTo(result.pet.traitVector.caution, 50 + 1 * 0.08);
+  closeTo(result.pet.traitVector.vitality, 50 - 2 * 1.35 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(result.pet.traitVector.order, 50 - 1 * 1.35 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(result.pet.traitVector.caution, 50 + 1 * 1.35 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   assert.equal(result.pet.traumaLevel, 1);
-  assert.equal(result.pet.dailyVectorVariance, 4);
+  assert.equal(result.pet.dailyVectorVariance, 5.4);
   assert.equal(result.events.some(event => event.type === 'sleep_started'), true);
   assert.equal(result.events.some(event => event.type === 'trait_vector_changed'), true);
 });
@@ -1870,9 +1924,9 @@ await testAsync('personality command early wake keeps confused variance and appl
   assert.equal(result.pet.confusedState, true);
   assert.equal(result.pet.dailyVectorVariance, 35);
   assert.equal(result.pet.traumaLevel, 2);
-  closeTo(result.pet.traitVector.order, 50 - 2 * 0.08);
-  closeTo(result.pet.traitVector.caution, 50 + 2 * 0.08);
-  closeTo(result.pet.traitVector.vitality, 50 + 1 * 0.08);
+  closeTo(result.pet.traitVector.order, 50 - 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(result.pet.traitVector.caution, 50 + 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(result.pet.traitVector.vitality, 50 + 1 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   const sleepEvent = result.events.find(event => event.type === 'sleep_finished');
   if (sleepEvent?.type === 'sleep_finished') {
     assert.equal(sleepEvent.naturalWake, false);
@@ -2008,7 +2062,7 @@ test('applyInfluence applies intensity rules only when conditions match', () => 
 
   // 1 * 2 * 0.5 * 1.5 * 0.5 * 2 = 1.5; non-matching order rule is ignored.
   assert.equal(result.budgetedDelta.vitality, 1.5);
-  closeTo(pet.traitVector.vitality, 50 + 1.5 * 0.08);
+  closeTo(pet.traitVector.vitality, 50 + 1.5 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
 });
 
 test('applyInfluence blocks registered influence when conditions do not match', () => {
@@ -2053,7 +2107,58 @@ test('global intensity multiplier scales raw influence before smoothing', () => 
   );
 
   assert.equal(result.budgetedDelta.appetite, 4.8);
-  closeTo(pet.traitVector.appetite, 50 + 4.8 * 0.08);
+  closeTo(pet.traitVector.appetite, 50 + 4.8 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+});
+
+await testAsync('pre-formation command path is more sensitive than mature regression path', async () => {
+  const unformed = await applyPersonalityCommand(makePet({ formationComplete: false }), {
+    type: 'feed',
+    foodId: 'apple',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-feed-preformation-sensitive',
+  });
+  const formed = await applyPersonalityCommand(makePet({ formationComplete: true }), {
+    type: 'feed',
+    foodId: 'apple',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-feed-formed-baseline',
+  });
+
+  closeTo(
+    unformed.pet.traitVector.appetite - 50,
+    (formed.pet.traitVector.appetite - 50)
+      * (PRE_FORMATION_SENSITIVITY_MULTIPLIER / POST_FORMATION_ADAPTATION_MULTIPLIER),
+  );
+  assert.equal(unformed.pet.formationProgress, 2.5);
+  assert.equal(formed.pet.formationProgress, 0);
+});
+
+await testAsync('action influence strength responds to user timing and pet needs', async () => {
+  const hungry = await applyPersonalityCommand(makePet({
+    formationComplete: true,
+    stats: { hunger: 20, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  }), {
+    type: 'feed',
+    foodId: 'apple',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-feed-hungry',
+  });
+  const full = await applyPersonalityCommand(makePet({
+    formationComplete: true,
+    stats: { hunger: 90, happiness: 80, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  }), {
+    type: 'feed',
+    foodId: 'apple',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-feed-full',
+  });
+
+  closeTo(hungry.pet.traitVector.appetite, 50 + 2 * 0.5 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(hungry.pet.traitVector.sociality, 50 + 0.5 * 1.4 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(full.pet.traitVector.appetite, 50 + 2 * 1.2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(full.pet.traitVector.sociality, 50 + 0.5 * 0.65 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  assert.equal(full.pet.traitVector.appetite > hungry.pet.traitVector.appetite, true);
+  assert.equal(hungry.pet.traitVector.sociality > full.pet.traitVector.sociality, true);
 });
 
 test('system influence does not advance formation', () => {
@@ -2109,6 +2214,117 @@ test('checkEvolution creates proposal after stable target zone', () => {
   assert.equal(pet.ticksInTargetZone, STABILITY_SYNCS);
   assert.equal(pet.evolutionProposal?.targetPersonalityId, 'paranoid');
   assert.equal(pet.evolutionProposal?.readiness, 100);
+});
+
+test('checkEvolution requires behavior evidence once behavior profile is established', () => {
+  const pet = makePet({
+    traitVector: { ...PERSONALITY_TRAIT_MAP.paranoid.position },
+    formationComplete: true,
+    behaviorProfile: createInitialBehaviorProfile({
+      axes: {
+        care: 0,
+        play: 0,
+        social: 80,
+        order: 0,
+        exploration: 0,
+        disruption: 0,
+        recovery: 0,
+      },
+      sampleCount: 24,
+    }),
+  });
+
+  for (let i = 0; i < STABILITY_SYNCS; i++) {
+    checkEvolution(pet, { now: new Date('2026-05-04T00:00:00.000Z') });
+  }
+
+  assert.equal(pet.currentTargetZone, 'paranoid');
+  assert.equal(pet.ticksInTargetZone, 0);
+  assert.equal(pet.evolutionProposal, undefined);
+});
+
+test('checkEvolution accepts stable target only when behavior profile supports it', () => {
+  const pet = makePet({
+    traitVector: { ...PERSONALITY_TRAIT_MAP.paranoid.position },
+    formationComplete: true,
+    behaviorProfile: createInitialBehaviorProfile({
+      axes: {
+        care: 0,
+        play: 0,
+        social: 0,
+        order: 40,
+        exploration: 0,
+        disruption: 40,
+        recovery: 0,
+      },
+      sampleCount: 24,
+    }),
+  });
+
+  for (let i = 0; i < STABILITY_SYNCS; i++) {
+    checkEvolution(pet, { now: new Date('2026-05-04T00:00:00.000Z') });
+  }
+
+  assert.equal(pet.currentTargetZone, 'paranoid');
+  assert.equal(pet.ticksInTargetZone, STABILITY_SYNCS);
+  assert.equal(pet.evolutionProposal?.targetPersonalityId, 'paranoid');
+});
+
+test('checkEvolution can accumulate readiness across confirmed target-zone syncs', () => {
+  const pet = makePet({
+    traitVector: { ...PERSONALITY_TRAIT_MAP.paranoid.position },
+    formationComplete: true,
+    behaviorProfile: createInitialBehaviorProfile({
+      axes: {
+        care: 0,
+        play: 0,
+        social: 0,
+        order: 40,
+        exploration: 0,
+        disruption: 40,
+        recovery: 0,
+      },
+      sampleCount: 24,
+    }),
+  });
+
+  for (let i = 0; i < 3; i++) {
+    checkEvolution(pet, { now: new Date('2026-05-04T00:00:00.000Z') });
+  }
+
+  assert.equal(pet.currentTargetZone, 'paranoid');
+  assert.equal(pet.ticksInTargetZone, 3);
+  assert.equal(pet.evolutionReadiness, 100);
+  assert.equal(pet.evolutionProposal?.targetPersonalityId, 'paranoid');
+  assert.equal(pet.evolutionProposal?.readiness, 100);
+});
+
+test('checkEvolution does not accumulate readiness from unsupported behavior spikes', () => {
+  const pet = makePet({
+    traitVector: { ...PERSONALITY_TRAIT_MAP.paranoid.position },
+    formationComplete: true,
+    behaviorProfile: createInitialBehaviorProfile({
+      axes: {
+        care: 0,
+        play: 90,
+        social: 0,
+        order: 0,
+        exploration: 90,
+        disruption: 0,
+        recovery: 0,
+      },
+      sampleCount: 24,
+    }),
+  });
+
+  for (let i = 0; i < 20; i++) {
+    checkEvolution(pet, { now: new Date('2026-05-04T00:00:00.000Z') });
+  }
+
+  assert.equal(pet.currentTargetZone, 'paranoid');
+  assert.equal(pet.ticksInTargetZone, 0);
+  assert.equal(pet.evolutionReadiness, 0);
+  assert.equal(pet.evolutionProposal, undefined);
 });
 
 test('checkEvolution respects hysteresis boundary before proposing', () => {
@@ -2814,7 +3030,9 @@ await testAsync('MockApi persists local save and sync queue without gameplay log
     const afterBond = await api.bondWithPet();
     const loaded = new LocalSave(storage).load();
     const pending = new SyncQueue(storage).listPending();
-    const explanation = new ExplainabilityLog(storage).select();
+    const explainabilityLog = new ExplainabilityLog(storage);
+    const explanation = explainabilityLog.select();
+    const telemetry = explainabilityLog.listPersonalityTelemetry();
 
     assert.equal(loaded.ok, true);
     if (!loaded.ok) assert.fail('local save was not persisted');
@@ -2824,6 +3042,8 @@ await testAsync('MockApi persists local save and sync queue without gameplay log
     assert.equal(explanation?.commandType, 'bond');
     assert.equal(explanation.details.some(detail => detail.startsWith('Stats:')), true);
     assert.equal(explanation.details.some(detail => detail.startsWith('Traits:')), true);
+    assert.equal(telemetry[0]?.commandType, 'bond');
+    assert.equal(telemetry[0]?.eventTypes.includes('behavior_profile_changed'), true);
     assert.equal(typeof loaded.snapshot.influenceCooldowns['action:bond'], 'number');
     closeTo(loaded.snapshot.pet.traitVector.sociality, afterBond.traitVector.sociality);
 

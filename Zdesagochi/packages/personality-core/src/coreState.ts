@@ -1,5 +1,6 @@
 import type {
   BehavioralCounters,
+  BehaviorProfile,
   BehavioralFlag,
   CoreMemory,
   EmergentStateType,
@@ -74,11 +75,14 @@ export interface PersonalityState {
   emergentStateEnteredAt?: string;
   stateLayers?: PetStateLayers;
   behavioralCounters: BehavioralCounters;
+  behaviorProfile?: BehaviorProfile;
   moodHistory: MoodSnapshot[];
   traitVector: TraitVector;
   dailyTraitBudget: Partial<Record<TraitKey, number>>;
   currentTargetZone: PersonalityId | null;
   ticksInTargetZone: number;
+  evolutionReadiness?: number;
+  evolutionReadinessTarget?: PersonalityId | null;
   voidSyncs: number;
   dailyTraitSnapshots: TraitSnapshot[];
   coreMemories: CoreMemory[];

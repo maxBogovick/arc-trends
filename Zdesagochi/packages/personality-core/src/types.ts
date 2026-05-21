@@ -58,6 +58,26 @@ export type TraitKey = typeof TRAIT_KEYS[number];
 
 export type TraitVector = Record<TraitKey, number>;
 
+export const BEHAVIOR_AXES = [
+  'care',
+  'play',
+  'social',
+  'order',
+  'exploration',
+  'disruption',
+  'recovery',
+] as const;
+
+export type BehaviorAxis = typeof BEHAVIOR_AXES[number];
+
+export type BehaviorVector = Record<BehaviorAxis, number>;
+
+export interface BehaviorProfile {
+  axes: BehaviorVector;
+  sampleCount: number;
+  lastUpdatedAt?: string;
+}
+
 export type InfluenceCategory =
   | 'action'
   | 'item'

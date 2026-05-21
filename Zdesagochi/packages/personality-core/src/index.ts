@@ -37,14 +37,18 @@ export {
   PERSONALITY_STATE_SCHEMA_VERSION,
   STATIC_REGISTRY_VERSION,
 } from './engineVersion';
+export { createInitialBehaviorProfile } from './TraitEvolutionEngine';
 export type { PersonalityStateMigrationResult } from './stateMigration';
 export { migratePersonalityState } from './stateMigration';
 export type {
   ActionType,
   ActiveEmergentState,
   BehavioralCounters,
+  BehaviorAxis,
   BehavioralFlag,
   BehavioralFlagType,
+  BehaviorProfile,
+  BehaviorVector,
   CoreMemory,
   EmergentStateLayer,
   EmergentStateType,

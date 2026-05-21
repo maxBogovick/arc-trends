@@ -143,6 +143,11 @@ export class PetService {
     return this.explainabilityLog?.select(commandId) ?? null;
   }
 
+  listPersonalityTelemetry() {
+    this.hydrate();
+    return this.explainabilityLog?.listPersonalityTelemetry() ?? [];
+  }
+
   private save(): void {
     this.localSave?.save(this.options.getState(), this.options.nowIso());
   }

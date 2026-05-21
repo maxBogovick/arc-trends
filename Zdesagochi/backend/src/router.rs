@@ -55,7 +55,11 @@ pub fn build_router(state: AppState, prometheus_handle: PrometheusHandle) -> Rou
         .route("/evolution/accept", post(pet::accept_evolution))
         .route("/evolution/reject", post(pet::reject_evolution))
         .route("/sync/commands", post(sync::submit_commands))
-        .route("/sync/results", get(sync::get_sync_results));
+        .route("/sync/results", get(sync::get_sync_results))
+        .route(
+            "/personality/telemetry",
+            get(sync::get_personality_telemetry),
+        );
 
     let economy_routes = Router::new()
         .route("/coins", get(economy::get_coins))

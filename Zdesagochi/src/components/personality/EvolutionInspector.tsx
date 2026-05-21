@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { DAILY_BUDGET, FORMATION_THRESHOLD, SINGULARITY_THRESHOLD_SYNCS, STABILITY_SYNCS } from '../../personality/TraitEvolutionEngine';
 import { getPersonality } from '@zdesagochi/personality-pet-preset';
-import { TRAIT_KEYS, type TraitKey } from '../../personality/types';
+import { BEHAVIOR_AXES, TRAIT_KEYS, type BehaviorAxis, type TraitKey } from '../../personality/types';
 import { usePetStore } from '../../store/petStore';
 
 const TRAIT_LABELS: Record<TraitKey, { label: string; color: string; bg: string }> = {
@@ -12,6 +12,16 @@ const TRAIT_LABELS: Record<TraitKey, { label: string; color: string; bg: string 
   appetite: { label: 'Аппетит', color: '#F59E0B', bg: 'rgba(245,158,11,0.14)' },
   caution: { label: 'Осторожность', color: '#8B5CF6', bg: 'rgba(139,92,246,0.12)' },
   curiosity: { label: 'Любопытство', color: '#10B981', bg: 'rgba(16,185,129,0.12)' },
+};
+
+const BEHAVIOR_LABELS: Record<BehaviorAxis, { label: string; color: string; bg: string }> = {
+  care: { label: 'Забота', color: '#14B8A6', bg: 'rgba(20,184,166,0.12)' },
+  play: { label: 'Игра', color: '#F97316', bg: 'rgba(249,115,22,0.12)' },
+  social: { label: 'Связь', color: '#0EA5E9', bg: 'rgba(14,165,233,0.12)' },
+  order: { label: 'Режим', color: '#6366F1', bg: 'rgba(99,102,241,0.12)' },
+  exploration: { label: 'Поиск', color: '#10B981', bg: 'rgba(16,185,129,0.12)' },
+  disruption: { label: 'Срыв', color: '#EF4444', bg: 'rgba(239,68,68,0.12)' },
+  recovery: { label: 'Восстановление', color: '#84CC16', bg: 'rgba(132,204,22,0.12)' },
 };
 
 const IS_DEV = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
@@ -44,6 +54,14 @@ export function EvolutionInspector() {
   const dailyBudget = pet.dailyTraitBudget ?? {};
   const memories = pet.coreMemories ?? [];
   const target = pet.currentTargetZone ? getPersonality(pet.currentTargetZone) : null;
+  const readinessTarget = pet.evolutionReadinessTarget ? getPersonality(pet.evolutionReadinessTarget) : null;
+  const behaviorProfile = pet.behaviorProfile;
+  const behaviorAxes = behaviorProfile?.axes;
+  const dominantBehaviorAxis = behaviorAxes
+    ? BEHAVIOR_AXES.reduce((best, axis) => behaviorAxes[axis] > behaviorAxes[best] ? axis : best, BEHAVIOR_AXES[0])
+    : null;
+  const dominantBehaviorMeta = dominantBehaviorAxis ? BEHAVIOR_LABELS[dominantBehaviorAxis] : null;
+  const evolutionReadiness = pet.evolutionReadiness ?? 0;
   const proposal = pet.evolutionProposal;
   const proposalTarget = proposal ? getPersonality(proposal.targetPersonalityId) : null;
   const formationProgress = pet.formationProgress ?? 0;
@@ -461,6 +479,53 @@ export function EvolutionInspector() {
             >
               Отложить
             </button>
+          </div>
+        </div>
+      )}
+
+      {pet.formationComplete && (
+        <div className="rounded-2xl px-3 py-3 space-y-3 bg-white/70 border border-white/80">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Character signal</p>
+              <p className="text-[12px] font-bold text-gray-700 mt-0.5">
+                {dominantBehaviorMeta ? dominantBehaviorMeta.label : 'Нет сигнала'}
+              </p>
+            </div>
+            <span className="text-[10px] text-gray-400">
+              samples {behaviorProfile?.sampleCount ?? 0}
+            </span>
+          </div>
+
+          {dominantBehaviorAxis && dominantBehaviorMeta && (
+            <div className="space-y-1">
+              <div className="h-2 rounded-full overflow-hidden" style={{ background: dominantBehaviorMeta.bg }}>
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ background: dominantBehaviorMeta.color }}
+                  animate={{ width: `${pct(behaviorAxes?.[dominantBehaviorAxis] ?? 0)}%` }}
+                  transition={{ duration: 0.35, ease: 'easeOut' }}
+                />
+              </div>
+              <p className="text-[11px] text-gray-500">
+                {dominantBehaviorMeta.label} · {fmt(behaviorAxes?.[dominantBehaviorAxis])}
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl px-3 py-2 bg-gray-50 border border-gray-100">
+              <p className="text-[10px] text-gray-400">Цель</p>
+              <p className="text-[11px] font-semibold text-gray-600 truncate">
+                {target ? `${target.emoji} ${target.name}` : 'нет'}
+              </p>
+            </div>
+            <div className="rounded-xl px-3 py-2 bg-gray-50 border border-gray-100">
+              <p className="text-[10px] text-gray-400">Готовность</p>
+              <p className="text-[11px] font-semibold text-gray-600 truncate">
+                {readinessTarget ? `${readinessTarget.emoji} ${readinessTarget.name}` : 'нет'} · {Math.round(evolutionReadiness)}%
+              </p>
+            </div>
           </div>
         </div>
       )}

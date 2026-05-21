@@ -17,8 +17,8 @@ use crate::engine::trait_evolution::{
     check_shadow_form, reject_evolution as te_reject_evolution, CATHARSIS_XP_BURST_MULTIPLIER,
 };
 use crate::engine::types::{
-    clamp_stat, ActiveEmergentState, AppliedModifier, BehavioralCounters, BlockedAction,
-    CoreMemory, EmergentStateType, EvolutionProposal, EvolutionRecord, MoodSnapshot,
+    clamp_stat, ActiveEmergentState, AppliedModifier, BehaviorProfile, BehavioralCounters,
+    BlockedAction, CoreMemory, EmergentStateType, EvolutionProposal, EvolutionRecord, MoodSnapshot,
     PetCommandResult, PetStateLayers, StatKey, TraitKey, TraitSnapshot, TraitVector,
 };
 
@@ -35,6 +35,7 @@ pub struct EngineState {
     pub xp: i32,
     pub xp_to_next: i32,
     pub behavioral_counters: BehavioralCounters,
+    pub behavior_profile: BehaviorProfile,
     pub behavioral_flags: Vec<serde_json::Value>,
     pub state_layers: PetStateLayers,
     pub emergent_state: Option<EmergentStateType>,
@@ -42,6 +43,8 @@ pub struct EngineState {
     pub daily_trait_budget: HashMap<TraitKey, f64>,
     pub current_target_zone: Option<String>,
     pub ticks_in_target_zone: u32,
+    pub evolution_readiness: f64,
+    pub evolution_readiness_target: Option<String>,
     pub void_syncs: u32,
     pub formation_complete: bool,
     pub formation_progress: f64,
@@ -73,6 +76,8 @@ impl EngineState {
         // Parse behavioral_counters from JSON
         let counters: BehavioralCounters = serde_json::from_value(pet.behavioral_counters.clone())
             .unwrap_or_else(|_| create_default_counters());
+        let behavior_profile: BehaviorProfile =
+            serde_json::from_value(pet.behavior_profile.clone()).unwrap_or_default();
 
         // Parse trait_vector from JSON
         let trait_vector: TraitVector = parse_trait_vector(&pet.trait_vector);
@@ -152,6 +157,7 @@ impl EngineState {
             xp: pet.xp,
             xp_to_next: pet.xp_to_next,
             behavioral_counters: counters,
+            behavior_profile,
             behavioral_flags: pet.behavioral_flags.clone(),
             emergent_state,
             state_layers,
@@ -159,6 +165,8 @@ impl EngineState {
             daily_trait_budget,
             current_target_zone: pet.current_target_zone.clone(),
             ticks_in_target_zone: pet.ticks_in_target_zone as u32,
+            evolution_readiness: pet.evolution_readiness,
+            evolution_readiness_target: pet.evolution_readiness_target.clone(),
             void_syncs: pet.void_syncs as u32,
             formation_complete: pet.formation_complete,
             formation_progress: pet.formation_progress,
@@ -196,6 +204,7 @@ impl EngineState {
         pet.xp_to_next = self.xp_to_next;
         pet.behavioral_counters =
             serde_json::to_value(&self.behavioral_counters).unwrap_or_default();
+        pet.behavior_profile = serde_json::to_value(&self.behavior_profile).unwrap_or_default();
         pet.behavioral_flags = self.behavioral_flags.clone();
         pet.state_layers = Some(serde_json::to_value(&self.state_layers).unwrap_or_default());
         pet.emergent_state = self
@@ -212,6 +221,8 @@ impl EngineState {
 
         pet.current_target_zone = self.current_target_zone.clone();
         pet.ticks_in_target_zone = self.ticks_in_target_zone as i32;
+        pet.evolution_readiness = self.evolution_readiness;
+        pet.evolution_readiness_target = self.evolution_readiness_target.clone();
         pet.void_syncs = self.void_syncs as i32;
         pet.formation_complete = self.formation_complete;
         pet.formation_progress = self.formation_progress;
@@ -417,9 +428,10 @@ pub fn apply_personality_command(
                 .unwrap_or(100.0);
             if cleanliness < 30.0 {
                 let health = state.stats.get(&StatKey::Health).copied().unwrap_or(100.0);
-                state
-                    .stats
-                    .insert(StatKey::Health, clamp_stat(health - 0.5 * elapsed_minutes));
+                state.stats.insert(
+                    StatKey::Health,
+                    clamp_stat(health - 0.5 * (elapsed_minutes / 60.0)),
+                );
             }
         } else {
             // Sleep healing
@@ -434,15 +446,15 @@ pub fn apply_personality_command(
             let health = state.stats.get(&StatKey::Health).copied().unwrap_or(50.0);
             state.stats.insert(
                 StatKey::Energy,
-                clamp_stat(energy + (5.0 + sleep_restore) * (elapsed_minutes / 15.0)),
+                clamp_stat(energy + (2.5 + sleep_restore) * (elapsed_minutes / 15.0)),
             );
             state.stats.insert(
                 StatKey::Hunger,
-                clamp_stat(hunger - 0.8 * (elapsed_minutes / 15.0)),
+                clamp_stat(hunger - 0.5 * (elapsed_minutes / 15.0)),
             );
             state.stats.insert(
                 StatKey::Health,
-                clamp_stat(health + 0.5 * (elapsed_minutes / 15.0)),
+                clamp_stat(health + 0.125 * (elapsed_minutes / 15.0)),
             );
         }
 
@@ -1266,7 +1278,7 @@ mod tests {
     use super::*;
     use crate::domain::pet::Pet;
     use serde::Deserialize;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     fn fixed_now() -> DateTime<Utc> {
         "2026-05-16T12:00:00Z".parse::<DateTime<Utc>>().unwrap()
@@ -1289,6 +1301,83 @@ mod tests {
             score_seed: None,
             coin_balance: 100.0,
         }
+    }
+
+    fn set_stable_stats(state: &mut EngineState) {
+        state.stats.insert(StatKey::Hunger, 80.0);
+        state.stats.insert(StatKey::Happiness, 80.0);
+        state.stats.insert(StatKey::Energy, 80.0);
+        state.stats.insert(StatKey::Health, 80.0);
+        state.stats.insert(StatKey::Cleanliness, 80.0);
+        state.stats.insert(StatKey::Bond, 80.0);
+    }
+
+    fn command_at(command_type: &str, command_id: &str, at: DateTime<Utc>) -> PetCommand {
+        let mut cmd = command(command_type, command_id);
+        cmd.at = at.to_rfc3339();
+        cmd
+    }
+
+    fn run_semantic_scenario(name: &str, steps: &[(&str, Option<StatKey>, f64)]) -> EngineState {
+        let mut state = default_state();
+        let start = fixed_now();
+        let mut command_index = 0;
+
+        for day in 0..70 {
+            if state.formation_complete {
+                break;
+            }
+
+            for (index, (kind, stat_key, stat_value)) in steps.iter().enumerate() {
+                if state.formation_complete {
+                    break;
+                }
+
+                set_stable_stats(&mut state);
+                state.is_asleep = false;
+                if let Some(key) = stat_key {
+                    state.stats.insert(*key, *stat_value);
+                }
+
+                let at = start + chrono::Duration::hours((day * 24 + index * 2 + 1) as i64);
+                let mut cmd = command_at(kind, &format!("{name}-{kind}-{command_index}"), at);
+                command_index += 1;
+                match *kind {
+                    "feed" => {
+                        cmd.food_id = Some("apple".to_string());
+                    }
+                    "play" => {
+                        cmd.score_seed = Some(160);
+                    }
+                    "magic_potion" => {
+                        cmd.command_type = "use_item".to_string();
+                        cmd.item_id = Some("magic_potion".to_string());
+                        cmd.item_effect = Some(ItemEffect {
+                            happiness: Some(5.0),
+                            xp: Some(5.0),
+                            ..Default::default()
+                        });
+                    }
+                    "magic_wand" => {
+                        cmd.command_type = "use_item".to_string();
+                        cmd.item_id = Some("magic_wand".to_string());
+                        cmd.item_effect = Some(ItemEffect {
+                            happiness: Some(5.0),
+                            xp: Some(5.0),
+                            ..Default::default()
+                        });
+                    }
+                    _ => {}
+                }
+
+                apply_personality_command(&mut state, &cmd, at);
+            }
+
+            state.daily_trait_budget.clear();
+            state.current_sync += 1;
+        }
+
+        state
     }
 
     #[derive(Debug, Deserialize)]
@@ -1538,6 +1627,257 @@ mod tests {
 
         assert_eq!(restored.influence_cooldowns.get("action:play"), Some(&0));
         assert_eq!(restored.current_sync, 0);
+    }
+
+    #[test]
+    fn pre_formation_command_path_is_more_sensitive_than_formed_path() {
+        let mut unformed = default_state();
+        let mut formed = default_state();
+        formed.formation_complete = true;
+        let feed = command("feed", "cmd-feed-sensitive");
+
+        apply_personality_command(&mut unformed, &feed, fixed_now());
+        apply_personality_command(&mut formed, &feed, fixed_now());
+
+        let unformed_delta = unformed.trait_vector[&TraitKey::Appetite] - 50.0;
+        let formed_delta = formed.trait_vector[&TraitKey::Appetite] - 50.0;
+        assert_close(
+            unformed_delta,
+            formed_delta
+                * (crate::engine::trait_evolution::PRE_FORMATION_SENSITIVITY_MULTIPLIER
+                    / crate::engine::trait_evolution::POST_FORMATION_ADAPTATION_MULTIPLIER),
+            "preformation appetite sensitivity",
+        );
+        assert_eq!(unformed.formation_progress, 2.5);
+        assert_eq!(formed.formation_progress, 0.0);
+    }
+
+    #[test]
+    fn action_influence_strength_responds_to_pet_needs() {
+        let mut hungry = default_state();
+        hungry.formation_complete = true;
+        hungry.stats.insert(StatKey::Hunger, 20.0);
+        let mut full = default_state();
+        full.formation_complete = true;
+        full.stats.insert(StatKey::Hunger, 90.0);
+        let feed = command("feed", "cmd-feed-context-sensitive");
+
+        apply_personality_command(&mut hungry, &feed, fixed_now());
+        apply_personality_command(&mut full, &feed, fixed_now());
+
+        assert_close(
+            hungry.trait_vector[&TraitKey::Appetite],
+            50.0 + 2.0
+                * 0.5
+                * 0.08
+                * crate::engine::trait_evolution::POST_FORMATION_ADAPTATION_MULTIPLIER,
+            "hungry feed appetite",
+        );
+        assert_close(
+            hungry.trait_vector[&TraitKey::Sociality],
+            50.0 + 0.5
+                * 1.4
+                * 0.08
+                * crate::engine::trait_evolution::POST_FORMATION_ADAPTATION_MULTIPLIER,
+            "hungry feed sociality",
+        );
+        assert_close(
+            full.trait_vector[&TraitKey::Appetite],
+            50.0 + 2.0
+                * 1.2
+                * 0.08
+                * crate::engine::trait_evolution::POST_FORMATION_ADAPTATION_MULTIPLIER,
+            "full feed appetite",
+        );
+        assert_close(
+            full.trait_vector[&TraitKey::Sociality],
+            50.0 + 0.5
+                * 0.65
+                * 0.08
+                * crate::engine::trait_evolution::POST_FORMATION_ADAPTATION_MULTIPLIER,
+            "full feed sociality",
+        );
+        assert!(full.trait_vector[&TraitKey::Appetite] > hungry.trait_vector[&TraitKey::Appetite]);
+        assert!(
+            hungry.trait_vector[&TraitKey::Sociality] > full.trait_vector[&TraitKey::Sociality]
+        );
+    }
+
+    #[test]
+    fn behavior_profile_records_command_evidence_separately_from_traits() {
+        let mut state = default_state();
+        state.formation_complete = true;
+        let play = command("play", "cmd-play-behavior-profile");
+
+        apply_personality_command(&mut state, &play, fixed_now());
+
+        assert_eq!(state.behavior_profile.sample_count, 1);
+        assert!(state.behavior_profile.axes[&crate::engine::types::BehaviorAxis::Play] > 0.0);
+        assert!(
+            state.behavior_profile.axes[&crate::engine::types::BehaviorAxis::Exploration] > 0.0
+        );
+        assert_eq!(
+            state.behavior_profile.axes[&crate::engine::types::BehaviorAxis::Care],
+            0.0
+        );
+    }
+
+    #[test]
+    fn evolution_requires_matching_behavior_profile_after_evidence_window() {
+        let mut state = default_state();
+        state.formation_complete = true;
+        state.personality = "playful".to_string();
+        state.trait_vector.insert(TraitKey::Vitality, 40.0);
+        state.trait_vector.insert(TraitKey::Sociality, 20.0);
+        state.trait_vector.insert(TraitKey::Order, 65.0);
+        state.trait_vector.insert(TraitKey::Appetite, 35.0);
+        state.trait_vector.insert(TraitKey::Caution, 95.0);
+        state.trait_vector.insert(TraitKey::Curiosity, 55.0);
+        state.behavior_profile.sample_count = 24;
+        state
+            .behavior_profile
+            .axes
+            .insert(crate::engine::types::BehaviorAxis::Social, 80.0);
+
+        for _ in 0..crate::engine::trait_evolution::STABILITY_SYNCS {
+            crate::engine::trait_evolution::check_evolution(&mut state);
+        }
+
+        assert_eq!(state.current_target_zone.as_deref(), Some("paranoid"));
+        assert_eq!(state.ticks_in_target_zone, 0);
+        assert!(state.evolution_proposal.is_none());
+
+        state
+            .behavior_profile
+            .axes
+            .insert(crate::engine::types::BehaviorAxis::Disruption, 40.0);
+        state
+            .behavior_profile
+            .axes
+            .insert(crate::engine::types::BehaviorAxis::Order, 40.0);
+
+        for _ in 0..crate::engine::trait_evolution::STABILITY_SYNCS {
+            crate::engine::trait_evolution::check_evolution(&mut state);
+        }
+
+        assert_eq!(
+            state.ticks_in_target_zone,
+            crate::engine::trait_evolution::STABILITY_SYNCS
+        );
+        assert_eq!(
+            state
+                .evolution_proposal
+                .as_ref()
+                .map(|p| p.target_personality_id.as_str()),
+            Some("paranoid")
+        );
+    }
+
+    #[test]
+    fn evolution_readiness_accumulates_before_full_stability_window() {
+        let mut state = default_state();
+        state.formation_complete = true;
+        state.personality = "playful".to_string();
+        state.trait_vector.insert(TraitKey::Vitality, 40.0);
+        state.trait_vector.insert(TraitKey::Sociality, 20.0);
+        state.trait_vector.insert(TraitKey::Order, 65.0);
+        state.trait_vector.insert(TraitKey::Appetite, 35.0);
+        state.trait_vector.insert(TraitKey::Caution, 95.0);
+        state.trait_vector.insert(TraitKey::Curiosity, 55.0);
+        state.behavior_profile.sample_count = 24;
+        state
+            .behavior_profile
+            .axes
+            .insert(crate::engine::types::BehaviorAxis::Disruption, 40.0);
+        state
+            .behavior_profile
+            .axes
+            .insert(crate::engine::types::BehaviorAxis::Order, 40.0);
+
+        for _ in 0..3 {
+            crate::engine::trait_evolution::check_evolution(&mut state);
+        }
+
+        assert_eq!(state.current_target_zone.as_deref(), Some("paranoid"));
+        assert_eq!(state.ticks_in_target_zone, 3);
+        assert_eq!(state.evolution_readiness, 100.0);
+        assert_eq!(
+            state
+                .evolution_proposal
+                .as_ref()
+                .map(|p| p.target_personality_id.as_str()),
+            Some("paranoid")
+        );
+    }
+
+    #[test]
+    fn semantic_behavior_scenarios_do_not_collapse_to_one_personality() {
+        let food = run_semantic_scenario(
+            "semantic-food",
+            &[
+                ("feed", Some(StatKey::Hunger), 20.0),
+                ("magic_potion", None, 0.0),
+                ("feed", Some(StatKey::Hunger), 20.0),
+            ],
+        );
+        let play = run_semantic_scenario(
+            "semantic-play",
+            &[
+                ("play", Some(StatKey::Happiness), 35.0),
+                ("magic_wand", None, 0.0),
+                ("play", Some(StatKey::Happiness), 35.0),
+            ],
+        );
+        let bond = run_semantic_scenario(
+            "semantic-bond",
+            &[
+                ("bond", Some(StatKey::Bond), 25.0),
+                ("magic_potion", None, 0.0),
+                ("bond", Some(StatKey::Bond), 25.0),
+            ],
+        );
+        let clean = run_semantic_scenario(
+            "semantic-clean",
+            &[
+                ("bathe", Some(StatKey::Cleanliness), 20.0),
+                ("bond", Some(StatKey::Bond), 70.0),
+                ("bathe", Some(StatKey::Cleanliness), 20.0),
+            ],
+        );
+
+        for state in [&food, &play, &bond, &clean] {
+            assert!(
+                state.formation_complete,
+                "scenario did not complete formation: {:?}",
+                state
+            );
+            assert_eq!(
+                state.formation_progress,
+                crate::engine::trait_evolution::FORMATION_THRESHOLD
+            );
+        }
+
+        assert!(food.trait_vector[&TraitKey::Appetite] > 50.0);
+        assert_ne!(food.personality, "pristine");
+        assert!(play.trait_vector[&TraitKey::Vitality] > 50.0);
+        assert!(play.trait_vector[&TraitKey::Curiosity] > 50.0);
+        assert!(play.trait_vector[&TraitKey::Order] < 50.0);
+        assert!(bond.trait_vector[&TraitKey::Sociality] > 50.0);
+        assert!(bond.trait_vector[&TraitKey::Caution] < 50.0);
+        assert!(clean.trait_vector[&TraitKey::Order] > 50.0);
+
+        let personalities: HashSet<&str> = [&food, &play, &bond, &clean]
+            .iter()
+            .map(|state| state.personality.as_str())
+            .collect();
+        assert!(
+            personalities.len() >= 3,
+            "semantic scenarios collapsed: food={}, play={}, bond={}, clean={}",
+            food.personality,
+            play.personality,
+            bond.personality,
+            clean.personality
+        );
     }
 
     #[test]

@@ -159,6 +159,10 @@ function explainEvent(event: DomainEvent): string {
   switch (event.type) {
     case 'trait_vector_changed':
       return 'Trait vector changed.';
+    case 'behavior_profile_changed':
+      return `Behavior profile changed: ${event.nextProfile.sampleCount} samples.`;
+    case 'evolution_readiness_changed':
+      return `Evolution readiness changed: ${event.targetTo ?? event.targetFrom ?? 'none'} ${event.from} -> ${event.to}.`;
     case 'gameplay_outcome_applied':
       return `${event.actionType} outcome applied: xp ${event.xpDelta}, coins ${event.coinDelta}.`;
     case 'trauma_level_changed':

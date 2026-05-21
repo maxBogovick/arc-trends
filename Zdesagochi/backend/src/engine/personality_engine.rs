@@ -15,12 +15,12 @@ use crate::engine::types::{
 pub const STOIC_FLAT_PLAY_XP: f64 = 15.0;
 
 pub const BASE_DECAY_PER_MINUTE: &[(StatKey, f64)] = &[
-    (StatKey::Hunger, 0.083),
-    (StatKey::Happiness, 0.083),
-    (StatKey::Energy, 0.100),
-    (StatKey::Health, 0.033),
-    (StatKey::Cleanliness, 0.067),
-    (StatKey::Bond, 0.050),
+    (StatKey::Hunger, 2.0 / 60.0),
+    (StatKey::Happiness, 1.5 / 60.0),
+    (StatKey::Energy, 1.0 / 60.0),
+    (StatKey::Health, 0.5 / 60.0),
+    (StatKey::Cleanliness, 1.0 / 60.0),
+    (StatKey::Bond, 0.75 / 60.0),
 ];
 
 // ── Decay ─────────────────────────────────────────────────────────────────────

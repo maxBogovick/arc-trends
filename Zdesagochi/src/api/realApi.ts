@@ -6,7 +6,7 @@
 import type {
   ApiService, Pet, FoodItem, PlayResult, ShopItem, InventoryItem, BuyResult,
   Achievement, ClaimResult, DailyQuest, QuestClaimResult, Room, LeaderboardEntry, PetEvent,
-  NewLifeResult,
+  NewLifeResult, PersonalityTelemetrySample,
 } from './types';
 
 interface PetActionResult {
@@ -57,6 +57,7 @@ export class RealApiService implements ApiService {
   beginNewLife()            { return this.post<NewLifeResult>('/api/pet/new-life'); }
   updatePetName(name: string) { return this.patch<Pet>('/api/pet/name', { name }); }
   getPetEvents()            { return this.req<PetEvent[]>('/api/pet/events'); }
+  getPersonalityTelemetry() { return this.req<PersonalityTelemetrySample[]>('/api/pet/personality/telemetry'); }
 
   // Экономика
   getCoins()                { return this.req<{ coins: number }>('/api/coins'); }

@@ -1,5 +1,6 @@
 import type { PersonalityState } from './coreState';
 import { PERSONALITY_STATE_SCHEMA_VERSION } from './engineVersion';
+import { createInitialBehaviorProfile } from './TraitEvolutionEngine';
 
 export type PersonalityStateMigrationResult =
   | { ok: true; state: PersonalityState; migrated: boolean; fromVersion: number | null; toVersion: number }
@@ -50,6 +51,11 @@ export function migratePersonalityState(rawState: unknown): PersonalityStateMigr
 
   const state = {
     ...rawState,
+    behaviorProfile: isObject(rawState.behaviorProfile)
+      ? rawState.behaviorProfile
+      : createInitialBehaviorProfile(),
+    evolutionReadiness: typeof rawState.evolutionReadiness === 'number' ? rawState.evolutionReadiness : 0,
+    evolutionReadinessTarget: typeof rawState.evolutionReadinessTarget === 'string' ? rawState.evolutionReadinessTarget : null,
     schemaVersion: PERSONALITY_STATE_SCHEMA_VERSION,
   };
 

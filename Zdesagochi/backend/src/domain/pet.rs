@@ -96,6 +96,8 @@ pub struct Pet {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state_layers: Option<Value>,
     pub behavioral_counters: Value,
+    #[serde(default)]
+    pub behavior_profile: Value,
     pub mood_history: Vec<Value>,
 
     // Trait Evolution System v5.0
@@ -103,6 +105,10 @@ pub struct Pet {
     pub daily_trait_budget: Value,
     pub current_target_zone: Option<String>,
     pub ticks_in_target_zone: i32,
+    #[serde(default)]
+    pub evolution_readiness: f64,
+    #[serde(default)]
+    pub evolution_readiness_target: Option<String>,
     pub void_syncs: i32,
     pub daily_trait_snapshots: Vec<Value>,
 
@@ -178,11 +184,25 @@ impl Pet {
                 "syncCount": 0,
                 "totalActions": 0
             }),
+            behavior_profile: serde_json::json!({
+                "axes": {
+                    "care": 0.0,
+                    "play": 0.0,
+                    "social": 0.0,
+                    "order": 0.0,
+                    "exploration": 0.0,
+                    "disruption": 0.0,
+                    "recovery": 0.0
+                },
+                "sampleCount": 0
+            }),
             mood_history: vec![],
             trait_vector: serde_json::json!({}),
             daily_trait_budget: serde_json::json!({}),
             current_target_zone: None,
             ticks_in_target_zone: 0,
+            evolution_readiness: 0.0,
+            evolution_readiness_target: None,
             void_syncs: 0,
             daily_trait_snapshots: vec![],
             core_memories: vec![],

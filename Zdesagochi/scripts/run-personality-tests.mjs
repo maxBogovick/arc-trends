@@ -23,6 +23,7 @@ const packageNameResolver = {
 const testFiles = [
   'tests/personalityEvolution.test.ts',
   'tests/personalityEngineInvariants.test.ts',
+  'tests/personalityBehaviorSemantics.test.ts',
 ];
 
 const tempDir = await mkdtemp(join(tmpdir(), 'zdesagochi-tests-'));

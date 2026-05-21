@@ -2,16 +2,19 @@ import type { PersonalityAccount, PersonalityMemoryTextGenerator, PersonalityNam
 import { EVOLUTION_LEGACY, PERSONALITY_TRAIT_MAP } from './personalityTraitMap';
 import { clearLayeredEmergentState, setLayeredEmergentState } from './stateLayers';
 import type {
+  BehaviorProfile,
+  BehaviorVector,
   CoreMemory,
   InfluenceCategory,
   InfluenceCondition,
   PersonalityDefinition,
   PersonalityId,
   RegisteredInfluence,
+  StatKey,
   TraitKey,
   TraitVector,
 } from './types';
-import { TRAIT_KEYS } from './types';
+import { BEHAVIOR_AXES, TRAIT_KEYS } from './types';
 
 export const DAILY_BUDGET: Record<TraitKey, number> = {
   vitality: 12,
@@ -41,6 +44,17 @@ export const SHADOW_FORM_TRAUMA_THRESHOLD = 75;
 export const SHADOW_FORM_COOLDOWN_DAYS = 14;
 export const CATHARSIS_THRESHOLD = 100;
 export const LEGACY_BLEND_RATIO = 0.70;
+export const PRE_FORMATION_SENSITIVITY_MULTIPLIER = 5.0;
+export const POST_FORMATION_ADAPTATION_MULTIPLIER = 4.0;
+export const BEHAVIOR_PROFILE_DECAY_PER_DAY = 0.96;
+export const BEHAVIOR_PROFILE_EVOLUTION_MIN_SAMPLES = 24;
+export const BEHAVIOR_PROFILE_EVOLUTION_THRESHOLD = 28;
+export const EVOLUTION_READINESS_THRESHOLD = 100;
+export const EVOLUTION_READINESS_GAIN_PER_CONFIRMED_SYNC = 35;
+export const EVOLUTION_READINESS_DECAY_PER_SYNC = 2;
+export const NEAR_TARGET_READINESS_MARGIN = 0.25;
+export const NEAR_TARGET_READINESS_GAIN_MULTIPLIER = 0.60;
+export const BEHAVIOR_TARGET_DEPTH_BONUS = 0.45;
 
 export const FORMATION_WEIGHTS: Record<InfluenceCategory, number> = {
   action: 1.0,
@@ -69,6 +83,9 @@ export interface TraitEvolutionContext {
   memoryTextGenerator?: PersonalityMemoryTextGenerator;
   personalities?: PersonalityDefinition[];
   dominantInfluences?: string[];
+  sensitivityStats?: Partial<Record<StatKey, number>>;
+  enableContextSensitivity?: boolean;
+  enablePreFormationSensitivity?: boolean;
   random?: () => number;
   rng?: () => number;
 }
@@ -102,6 +119,46 @@ export function createInitialTraitVector(
     acc[key] = NEUTRAL_TRAIT_VECTOR[key] + (legacyVector[key] - 50) * legacyCoefficient;
     return acc;
   }, {} as TraitVector);
+}
+
+export function createInitialBehaviorProfile(overrides: Partial<BehaviorProfile> = {}): BehaviorProfile {
+  return {
+    axes: {
+      care: 0,
+      play: 0,
+      social: 0,
+      order: 0,
+      exploration: 0,
+      disruption: 0,
+      recovery: 0,
+      ...(overrides.axes ?? {}),
+    },
+    sampleCount: overrides.sampleCount ?? 0,
+    lastUpdatedAt: overrides.lastUpdatedAt,
+  };
+}
+
+export function updateBehaviorProfile(
+  pet: PersonalityState,
+  influenceId: string,
+  ctx: TraitEvolutionContext = {},
+): void {
+  const signal = getBehaviorSignalForInfluence(influenceId);
+  if (!signal) return;
+
+  const now = getNow(ctx);
+  const profile = normalizeBehaviorProfile(pet.behaviorProfile);
+  const axes = decayBehaviorAxes(profile, now);
+
+  for (const axis of BEHAVIOR_AXES) {
+    axes[axis] = clamp(axes[axis] + (signal[axis] ?? 0), 0, 100);
+  }
+
+  pet.behaviorProfile = {
+    axes,
+    sampleCount: Math.min(10_000, profile.sampleCount + 1),
+    lastUpdatedAt: now.toISOString(),
+  };
 }
 
 export function getDynamicRadius(personality: PersonalityDefinition | PersonalityId, ageHours: number): number {
@@ -145,14 +202,24 @@ export function applyInfluence(
     const delta = influence.traitDeltas[key];
     if (delta === undefined) continue;
 
-    const rawDelta = delta * intensity * multiplier;
+    const contextMultiplier = ctx.enableContextSensitivity
+      ? getContextSensitivityMultiplier(influence.id, ctx.sensitivityStats ?? pet.stats, key)
+      : 1;
+    const rawDelta = delta * intensity * multiplier * contextMultiplier;
     const spent = pet.dailyTraitBudget[key] ?? 0;
     const remaining = Math.max(0, DAILY_BUDGET[key] - spent);
     const applied = clamp(rawDelta, -remaining, remaining);
+    const sensitivityMultiplier = !pet.formationComplete
+      ? (ctx.enablePreFormationSensitivity ? PRE_FORMATION_SENSITIVITY_MULTIPLIER : 1)
+      : POST_FORMATION_ADAPTATION_MULTIPLIER;
 
     budgetedDelta[key] = applied;
     pet.dailyTraitBudget[key] = spent + Math.abs(applied);
-    pet.traitVector[key] = clamp(pet.traitVector[key] + applied * SMOOTHING_ALPHA, 0, 100);
+    pet.traitVector[key] = clamp(
+      pet.traitVector[key] + applied * SMOOTHING_ALPHA * sensitivityMultiplier,
+      0,
+      100,
+    );
   }
 
   const posSum = TRAIT_KEYS.reduce((sum, key) => sum + Math.max(0, budgetedDelta[key] ?? 0), 0);
@@ -168,6 +235,57 @@ export function applyInfluence(
   updateFormationProgress(pet, influence, budgetedDelta, ctx);
 
   return { prevVector, budgetedDelta, applied: true };
+}
+
+function getContextSensitivityMultiplier(
+  influenceId: string,
+  stats: Partial<Record<StatKey, number>>,
+  traitKey: TraitKey,
+): number {
+  switch (influenceId) {
+    case 'action:feed': {
+      const hunger = stats.hunger ?? 50;
+      if (hunger <= 30) return traitKey === 'appetite' ? 0.5 : 1.4;
+      if (hunger >= 90) return traitKey === 'appetite' ? 1.2 : 0.65;
+      return 1;
+    }
+    case 'action:play': {
+      const happiness = stats.happiness ?? 50;
+      const energy = stats.energy ?? 50;
+      if (energy <= 25) return 0.65;
+      if (happiness <= 45 && energy >= 35) return 1.35;
+      return 1;
+    }
+    case 'action:sleep_natural': {
+      const energy = stats.energy ?? 50;
+      if (energy <= 30) return 1.5;
+      return 1;
+    }
+    case 'action:sleep_forced': {
+      const energy = stats.energy ?? 50;
+      if (energy >= 80) return 1.35;
+      return 1;
+    }
+    case 'action:bathe': {
+      const cleanliness = stats.cleanliness ?? 50;
+      if (cleanliness <= 35) return 1.4;
+      if (cleanliness >= 90) return 0.7;
+      return 1;
+    }
+    case 'action:heal': {
+      const health = stats.health ?? 50;
+      if (health <= 45) return 1.4;
+      if (health >= 90) return 0.75;
+      return 1;
+    }
+    case 'action:bond': {
+      const bond = stats.bond ?? 50;
+      if (bond <= 45) return 1.35;
+      return 1;
+    }
+    default:
+      return 1;
+  }
 }
 
 export function applyRegression(pet: PersonalityState): void {
@@ -251,35 +369,77 @@ export function checkEvolution(pet: PersonalityState, ctx: TraitEvolutionContext
     pet.ticksInTargetZone = 0;
     pet.evolutionProposal = undefined;
     pet.voidSyncs = 0;
+    decayEvolutionReadiness(pet);
     return;
   }
 
-  const best = getPersonalities(ctx)
+  const candidates = getPersonalities(ctx)
     .filter(p => p.id !== currentPersonalityId)
-    .map(p => ({ id: p.id, depth: depthOfImmersion(pet.traitVector, p.id, pet.ageHours) }))
-    .reduce((a, b) => (a.depth > b.depth ? a : b));
+    .map(p => {
+      const depth = depthOfImmersion(pet.traitVector, p.id, pet.ageHours);
+      const evidence = getBehaviorEvidenceForPersonality(pet.behaviorProfile, p.id);
+      return {
+        id: p.id,
+        depth,
+        adjustedDepth: depth + getBehaviorTargetDepthBonus(evidence),
+      };
+    })
+    .sort((a, b) => b.adjustedDepth - a.adjustedDepth);
 
-  if (best.depth <= 0) {
+  const best = candidates.find(candidate =>
+    getNearTargetReadinessRatio(candidate.adjustedDepth) > 0 &&
+    hasBehaviorEvidenceForEvolution(pet.behaviorProfile, candidate.id),
+  ) ?? candidates[0];
+  if (!best) return;
+
+  const readinessRatio = getNearTargetReadinessRatio(best.adjustedDepth);
+  if (readinessRatio <= 0) {
+    decayEvolutionReadiness(pet);
     handleVoidState(pet, ctx);
     return;
   }
 
   pet.voidSyncs = 0;
 
+  if (!hasBehaviorEvidenceForEvolution(pet.behaviorProfile, best.id)) {
+    pet.currentTargetZone = best.id;
+    pet.ticksInTargetZone = 0;
+    pet.evolutionProposal = undefined;
+    decayEvolutionReadiness(pet, best.id);
+    return;
+  }
+
   if (pet.currentTargetZone !== best.id) {
     pet.currentTargetZone = best.id;
     pet.ticksInTargetZone = 0;
+    pet.evolutionReadiness = pet.evolutionReadinessTarget === best.id ? (pet.evolutionReadiness ?? 0) : 0;
+    pet.evolutionReadinessTarget = best.id;
   }
 
-  pet.ticksInTargetZone++;
+  if (best.depth > 0) {
+    pet.ticksInTargetZone++;
+  } else {
+    pet.ticksInTargetZone = 0;
+  }
 
   const currentDepthAbs = Math.abs(currentDepth) * getDynamicRadius(currentPersonalityId, pet.ageHours);
   if (currentDepthAbs < HYSTERESIS) return;
-  if (pet.ticksInTargetZone < STABILITY_SYNCS) return;
+  pet.evolutionReadinessTarget = best.id;
+  const readinessGain = EVOLUTION_READINESS_GAIN_PER_CONFIRMED_SYNC
+    * (best.depth > 0 ? 1 : readinessRatio * NEAR_TARGET_READINESS_GAIN_MULTIPLIER);
+  pet.evolutionReadiness = clamp(
+    (pet.evolutionReadiness ?? 0) + readinessGain,
+    0,
+    EVOLUTION_READINESS_THRESHOLD,
+  );
+
+  const strictReadiness = Math.min(100, Math.round((pet.ticksInTargetZone / STABILITY_SYNCS) * 100));
+  const accumulatedReadiness = Math.round(pet.evolutionReadiness ?? 0);
+  if (pet.ticksInTargetZone < STABILITY_SYNCS && (pet.evolutionReadiness ?? 0) < EVOLUTION_READINESS_THRESHOLD) return;
 
   pet.evolutionProposal = {
     targetPersonalityId: best.id,
-    readiness: Math.min(100, Math.round((pet.ticksInTargetZone / STABILITY_SYNCS) * 100)),
+    readiness: Math.max(strictReadiness, accumulatedReadiness),
     depth: best.depth,
     proposedAt: getNow(ctx).toISOString(),
     coreMemoryIds: selectRelevantMemories(pet, best.id),
@@ -306,6 +466,8 @@ export function acceptEvolution(pet: PersonalityState, ctx: TraitEvolutionContex
   });
   pet.currentTargetZone = null;
   pet.ticksInTargetZone = 0;
+  pet.evolutionReadiness = 0;
+  pet.evolutionReadinessTarget = null;
   pet.evolutionProposal = undefined;
   pet.voidSyncs = 0;
   clearLayeredEmergentState(pet, 'identity_crisis');
@@ -330,6 +492,8 @@ export function rejectEvolution(pet: PersonalityState): boolean {
   pet.evolutionProposal = undefined;
   pet.currentTargetZone = null;
   pet.ticksInTargetZone = 0;
+  pet.evolutionReadiness = 0;
+  pet.evolutionReadinessTarget = null;
   return true;
 }
 
@@ -363,6 +527,8 @@ export function checkSingularity(pet: PersonalityState, ctx: TraitEvolutionConte
   pet.ticksInSingularity = (pet.ticksInSingularity ?? 0) + 1;
   pet.currentTargetZone = null;
   pet.ticksInTargetZone = 0;
+  pet.evolutionReadiness = 0;
+  pet.evolutionReadinessTarget = null;
   pet.evolutionProposal = undefined;
   pet.voidSyncs = 0;
 
@@ -393,6 +559,8 @@ export function collapseSingularity(pet: PersonalityState, ctx: TraitEvolutionCo
   clearLayeredEmergentState(pet, 'singularity');
   pet.currentTargetZone = null;
   pet.ticksInTargetZone = 0;
+  pet.evolutionReadiness = 0;
+  pet.evolutionReadinessTarget = null;
   pet.evolutionProposal = undefined;
   pet.ticksInSingularity = 0;
   pet.singularityZones = [];
@@ -805,6 +973,131 @@ function computeIntensity(
   return (influence.intensityRules ?? []).reduce((value, rule) => {
     return matchesInfluenceCondition(rule.condition, pet, ctx) ? value * rule.multiplier : value;
   }, 1);
+}
+
+function normalizeBehaviorProfile(profile: BehaviorProfile | undefined): BehaviorProfile {
+  return createInitialBehaviorProfile(profile);
+}
+
+function decayBehaviorAxes(profile: BehaviorProfile, now: Date): BehaviorVector {
+  const axes = { ...profile.axes };
+  if (!profile.lastUpdatedAt) return axes;
+
+  const elapsedDays = Math.max(0, (now.getTime() - new Date(profile.lastUpdatedAt).getTime()) / 86_400_000);
+  if (!Number.isFinite(elapsedDays) || elapsedDays <= 0) return axes;
+
+  const multiplier = BEHAVIOR_PROFILE_DECAY_PER_DAY ** elapsedDays;
+  for (const axis of BEHAVIOR_AXES) {
+    axes[axis] = clamp(axes[axis] * multiplier, 0, 100);
+  }
+  return axes;
+}
+
+function getBehaviorSignalForInfluence(influenceId: string): Partial<BehaviorVector> | null {
+  switch (influenceId) {
+    case 'action:feed':
+      return { care: 2.0, social: 0.5 };
+    case 'action:play':
+      return { play: 2.0, exploration: 1.0 };
+    case 'action:bond':
+      return { social: 2.0, care: 0.5 };
+    case 'action:bathe':
+      return { order: 2.0, care: 0.5 };
+    case 'action:heal':
+      return { recovery: 2.0, care: 1.0 };
+    case 'action:sleep_natural':
+      return { order: 1.2, care: 0.6 };
+    case 'action:sleep_forced':
+      return { disruption: 2.0, order: -0.5 };
+    case 'action:wake_early':
+      return { disruption: 2.0, order: -1.0 };
+    case 'item:puzzle':
+      return { exploration: 2.0, order: 1.0 };
+    case 'item:magic_potion':
+      return { exploration: 1.5, recovery: 0.8 };
+    case 'item:music_box':
+      return { social: 2.5, recovery: 0.5 };
+    case 'item:magic_wand':
+      return { exploration: 2.5, play: 1.5 };
+    case 'item:crystal_ball':
+      return { exploration: 2.0, social: 1.0 };
+    case 'env:new_room':
+      return { exploration: 2.0, play: 0.5 };
+    default:
+      if (influenceId.startsWith('social:')) return { social: 1.5, exploration: 0.5 };
+      return null;
+  }
+}
+
+function getBehaviorEvidenceForPersonality(profile: BehaviorProfile | undefined, personalityId: PersonalityId): number {
+  const { axes, sampleCount } = normalizeBehaviorProfile(profile);
+  if (sampleCount < BEHAVIOR_PROFILE_EVOLUTION_MIN_SAMPLES) return Number.POSITIVE_INFINITY;
+
+  switch (personalityId) {
+    case 'playful':
+      return axes.play + axes.exploration * 0.4;
+    case 'drowsy':
+      return axes.disruption + Math.max(0, 25 - axes.play) * 0.5;
+    case 'foodie':
+      return axes.care + axes.social * 0.25;
+    case 'bold':
+      return axes.play + axes.exploration * 0.6 + axes.disruption * 0.2;
+    case 'zen':
+      return axes.order + axes.care * 0.5 - axes.disruption * 0.6;
+    case 'anxious':
+      return axes.disruption + axes.recovery * 0.5;
+    case 'feral':
+      return axes.play + axes.disruption * 0.8 + Math.max(0, 30 - axes.social) * 0.3;
+    case 'sage':
+      return axes.exploration + axes.order * 0.7 + axes.social * 0.3;
+    case 'pristine':
+      return axes.order + axes.care * 0.4;
+    case 'empath':
+      return axes.social + axes.care * 0.5 + axes.recovery * 0.3;
+    case 'greedy':
+      return axes.care + axes.exploration * 0.5;
+    case 'melancholic':
+      return axes.disruption + axes.social * 0.2;
+    case 'chaotic':
+      return axes.disruption + axes.play * 0.7 + axes.exploration * 0.7;
+    case 'stoic':
+      return axes.order + Math.max(0, 25 - axes.social) * 0.4;
+    case 'adventurer':
+      return axes.exploration + axes.play * 0.6 + axes.care * 0.2;
+    case 'paranoid':
+      return axes.disruption + axes.order * 0.4;
+  }
+}
+
+function hasBehaviorEvidenceForEvolution(profile: BehaviorProfile | undefined, personalityId: PersonalityId): boolean {
+  return getBehaviorEvidenceForPersonality(profile, personalityId) >= BEHAVIOR_PROFILE_EVOLUTION_THRESHOLD;
+}
+
+function getNearTargetReadinessRatio(depth: number): number {
+  if (depth > 0) return 1;
+  return clamp((depth + NEAR_TARGET_READINESS_MARGIN) / NEAR_TARGET_READINESS_MARGIN, 0, 1);
+}
+
+function getBehaviorTargetDepthBonus(evidence: number): number {
+  if (!Number.isFinite(evidence)) return BEHAVIOR_TARGET_DEPTH_BONUS;
+  return clamp(
+    evidence / Math.max(1, BEHAVIOR_PROFILE_EVOLUTION_THRESHOLD),
+    0,
+    1,
+  ) * BEHAVIOR_TARGET_DEPTH_BONUS;
+}
+
+function decayEvolutionReadiness(pet: PersonalityState, target?: PersonalityId): void {
+  if (target !== undefined && pet.evolutionReadinessTarget !== target) {
+    pet.evolutionReadinessTarget = target;
+    pet.evolutionReadiness = 0;
+    return;
+  }
+
+  pet.evolutionReadiness = Math.max(0, (pet.evolutionReadiness ?? 0) - EVOLUTION_READINESS_DECAY_PER_SYNC);
+  if (pet.evolutionReadiness === 0 && target === undefined) {
+    pet.evolutionReadinessTarget = null;
+  }
 }
 
 export function canApplyInfluence(

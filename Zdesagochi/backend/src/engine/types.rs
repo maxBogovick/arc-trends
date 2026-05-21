@@ -121,6 +121,86 @@ impl std::str::FromStr for TraitKey {
 
 pub type TraitVector = HashMap<TraitKey, f64>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BehaviorAxis {
+    Care,
+    Play,
+    Social,
+    Order,
+    Exploration,
+    Disruption,
+    Recovery,
+}
+
+impl BehaviorAxis {
+    pub fn all() -> &'static [BehaviorAxis] {
+        &[
+            BehaviorAxis::Care,
+            BehaviorAxis::Play,
+            BehaviorAxis::Social,
+            BehaviorAxis::Order,
+            BehaviorAxis::Exploration,
+            BehaviorAxis::Disruption,
+            BehaviorAxis::Recovery,
+        ]
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BehaviorAxis::Care => "care",
+            BehaviorAxis::Play => "play",
+            BehaviorAxis::Social => "social",
+            BehaviorAxis::Order => "order",
+            BehaviorAxis::Exploration => "exploration",
+            BehaviorAxis::Disruption => "disruption",
+            BehaviorAxis::Recovery => "recovery",
+        }
+    }
+}
+
+impl std::str::FromStr for BehaviorAxis {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "care" => Ok(BehaviorAxis::Care),
+            "play" => Ok(BehaviorAxis::Play),
+            "social" => Ok(BehaviorAxis::Social),
+            "order" => Ok(BehaviorAxis::Order),
+            "exploration" => Ok(BehaviorAxis::Exploration),
+            "disruption" => Ok(BehaviorAxis::Disruption),
+            "recovery" => Ok(BehaviorAxis::Recovery),
+            _ => Err(()),
+        }
+    }
+}
+
+pub type BehaviorVector = HashMap<BehaviorAxis, f64>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BehaviorProfile {
+    pub axes: BehaviorVector,
+    pub sample_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_updated_at: Option<String>,
+}
+
+impl Default for BehaviorProfile {
+    fn default() -> Self {
+        let mut axes = HashMap::new();
+        for axis in BehaviorAxis::all() {
+            axes.insert(*axis, 0.0);
+        }
+        Self {
+            axes,
+            sample_count: 0,
+            last_updated_at: None,
+        }
+    }
+}
+
 // ── Modifier caps ─────────────────────────────────────────────────────────────
 
 pub const XP_MAX: f64 = 4.0;

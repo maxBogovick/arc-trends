@@ -21,8 +21,8 @@
           "health": 10.0
         },
         "traitVector": {
-          "appetite": 50.16,
-          "sociality": 50.04
+          "appetite": 50.8,
+          "sociality": 50.2
         },
         "formationProgress": 2.5,
         "influenceCooldowns": {
@@ -58,10 +58,10 @@
       "expected": {
         "currentSync": 1,
         "traitVector": {
-          "sociality": 50.32,
-          "caution": 49.84
+          "sociality": 52.16,
+          "caution": 48.92
         },
-        "formationProgress": 6.0,
+        "formationProgress": 8.1,
         "influenceCooldowns": {
           "action:bond": 1
         },
@@ -88,9 +88,9 @@
           "bond": 8.0
         },
         "traitVector": {
-          "vitality": 50.16,
-          "curiosity": 50.08,
-          "order": 49.92
+          "vitality": 50.8,
+          "curiosity": 50.4,
+          "order": 49.6
         },
         "formationProgress": 4.0,
         "influenceCooldowns": {
@@ -118,8 +118,8 @@
           "health": 5.0
         },
         "traitVector": {
-          "order": 50.16,
-          "caution": 49.96
+          "order": 50.8,
+          "caution": 49.8
         },
         "formationProgress": 2.5,
         "influenceCooldowns": {
@@ -146,8 +146,8 @@
           "happiness": -5.0
         },
         "traitVector": {
-          "caution": 50.08,
-          "sociality": 50.04
+          "caution": 50.4,
+          "sociality": 50.2
         },
         "formationProgress": 1.5,
         "influenceCooldowns": {
@@ -178,9 +178,9 @@
           "happiness": 20.0
         },
         "traitVector": {
-          "curiosity": 50.32,
-          "order": 50.16,
-          "vitality": 49.92
+          "curiosity": 51.6,
+          "order": 50.8,
+          "vitality": 49.6
         },
         "formationProgress": 10.5,
         "influenceCooldowns": {

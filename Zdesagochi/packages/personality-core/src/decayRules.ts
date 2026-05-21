@@ -2,12 +2,12 @@ import type { BehavioralCounters, PersonalityDefinition, PersonalityId, StatKey,
 import { MODIFIER_CAPS } from './types';
 
 export const BASE_DECAY_PER_MINUTE: Record<StatKey, number> = {
-  hunger: 0.083,
-  happiness: 0.083,
-  energy: 0.100,
-  health: 0.033,
-  cleanliness: 0.067,
-  bond: 0.050,
+  hunger: 2.0 / 60,
+  happiness: 1.5 / 60,
+  energy: 1.0 / 60,
+  health: 0.5 / 60,
+  cleanliness: 1.0 / 60,
+  bond: 0.75 / 60,
 };
 
 export type DecayRuleCondition =
@@ -106,4 +106,3 @@ function multiplyAll(mults: number[]): number {
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
-

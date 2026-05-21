@@ -19,6 +19,7 @@ import { PetService, type PetCommandDraft } from './petService';
 import { calcMoodWithBias, createDefaultCounters } from '../personality/PersonalityEngine';
 import {
   recordLegacy,
+  createInitialBehaviorProfile,
   createInitialTraitVector,
 } from '../personality/TraitEvolutionEngine';
 import {
@@ -311,11 +312,14 @@ function createInitialMockPet(account: Account = {}): Pet {
     emergentStateEnteredAt: undefined,
     stateLayers: {},
     behavioralCounters: createDefaultCounters({ now, rng: mockRng }) as BehavioralCounters,
+    behaviorProfile: createInitialBehaviorProfile(),
     moodHistory: [] as MoodSnapshot[],
     traitVector: createInitialTraitVector(account.legacyVector, account.legacyCoefficient),
     dailyTraitBudget: {},
     currentTargetZone: null,
     ticksInTargetZone: 0,
+    evolutionReadiness: 0,
+    evolutionReadinessTarget: null,
     voidSyncs: 0,
     dailyTraitSnapshots: [],
     coreMemories: [],
@@ -490,8 +494,11 @@ function normalizePetEvolutionFields(pet: Pet): Pet {
   const p = pet as Pet & Partial<Pet>;
   p.traitVector ??= { ...NEUTRAL_TRAIT_VECTOR };
   p.dailyTraitBudget ??= {};
+  p.behaviorProfile ??= createInitialBehaviorProfile();
   p.currentTargetZone ??= null;
   p.ticksInTargetZone ??= 0;
+  p.evolutionReadiness ??= 0;
+  p.evolutionReadinessTarget ??= null;
   p.voidSyncs ??= 0;
   p.dailyTraitSnapshots ??= [];
   p.coreMemories ??= [];
@@ -546,6 +553,7 @@ export function setPersonalityDirectly(personalityId: string) {
   // Сбросить счётчики и флаги — новый характер начинается чисто
   S.pet.behavioralFlags = [];
   S.pet.behavioralCounters = createDefaultCounters({ now: mockNow(), rng: mockRng });
+  S.pet.behaviorProfile = createInitialBehaviorProfile();
   S.pet.emergentState = null;
   S.pet.emergentStateEnteredAt = undefined;
   S.pet.stateLayers = {};
@@ -738,6 +746,11 @@ export class MockApiService implements ApiService {
   async getPetEvents() {
     await delay(rand(100, 200));
     return [...S.events];
+  }
+
+  async getPersonalityTelemetry() {
+    await delay(rand(80, 150));
+    return createMockPetService().listPersonalityTelemetry();
   }
 
   // ─── Экономика ─────────────────────────────────────────────────────────────
