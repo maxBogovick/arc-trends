@@ -648,6 +648,38 @@ await testAsync('different behavior styles do not collapse into one final person
   assert.equal(results.filter(result => result.pet.personality === 'pristine').length < results.length, true);
 });
 
+await testAsync('item collection semantics separate diverse collectors from repeated item reliance', async () => {
+  let diverse = makePet({ formationComplete: true, personality: 'curious' });
+  let repeated = makePet({ formationComplete: true, personality: 'paranoid' });
+  const diverseIds = ['puzzle', 'magic_wand', 'crystal_ball', 'music_box', 'magic_potion', 'puzzle'];
+
+  for (let i = 0; i < diverseIds.length; i++) {
+    diverse = (await applyPersonalityCommand(diverse, {
+      type: i % 2 === 0 ? 'add_item' : 'use_item',
+      itemId: diverseIds[i],
+      itemKind: 'toy',
+      itemEffect: { happiness: 5, xp: 5 },
+      quantity: 1,
+      at: at(0, i + 1),
+      commandId: `semantic-diverse-item-${i}`,
+    } as PetCommand)).pet;
+    repeated = (await applyPersonalityCommand(repeated, {
+      type: 'use_item',
+      itemId: 'puzzle',
+      itemKind: 'toy',
+      itemEffect: { happiness: 5, xp: 5 },
+      at: at(0, i + 1),
+      commandId: `semantic-repeat-item-${i}`,
+    })).pet;
+  }
+
+  assert.equal((repeated.behaviorProfile?.axes.disruption ?? 0) > (diverse.behaviorProfile?.axes.disruption ?? 0), true);
+  assert.equal((diverse.behavioralCounters.uniqueItemsAdded?.length ?? 0) > 1, true);
+  assert.equal(repeated.behavioralCounters.repeatedItemUse7d ?? 0, 6);
+  assert.notDeepEqual(diverse.traitVector, repeated.traitVector);
+  assert.notDeepEqual(diverse.behaviorProfile?.axes, repeated.behaviorProfile?.axes);
+});
+
 await testAsync('full lifecycle styles form and stay behavior-sensitive through sync decay', async () => {
   const results = await Promise.all([
     runLifecycleStyle('common'),
@@ -851,7 +883,7 @@ await testAsync('post-formation behavior can trigger and accept stable evolution
   );
   const evolution = result.pet.evolutionHistory.at(-1);
   assert.equal(evolution?.fromPersonalityId, 'drowsy');
-  assert.equal(['adventurer', 'sage', 'chaotic', 'bold'].includes(evolution?.toPersonalityId ?? ''), true, JSON.stringify({
+  assert.equal(['adventurer', 'sage', 'chaotic', 'bold', 'curious'].includes(evolution?.toPersonalityId ?? ''), true, JSON.stringify({
     evolution,
     top: result.top.slice(0, 5).map(candidate => candidate.id),
     vector: result.pet.traitVector,
@@ -876,5 +908,5 @@ await testAsync('stable evolution window is reachable in long-running command li
     vector: result.pet.traitVector,
     targetTicksBeforeAccept: STABILITY_SYNCS,
   }, null, 2));
-  assert.equal(['adventurer', 'sage', 'chaotic', 'bold'].includes(evolution?.toPersonalityId ?? ''), true);
+  assert.equal(['adventurer', 'sage', 'chaotic', 'bold', 'curious'].includes(evolution?.toPersonalityId ?? ''), true);
 });

@@ -87,6 +87,8 @@ import { setLayeredEmergentState } from '../src/personality/stateLayers';
 import { PERSONALITY_TRAIT_MAP } from '../src/personality/personalityTraitMap';
 import {
   PERSONALITY_ENGINE_VERSION,
+  PERSONALITY_BEHAVIOR_EVIDENCE,
+  PERSONALITY_IDS,
   STATIC_REGISTRY_VERSION,
   appendOfflineCommand,
   createOfflinePetSave,
@@ -218,6 +220,24 @@ test('dynamic radius follows age brackets', () => {
 test('depth of immersion is 1 at personality center', () => {
   const vector = PERSONALITY_TRAIT_MAP.bold.position;
   assert.equal(depthOfImmersion(vector, 'bold', 3), 1);
+});
+
+test('new curious personality is available through catalog and trait map', () => {
+  const personality = getPersonalityStrict('curious');
+
+  assert.equal(PERSONALITY_IDS.includes('curious'), true);
+  assert.equal(Object.hasOwn(PERSONALITY_BEHAVIOR_EVIDENCE, 'curious'), true);
+  assert.equal(personality.name, 'Любознательный');
+  assert.equal(personality.specialRules !== undefined, true);
+  assert.deepEqual(PERSONALITY_TRAIT_MAP.curious.position, {
+    vitality: 65,
+    sociality: 45,
+    order: 60,
+    appetite: 30,
+    caution: 55,
+    curiosity: 95,
+  });
+  assert.equal(depthOfImmersion(PERSONALITY_TRAIT_MAP.curious.position, 'curious', 3), 1);
 });
 
 test('personality specialRules validator exposes adapter-owned rules', () => {
@@ -1586,7 +1606,7 @@ await testAsync('personality command use_item food falls back to feed influence 
 
   closeTo(result.pet.traitVector.appetite, 50 + 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   closeTo(result.pet.traitVector.sociality, 50 + 0.5 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
-  closeTo(result.pet.traitVector.curiosity, 50);
+  closeTo(result.pet.traitVector.curiosity, 50 + 0.35 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   assert.equal(result.influenceCooldowns['action:feed'], 0);
   assert.equal(result.influenceCooldowns['item:premium_burger'], undefined);
   assert.equal(result.events.filter(event => event.type === 'trait_vector_changed').length, 1);
@@ -1602,12 +1622,117 @@ await testAsync('personality command use_item prefers item influence over food f
     commandId: 'cmd-use-food-item-influence',
   });
 
-  closeTo(result.pet.traitVector.curiosity, 50 + 3 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
+  closeTo(result.pet.traitVector.curiosity, 50 + 3.35 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   closeTo(result.pet.traitVector.appetite, 50 + 2 * 0.08 * POST_FORMATION_ADAPTATION_MULTIPLIER);
   closeTo(result.pet.traitVector.sociality, 50);
   assert.equal(result.influenceCooldowns['item:magic_potion'], 0);
   assert.equal(result.influenceCooldowns['action:feed'], undefined);
   assert.equal(result.events.filter(event => event.type === 'trait_vector_changed').length, 1);
+});
+
+await testAsync('add_item records item-oriented style in traits and behavior profile', async () => {
+  const pet = makePet({ formationComplete: true, personality: 'curious' });
+  const result = await applyPersonalityCommand(pet, {
+    type: 'add_item',
+    itemId: 'puzzle',
+    itemKind: 'toy',
+    quantity: 1,
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-add-item-style',
+  });
+
+  assert.equal(result.blockedAction, null);
+  assert.equal(result.pet.traitVector.curiosity > pet.traitVector.curiosity, true);
+  assert.equal(result.pet.traitVector.order > pet.traitVector.order, true);
+  assert.equal((result.pet.behaviorProfile?.axes.exploration ?? 0) > 0, true);
+  assert.equal((result.pet.behaviorProfile?.axes.order ?? 0) > 0, true);
+  assert.equal(result.pet.behavioralCounters.uniqueItemsAdded?.includes('puzzle'), true);
+  assert.equal(result.events.some(event => event.type === 'behavior_profile_changed'), true);
+});
+
+await testAsync('diverse frequent item usage changes long-term behavior profile', async () => {
+  let pet = makePet({ formationComplete: true, personality: 'curious' });
+  const itemIds = ['puzzle', 'magic_wand', 'crystal_ball', 'music_box', 'magic_potion', 'puzzle'];
+
+  for (let i = 0; i < itemIds.length; i++) {
+    const result = await applyPersonalityCommand(pet, {
+      type: i % 2 === 0 ? 'add_item' : 'use_item',
+      itemId: itemIds[i],
+      itemKind: 'toy',
+      itemEffect: { happiness: 1, xp: 1 },
+      quantity: 1,
+      at: `2026-05-04T0${i}:00:00.000Z`,
+      commandId: `cmd-diverse-item-${i}`,
+    } as PetCommand);
+    pet = result.pet;
+  }
+
+  assert.equal((pet.behaviorProfile?.sampleCount ?? 0) >= itemIds.length, true);
+  assert.equal((pet.behaviorProfile?.axes.exploration ?? 0) > (pet.behaviorProfile?.axes.order ?? 0), true);
+  assert.equal((pet.behaviorProfile?.axes.play ?? 0) > 0, true);
+  assert.equal((pet.behavioralCounters.itemAdds7d ?? 0) > 0, true);
+  assert.equal((pet.behavioralCounters.itemUses7d ?? 0) > 0, true);
+});
+
+await testAsync('repeated and diverse item styles do not collapse into one trait shape', async () => {
+  let repeated = makePet({ formationComplete: true, personality: 'paranoid' });
+  let diverse = makePet({ formationComplete: true, personality: 'curious' });
+
+  for (let i = 0; i < 6; i++) {
+    repeated = (await applyPersonalityCommand(repeated, {
+      type: 'use_item',
+      itemId: 'puzzle',
+      itemKind: 'toy',
+      itemEffect: { happiness: 1, xp: 1 },
+      at: `2026-05-04T0${i}:10:00.000Z`,
+      commandId: `cmd-repeat-item-${i}`,
+    })).pet;
+    diverse = (await applyPersonalityCommand(diverse, {
+      type: 'use_item',
+      itemId: ['puzzle', 'magic_wand', 'crystal_ball', 'music_box', 'magic_potion', 'puzzle'][i],
+      itemKind: 'toy',
+      itemEffect: { happiness: 1, xp: 1 },
+      at: `2026-05-04T0${i}:20:00.000Z`,
+      commandId: `cmd-varied-item-${i}`,
+    })).pet;
+  }
+
+  assert.equal(repeated.traitVector.caution > diverse.traitVector.caution, true);
+  assert.equal((repeated.behaviorProfile?.axes.disruption ?? 0) > (diverse.behaviorProfile?.axes.disruption ?? 0), true);
+  assert.equal(diverse.traitVector.curiosity > repeated.traitVector.curiosity, true);
+});
+
+await testAsync('item behavior style can contribute to formation', async () => {
+  let pet = makePet({ formationComplete: false, formationProgress: FORMATION_THRESHOLD - 5 });
+  const result = await applyPersonalityCommand(pet, {
+    type: 'add_item',
+    itemId: 'crystal_ball',
+    itemKind: 'toy',
+    quantity: 5,
+    at: '2026-05-04T02:00:00.000Z',
+    commandId: 'cmd-item-formation',
+  });
+
+  assert.equal(result.pet.formationComplete, true);
+  assert.equal(result.pet.formationProgress, FORMATION_THRESHOLD);
+  assert.equal(result.pet.traitVector.curiosity > pet.traitVector.curiosity, true);
+});
+
+await testAsync('offline replay remains deterministic for item add and use behavior', async () => {
+  const pet = makePet({ formationComplete: true, personality: 'curious' });
+  const commands: PetCommand[] = [
+    { type: 'add_item', itemId: 'puzzle', itemKind: 'toy', quantity: 1, at: '2026-05-04T01:00:00.000Z', commandId: 'cmd-replay-add-1' },
+    { type: 'use_item', itemId: 'puzzle', itemKind: 'toy', itemEffect: { happiness: 1, xp: 1 }, at: '2026-05-04T02:00:00.000Z', commandId: 'cmd-replay-use-1' },
+    { type: 'add_item', itemId: 'magic_wand', itemKind: 'toy', quantity: 1, at: '2026-05-04T03:00:00.000Z', commandId: 'cmd-replay-add-2' },
+    { type: 'use_item', itemId: 'magic_wand', itemKind: 'toy', itemEffect: { happiness: 1, xp: 1 }, at: '2026-05-04T04:00:00.000Z', commandId: 'cmd-replay-use-2' },
+  ];
+
+  const first = await replayPersonalityCommands(pet, commands);
+  const second = await replayPersonalityCommands(pet, commands);
+
+  assert.deepEqual(first.pet.traitVector, second.pet.traitVector);
+  assert.deepEqual(first.pet.behaviorProfile, second.pet.behaviorProfile);
+  assert.deepEqual(first.pet.behavioralCounters, second.pet.behavioralCounters);
 });
 
 await testAsync('personality command handler gates influences with serializable cooldown state', async () => {
@@ -2268,6 +2393,37 @@ test('checkEvolution accepts stable target only when behavior profile supports i
   assert.equal(pet.currentTargetZone, 'paranoid');
   assert.equal(pet.ticksInTargetZone, STABILITY_SYNCS);
   assert.equal(pet.evolutionProposal?.targetPersonalityId, 'paranoid');
+});
+
+test('checkEvolution can target newly added curious personality from catalog data', () => {
+  const pet = makePet({
+    traitVector: { ...PERSONALITY_TRAIT_MAP.curious.position },
+    formationComplete: true,
+    behaviorProfile: createInitialBehaviorProfile({
+      axes: {
+        care: 0,
+        play: 0,
+        social: 30,
+        order: 45,
+        exploration: 65,
+        disruption: 0,
+        recovery: 0,
+      },
+      sampleCount: 24,
+    }),
+  });
+
+  for (let i = 0; i < 3; i++) {
+    checkEvolution(pet, {
+      now: new Date('2026-05-04T00:00:00.000Z'),
+      personalities: zdesagochiPetPreset.personalities,
+    });
+  }
+
+  assert.equal(pet.currentTargetZone, 'curious');
+  assert.equal(pet.evolutionReadinessTarget, 'curious');
+  assert.equal(pet.evolutionProposal?.targetPersonalityId, 'curious');
+  assert.equal(pet.evolutionProposal?.narrativeText?.includes('Любознательный'), true);
 });
 
 test('checkEvolution can accumulate readiness across confirmed target-zone syncs', () => {

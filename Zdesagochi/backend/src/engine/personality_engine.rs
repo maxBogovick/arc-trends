@@ -521,6 +521,7 @@ fn is_chaos_surge_active(
 
 // ── Update counters ───────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_counters(
     counters: &mut BehavioralCounters,
     action: &str,
@@ -528,6 +529,7 @@ pub fn update_counters(
     now: DateTime<Utc>,
     local_hour: i32,
     food_id: Option<&str>,
+    item_id: Option<&str>,
     personality: Option<&PersonalityDefinition>,
 ) {
     let now_str = now.to_rfc3339();
@@ -571,6 +573,8 @@ pub fn update_counters(
     if counters.last_day_reset != today {
         counters.play_count_today = 0;
         counters.daily_food_log.clear();
+        counters.daily_item_add_log.clear();
+        counters.daily_item_use_log.clear();
         counters.last_day_reset = today.clone();
     }
 
@@ -600,6 +604,31 @@ pub fn update_counters(
         "play" => {
             counters.play_count_today += 1;
             increment_rolling(counters, &today, "play");
+        }
+        "add_item" | "use_item" => {
+            if let Some(item_id) = item_id {
+                if action == "add_item" {
+                    *counters
+                        .daily_item_add_log
+                        .entry(item_id.to_string())
+                        .or_insert(0) += 1;
+                    if !counters.unique_items_added.contains(&item_id.to_string()) {
+                        counters.unique_items_added.push(item_id.to_string());
+                    }
+                    increment_rolling(counters, &today, "item_add");
+                    increment_rolling_item(counters, &today, item_id, "add");
+                } else {
+                    *counters
+                        .daily_item_use_log
+                        .entry(item_id.to_string())
+                        .or_insert(0) += 1;
+                    if !counters.unique_items_used.contains(&item_id.to_string()) {
+                        counters.unique_items_used.push(item_id.to_string());
+                    }
+                    increment_rolling(counters, &today, "item_use");
+                    increment_rolling_item(counters, &today, item_id, "use");
+                }
+            }
         }
         "sleep" => {
             if energy > 70.0 {
@@ -695,8 +724,41 @@ fn increment_rolling(counters: &mut BehavioralCounters, date: &str, key: &str) {
                 date: date.to_string(),
                 counts,
                 food_counts: None,
+                item_add_counts: None,
+                item_use_counts: None,
             });
     }
+}
+
+fn increment_rolling_item(
+    counters: &mut BehavioralCounters,
+    date: &str,
+    item_id: &str,
+    mode: &str,
+) {
+    let windows = counters
+        .rolling_windows
+        .get_or_insert_with(Default::default);
+    let bucket = if let Some(bucket) = windows.daily_buckets.iter_mut().find(|b| b.date == date) {
+        bucket
+    } else {
+        windows
+            .daily_buckets
+            .push(crate::engine::types::RollingDailyBucket {
+                date: date.to_string(),
+                counts: HashMap::new(),
+                food_counts: None,
+                item_add_counts: None,
+                item_use_counts: None,
+            });
+        windows.daily_buckets.last_mut().expect("bucket inserted")
+    };
+    let counts = if mode == "add" {
+        bucket.item_add_counts.get_or_insert_with(HashMap::new)
+    } else {
+        bucket.item_use_counts.get_or_insert_with(HashMap::new)
+    };
+    *counts.entry(item_id.to_string()).or_insert(0) += 1;
 }
 
 fn rolling_count(counters: &BehavioralCounters, key: &str, days: i64, now: DateTime<Utc>) -> u32 {
@@ -727,11 +789,58 @@ fn materialize_rolling(counters: &mut BehavioralCounters, now: DateTime<Utc>) {
     counters.night_wake_count_7d = rolling_count(counters, "night_wake", 7, now);
     counters.session_gaps_over_48h_30d = rolling_count(counters, "session_gap_48h", 30, now);
     counters.filth_crisis_count_30d = rolling_count(counters, "filth_crisis", 30, now);
+    counters.item_adds_7d = rolling_count(counters, "item_add", 7, now);
+    counters.item_uses_7d = rolling_count(counters, "item_use", 7, now);
+    counters.repeated_item_use_7d = rolling_item_counts(counters, "use", 7, now)
+        .values()
+        .copied()
+        .max()
+        .unwrap_or(0);
 
     // Compute play streaks
     counters.current_high_play_days = compute_current_high_play_streak(counters, now);
     counters.max_consec_high_play_days = compute_max_high_play_streak(counters, now);
     counters.night_single_interaction_days_7d = Some(compute_consec_single_night(counters, now));
+}
+
+pub fn rolling_item_counts(
+    counters: &BehavioralCounters,
+    mode: &str,
+    days: i64,
+    now: DateTime<Utc>,
+) -> HashMap<String, u32> {
+    let today = now.format("%Y-%m-%d").to_string();
+    let mut result = HashMap::new();
+    let Some(windows) = counters.rolling_windows.as_ref() else {
+        return result;
+    };
+
+    for bucket in &windows.daily_buckets {
+        let in_window = if let (Ok(bdate), Ok(tdate)) = (
+            chrono::NaiveDate::parse_from_str(&bucket.date, "%Y-%m-%d"),
+            chrono::NaiveDate::parse_from_str(&today, "%Y-%m-%d"),
+        ) {
+            (tdate - bdate).num_days() < days
+        } else {
+            false
+        };
+        if !in_window {
+            continue;
+        }
+
+        if mode != "use" {
+            for (item_id, count) in bucket.item_add_counts.as_ref().into_iter().flatten() {
+                *result.entry(item_id.clone()).or_insert(0) += *count;
+            }
+        }
+        if mode != "add" {
+            for (item_id, count) in bucket.item_use_counts.as_ref().into_iter().flatten() {
+                *result.entry(item_id.clone()).or_insert(0) += *count;
+            }
+        }
+    }
+
+    result
 }
 
 fn compute_current_high_play_streak(counters: &BehavioralCounters, now: DateTime<Utc>) -> u32 {

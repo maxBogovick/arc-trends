@@ -220,6 +220,10 @@ pub struct RollingDailyBucket {
     pub counts: HashMap<String, u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub food_counts: Option<HashMap<String, u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_add_counts: Option<HashMap<String, u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_use_counts: Option<HashMap<String, u32>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -266,6 +270,20 @@ pub struct BehavioralCounters {
 
     // Lifetime
     pub unique_foods_tried: Vec<String>,
+    #[serde(default)]
+    pub unique_items_added: Vec<String>,
+    #[serde(default)]
+    pub unique_items_used: Vec<String>,
+    #[serde(default)]
+    pub daily_item_add_log: HashMap<String, u32>,
+    #[serde(default)]
+    pub daily_item_use_log: HashMap<String, u32>,
+    #[serde(default)]
+    pub item_adds_7d: u32,
+    #[serde(default)]
+    pub item_uses_7d: u32,
+    #[serde(default)]
+    pub repeated_item_use_7d: u32,
     pub total_bond_actions: u32,
 
     // Room (adventurer + wanderlust)
@@ -319,6 +337,13 @@ impl Default for BehavioralCounters {
             daily_food_log: HashMap::new(),
             recent_feed_timestamps: Some(Vec::new()),
             unique_foods_tried: Vec::new(),
+            unique_items_added: Vec::new(),
+            unique_items_used: Vec::new(),
+            daily_item_add_log: HashMap::new(),
+            daily_item_use_log: HashMap::new(),
+            item_adds_7d: 0,
+            item_uses_7d: 0,
+            repeated_item_use_7d: 0,
             total_bond_actions: 0,
             same_room_hours: 0.0,
             last_equipped_room_id: "default".to_string(),

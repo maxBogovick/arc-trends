@@ -20,6 +20,7 @@ import {
 import { clearEmergentStateLayer, getActiveEmergentStates, getActiveEmergentStateTypes, setLayeredEmergentState, syncLayeredStatesFromLegacy } from './stateLayers';
 import {
   applyInfluence,
+  applyItemBehaviorStyle,
   applyRegression,
   acceptEvolution,
   checkEvolution,
@@ -230,6 +231,9 @@ export async function applyPersonalityCommand<TState extends PersonalityState>(
     });
     if (!gameplayOutcome.blockedAction) {
       const influenceApplied = await applyCommandInfluence(nextPet, command, options, ctx, events, influenceCooldowns, currentSync);
+      if (command.type === 'add_item' || command.type === 'use_item') {
+        applyItemBehaviorStyle(nextPet, command, ctx);
+      }
       applyCareRecoveryForCommand(nextPet, command, influenceApplied, events);
       applyCatharsisForCommand(nextPet, command, ctx, events);
     }
@@ -394,7 +398,7 @@ function applyGameplayCommand(
       now: context.now,
       rng: context.rng,
       foodId: command.type === 'feed' ? command.foodId : undefined,
-      itemId: command.type === 'use_item' ? command.itemId : undefined,
+      itemId: command.type === 'use_item' || command.type === 'add_item' ? command.itemId : undefined,
     };
     pet.behavioralCounters = updateCounters(
       pet.behavioralCounters,
@@ -505,7 +509,7 @@ function applyActionOutcome(
     now: context.now,
     rng: context.rng,
     foodId: command.type === 'feed' ? command.foodId : undefined,
-    itemId: command.type === 'use_item' ? command.itemId : undefined,
+    itemId: command.type === 'use_item' || command.type === 'add_item' ? command.itemId : undefined,
   };
   const modified = applyActionModifiers(
     base,
@@ -595,6 +599,8 @@ function getBaseActionResult(
         coins: effect.coins ?? rule.coins,
       };
     }
+    case 'add_item':
+      return { statDeltas: {}, xp: 0, coins: 0 };
     default:
       return actionType ? { statDeltas: {}, xp: 0, coins: 0 } : null;
   }
@@ -760,6 +766,7 @@ function toGameplayAction(command: PetCommand): ActionType | null {
     case 'heal':
     case 'bond':
     case 'use_item':
+    case 'add_item':
     case 'sync':
       return command.type;
     case 'equip_room':
@@ -1039,6 +1046,8 @@ function getInfluenceIdForCommand(
       if (registry.some(influence => influence.id === itemInfluenceId)) return itemInfluenceId;
       return command.itemKind === 'food' ? 'action:feed' : itemInfluenceId;
     }
+    case 'add_item':
+      return null;
     case 'equip_room':
       return 'env:new_room';
     case 'npc_visit':

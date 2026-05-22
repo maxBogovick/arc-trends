@@ -497,6 +497,8 @@ export function updateCounters(
   if (c.lastDayReset !== today) {
     c.playCountToday = 0;
     c.dailyFoodLog = {};
+    c.dailyItemAddLog = {};
+    c.dailyItemUseLog = {};
     c.lastDayReset = today;
   }
 
@@ -517,6 +519,19 @@ export function updateCounters(
   if (action === 'play') {
     c.playCountToday++;
     incrementRollingCounter(c, today, 'play');
+  }
+
+  if ((action === 'add_item' || action === 'use_item') && context.itemId) {
+    const uniqueKey = action === 'add_item' ? 'uniqueItemsAdded' : 'uniqueItemsUsed';
+    const logKey = action === 'add_item' ? 'dailyItemAddLog' : 'dailyItemUseLog';
+    c[uniqueKey] ??= [];
+    c[logKey] ??= {};
+    c[logKey] = { ...c[logKey], [context.itemId]: (c[logKey]?.[context.itemId] ?? 0) + 1 };
+    if (!c[uniqueKey].includes(context.itemId)) {
+      c[uniqueKey] = [...c[uniqueKey], context.itemId];
+    }
+    incrementRollingCounter(c, today, action === 'add_item' ? 'item_add' : 'item_use');
+    incrementRollingItem(c, today, context.itemId, action === 'add_item' ? 'add' : 'use');
   }
 
   if (action === 'sleep' && stats.energy > 70) incrementRollingCounter(c, today, 'sleep_forced');
@@ -675,8 +690,15 @@ export function createDefaultCounters(context: PersonalityRuntimeContext = {}): 
     playCountToday: 0,
     lastDayReset: now.slice(0, 10),
     dailyFoodLog: {},
+    dailyItemAddLog: {},
+    dailyItemUseLog: {},
     recentFeedTimestamps: [],
     uniqueFoodsTried: [],
+    uniqueItemsAdded: [],
+    uniqueItemsUsed: [],
+    itemAdds7d: 0,
+    itemUses7d: 0,
+    repeatedItemUse7d: 0,
     totalBondActions: 0,
     sameRoomHours: 0,
     lastEquippedRoomId: 'default',
@@ -727,12 +749,18 @@ function cloneCounters(counters: BehavioralCounters): BehavioralCounters {
     recentFeedTimestamps: [...(counters.recentFeedTimestamps ?? [])],
     lastStatsSnapshot: { ...(counters.lastStatsSnapshot ?? {}) },
     uniqueFoodsTried: [...counters.uniqueFoodsTried],
+    uniqueItemsAdded: [...(counters.uniqueItemsAdded ?? [])],
+    uniqueItemsUsed: [...(counters.uniqueItemsUsed ?? [])],
+    dailyItemAddLog: { ...(counters.dailyItemAddLog ?? {}) },
+    dailyItemUseLog: { ...(counters.dailyItemUseLog ?? {}) },
     rollingWindows: counters.rollingWindows
       ? {
           dailyBuckets: counters.rollingWindows.dailyBuckets.map(bucket => ({
             date: bucket.date,
             counts: { ...bucket.counts },
             foodCounts: bucket.foodCounts ? { ...bucket.foodCounts } : undefined,
+            itemAddCounts: bucket.itemAddCounts ? { ...bucket.itemAddCounts } : undefined,
+            itemUseCounts: bucket.itemUseCounts ? { ...bucket.itemUseCounts } : undefined,
           })),
         }
       : undefined,
@@ -785,6 +813,19 @@ function incrementRollingFood(counters: BehavioralCounters, date: string, foodId
   bucket.foodCounts[foodId] = (bucket.foodCounts[foodId] ?? 0) + 1;
 }
 
+function incrementRollingItem(counters: BehavioralCounters, date: string, itemId: string, mode: 'add' | 'use'): void {
+  counters.rollingWindows ??= { dailyBuckets: [] };
+  let bucket = counters.rollingWindows.dailyBuckets.find(entry => entry.date === date);
+  if (!bucket) {
+    bucket = { date, counts: {} };
+    counters.rollingWindows.dailyBuckets.push(bucket);
+  }
+
+  const key = mode === 'add' ? 'itemAddCounts' : 'itemUseCounts';
+  bucket[key] ??= {};
+  bucket[key][itemId] = (bucket[key][itemId] ?? 0) + 1;
+}
+
 function materializeRollingCounters(counters: BehavioralCounters, now: Date): void {
   counters.rollingWindows ??= { dailyBuckets: [] };
   counters.rollingWindows.dailyBuckets = pruneDailyBuckets(counters.rollingWindows.dailyBuckets, now);
@@ -799,6 +840,9 @@ function materializeRollingCounters(counters: BehavioralCounters, now: Date): vo
   counters.currentHighPlayDays = consecutiveHighPlayDays(counters, now);
   counters.maxConsecHighPlayDays = maxHighPlayStreak(counters, now);
   counters.nightSingleInteractionDays7d = consecutiveSingleNightInteractionDays(counters, now);
+  counters.itemAdds7d = rollingCount(counters, 'item_add', 7, now);
+  counters.itemUses7d = rollingCount(counters, 'item_use', 7, now);
+  counters.repeatedItemUse7d = Math.max(0, ...Object.values(rollingItemCounts(counters, 'use', 7, now)));
 }
 
 function rollingCount(counters: BehavioralCounters, key: RollingCounterKey, days: number, now: Date): number {
@@ -867,6 +911,27 @@ function rollingFoodCounts(counters: BehavioralCounters, days: number, now: Date
     if (daysBetween(bucket.date, currentDate) >= days) continue;
     for (const [foodId, count] of Object.entries(bucket.foodCounts ?? {})) {
       result[foodId] = (result[foodId] ?? 0) + count;
+    }
+  }
+
+  return result;
+}
+
+export function rollingItemCounts(counters: BehavioralCounters, mode: 'add' | 'use' | 'both', days: number, now: Date): Record<string, number> {
+  const buckets = counters.rollingWindows?.dailyBuckets ?? [];
+  const currentDate = toDateOnly(now);
+  const result: Record<string, number> = {};
+
+  for (const bucket of buckets) {
+    if (daysBetween(bucket.date, currentDate) >= days) continue;
+    const sources = [
+      mode !== 'use' ? bucket.itemAddCounts : undefined,
+      mode !== 'add' ? bucket.itemUseCounts : undefined,
+    ];
+    for (const source of sources) {
+      for (const [itemId, count] of Object.entries(source ?? {})) {
+        result[itemId] = (result[itemId] ?? 0) + count;
+      }
     }
   }
 

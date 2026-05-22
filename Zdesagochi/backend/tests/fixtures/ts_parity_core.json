@@ -178,11 +178,12 @@
           "happiness": 20.0
         },
         "traitVector": {
-          "curiosity": 51.6,
+          "curiosity": 51.74,
           "order": 50.8,
-          "vitality": 49.6
+          "vitality": 49.68,
+          "caution": 49.9
         },
-        "formationProgress": 10.5,
+        "formationProgress": 11.7,
         "influenceCooldowns": {
           "item:puzzle": 0
         },

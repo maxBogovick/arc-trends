@@ -37,6 +37,11 @@ export {
   PERSONALITY_STATE_SCHEMA_VERSION,
   STATIC_REGISTRY_VERSION,
 } from './engineVersion';
+export {
+  PERSONALITY_BEHAVIOR_EVIDENCE,
+  PERSONALITY_IDS,
+  PERSONALITY_TRAIT_HOMES,
+} from './personalityCatalog';
 export { createInitialBehaviorProfile } from './TraitEvolutionEngine';
 export type { PersonalityStateMigrationResult } from './stateMigration';
 export { migratePersonalityState } from './stateMigration';

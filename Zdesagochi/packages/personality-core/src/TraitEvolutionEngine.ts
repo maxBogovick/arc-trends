@@ -1,5 +1,7 @@
 import type { PersonalityAccount, PersonalityMemoryTextGenerator, PersonalityNamedState, PersonalityState } from './coreState';
 import { EVOLUTION_LEGACY, PERSONALITY_TRAIT_MAP } from './personalityTraitMap';
+import { PERSONALITY_BEHAVIOR_EVIDENCE } from './personalityCatalog';
+import { rollingItemCounts } from './PersonalityEngine';
 import { clearLayeredEmergentState, setLayeredEmergentState } from './stateLayers';
 import type {
   BehaviorProfile,
@@ -161,6 +163,90 @@ export function updateBehaviorProfile(
   };
 }
 
+export function applyItemBehaviorStyle(
+  pet: PersonalityState,
+  command: { type: 'add_item' | 'use_item'; itemId: string; itemKind?: string; quantity?: number },
+  ctx: TraitEvolutionContext = {},
+): boolean {
+  const now = getNow(ctx);
+  const itemCounts = rollingItemCounts(pet.behavioralCounters, 'both', 7, now);
+  const total7d = Object.values(itemCounts).reduce((sum, count) => sum + count, 0);
+  const unique7d = Object.keys(itemCounts).length;
+  const maxRepeat7d = Math.max(0, ...Object.values(itemCounts));
+  const repeatRatio = total7d > 0 ? maxRepeat7d / total7d : 0;
+  const personalityId = pet.formationComplete ? pet.personality as PersonalityId : null;
+  const traitDeltas: Partial<Record<TraitKey, number>> = {};
+  const behaviorSignal: Partial<BehaviorVector> = {};
+
+  if (command.type === 'add_item') {
+    const quantity = clamp(Math.floor(command.quantity ?? 1), 1, 5);
+    addTraitDeltas(traitDeltas, { curiosity: 0.45 * quantity, order: 0.35 * quantity });
+    addBehaviorSignal(behaviorSignal, { exploration: 0.45 * quantity, order: 0.35 * quantity });
+    if (command.itemKind === 'decoration') {
+      addTraitDeltas(traitDeltas, { order: 0.35, sociality: 0.2 });
+      addBehaviorSignal(behaviorSignal, { order: 0.4, social: 0.2 });
+    }
+  } else {
+    addTraitDeltas(traitDeltas, { curiosity: 0.35, vitality: 0.2, caution: -0.25 });
+    addBehaviorSignal(behaviorSignal, { exploration: 0.35, play: command.itemKind === 'toy' ? 0.35 : 0 });
+  }
+
+  if (total7d >= 4 && unique7d >= 3) {
+    const mult = personalityItemStyleMultiplier(personalityId, 'diverse');
+    addTraitDeltas(traitDeltas, {
+      curiosity: 1.15 * mult,
+      sociality: 0.35 * mult,
+      caution: -0.25 * mult,
+    });
+    addBehaviorSignal(behaviorSignal, {
+      exploration: 1.25 * mult,
+      play: 0.35 * mult,
+      social: 0.25 * mult,
+    });
+  }
+
+  if (total7d >= 4 && repeatRatio >= 0.65) {
+    const mult = personalityItemStyleMultiplier(personalityId, 'repetitive');
+    addTraitDeltas(traitDeltas, {
+      caution: 0.9 * mult,
+      order: 0.5 * mult,
+      curiosity: -0.35 * mult,
+    });
+    addBehaviorSignal(behaviorSignal, {
+      order: 0.65 * mult,
+      recovery: 0.25 * mult,
+      disruption: 0.35 * mult,
+    });
+  }
+
+  if (total7d >= 6) {
+    const mult = personalityItemStyleMultiplier(personalityId, 'frequent');
+    addTraitDeltas(traitDeltas, {
+      curiosity: 0.45 * mult,
+      vitality: 0.35 * mult,
+      order: -0.2 * mult,
+    });
+    addBehaviorSignal(behaviorSignal, {
+      exploration: 0.45 * mult,
+      play: 0.35 * mult,
+    });
+  }
+
+  const appliedTraits = applyDirectTraitDeltas(pet, traitDeltas, ctx);
+  const appliedBehavior = applyBehaviorSignal(pet, behaviorSignal, ctx);
+
+  if (appliedTraits) {
+    updateFormationProgress(pet, {
+      id: `item_style:${command.type}`,
+      category: 'item',
+      label: 'Item behavior style',
+      traitDeltas,
+    }, traitDeltas as Partial<TraitVector>, ctx);
+  }
+
+  return appliedTraits || appliedBehavior;
+}
+
 export function getDynamicRadius(personality: PersonalityDefinition | PersonalityId, ageHours: number): number {
   const id = typeof personality === 'string' ? personality : personality.id;
   const base = PERSONALITY_TRAIT_MAP[id].radiusBase;
@@ -286,6 +372,93 @@ function getContextSensitivityMultiplier(
     default:
       return 1;
   }
+}
+
+function applyDirectTraitDeltas(
+  pet: PersonalityState,
+  deltas: Partial<Record<TraitKey, number>>,
+  ctx: TraitEvolutionContext,
+): boolean {
+  let appliedAny = false;
+
+  for (const key of TRAIT_KEYS) {
+    const delta = deltas[key];
+    if (delta === undefined || delta === 0) continue;
+
+    const spent = pet.dailyTraitBudget[key] ?? 0;
+    const remaining = Math.max(0, DAILY_BUDGET[key] - spent);
+    const applied = clamp(delta, -remaining, remaining);
+    if (applied === 0) continue;
+
+    const sensitivityMultiplier = !pet.formationComplete
+      ? (ctx.enablePreFormationSensitivity === false ? 1 : PRE_FORMATION_SENSITIVITY_MULTIPLIER)
+      : POST_FORMATION_ADAPTATION_MULTIPLIER;
+    pet.dailyTraitBudget[key] = spent + Math.abs(applied);
+    pet.traitVector[key] = clamp(
+      pet.traitVector[key] + applied * SMOOTHING_ALPHA * sensitivityMultiplier,
+      0,
+      100,
+    );
+    pet.dailyVectorVariance += Math.abs(applied);
+    appliedAny = true;
+  }
+
+  if (appliedAny) updateConfusedState(pet, ctx);
+  return appliedAny;
+}
+
+function applyBehaviorSignal(
+  pet: PersonalityState,
+  signal: Partial<BehaviorVector>,
+  ctx: TraitEvolutionContext,
+): boolean {
+  if (!Object.values(signal).some(value => (value ?? 0) !== 0)) return false;
+
+  const now = getNow(ctx);
+  const profile = normalizeBehaviorProfile(pet.behaviorProfile);
+  const axes = decayBehaviorAxes(profile, now);
+
+  for (const axis of BEHAVIOR_AXES) {
+    axes[axis] = clamp(axes[axis] + (signal[axis] ?? 0), 0, 100);
+  }
+
+  pet.behaviorProfile = {
+    axes,
+    sampleCount: Math.min(10_000, profile.sampleCount + 1),
+    lastUpdatedAt: now.toISOString(),
+  };
+  return true;
+}
+
+function addTraitDeltas(
+  target: Partial<Record<TraitKey, number>>,
+  source: Partial<Record<TraitKey, number>>,
+): void {
+  for (const [key, value] of Object.entries(source)) {
+    const trait = key as TraitKey;
+    target[trait] = (target[trait] ?? 0) + (value ?? 0);
+  }
+}
+
+function addBehaviorSignal(
+  target: Partial<BehaviorVector>,
+  source: Partial<BehaviorVector>,
+): void {
+  for (const [key, value] of Object.entries(source)) {
+    const axis = key as keyof BehaviorVector;
+    target[axis] = (target[axis] ?? 0) + (value ?? 0);
+  }
+}
+
+function personalityItemStyleMultiplier(personalityId: PersonalityId | null, style: 'diverse' | 'repetitive' | 'frequent'): number {
+  if (!personalityId) return 1.0;
+  if (style === 'diverse' && ['curious', 'adventurer', 'playful', 'chaotic'].includes(personalityId)) return 1.25;
+  if (style === 'diverse' && ['stoic', 'pristine'].includes(personalityId)) return 0.9;
+  if (style === 'repetitive' && ['paranoid', 'anxious', 'stoic'].includes(personalityId)) return 1.35;
+  if (style === 'repetitive' && ['adventurer', 'chaotic', 'playful'].includes(personalityId)) return 0.75;
+  if (style === 'frequent' && ['playful', 'bold', 'chaotic'].includes(personalityId)) return 1.2;
+  if (style === 'frequent' && ['melancholic', 'drowsy'].includes(personalityId)) return 0.8;
+  return 1.0;
 }
 
 export function applyRegression(pet: PersonalityState): void {
@@ -1033,40 +1206,23 @@ function getBehaviorEvidenceForPersonality(profile: BehaviorProfile | undefined,
   const { axes, sampleCount } = normalizeBehaviorProfile(profile);
   if (sampleCount < BEHAVIOR_PROFILE_EVOLUTION_MIN_SAMPLES) return Number.POSITIVE_INFINITY;
 
-  switch (personalityId) {
-    case 'playful':
-      return axes.play + axes.exploration * 0.4;
-    case 'drowsy':
-      return axes.disruption + Math.max(0, 25 - axes.play) * 0.5;
-    case 'foodie':
-      return axes.care + axes.social * 0.25;
-    case 'bold':
-      return axes.play + axes.exploration * 0.6 + axes.disruption * 0.2;
-    case 'zen':
-      return axes.order + axes.care * 0.5 - axes.disruption * 0.6;
-    case 'anxious':
-      return axes.disruption + axes.recovery * 0.5;
-    case 'feral':
-      return axes.play + axes.disruption * 0.8 + Math.max(0, 30 - axes.social) * 0.3;
-    case 'sage':
-      return axes.exploration + axes.order * 0.7 + axes.social * 0.3;
-    case 'pristine':
-      return axes.order + axes.care * 0.4;
-    case 'empath':
-      return axes.social + axes.care * 0.5 + axes.recovery * 0.3;
-    case 'greedy':
-      return axes.care + axes.exploration * 0.5;
-    case 'melancholic':
-      return axes.disruption + axes.social * 0.2;
-    case 'chaotic':
-      return axes.disruption + axes.play * 0.7 + axes.exploration * 0.7;
-    case 'stoic':
-      return axes.order + Math.max(0, 25 - axes.social) * 0.4;
-    case 'adventurer':
-      return axes.exploration + axes.play * 0.6 + axes.care * 0.2;
-    case 'paranoid':
-      return axes.disruption + axes.order * 0.4;
+  type BehaviorEvidenceConfig = {
+    axes: Partial<Record<keyof BehaviorVector, number>>;
+    lowAxes?: Partial<Record<keyof BehaviorVector, { below: number; weight: number }>>;
+  };
+
+  const evidence = PERSONALITY_BEHAVIOR_EVIDENCE[personalityId] as BehaviorEvidenceConfig;
+  let score = 0;
+
+  for (const [axis, weight] of Object.entries(evidence.axes)) {
+    score += axes[axis as keyof BehaviorVector] * weight;
   }
+
+  for (const [axis, lowRule] of Object.entries(evidence.lowAxes ?? {})) {
+    score += Math.max(0, lowRule.below - axes[axis as keyof BehaviorVector]) * lowRule.weight;
+  }
+
+  return score;
 }
 
 function hasBehaviorEvidenceForEvolution(profile: BehaviorProfile | undefined, personalityId: PersonalityId): boolean {

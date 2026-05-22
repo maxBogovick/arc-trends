@@ -522,6 +522,7 @@ fn is_supported_command_type(command_type: &str) -> bool {
             | "heal"
             | "bond"
             | "use_item"
+            | "add_item"
             | "accept_evolution"
             | "reject_evolution"
             | "sync"

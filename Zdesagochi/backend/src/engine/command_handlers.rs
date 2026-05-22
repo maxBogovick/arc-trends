@@ -13,8 +13,9 @@ use crate::engine::personality_engine::{
     create_default_counters, get_paranoid_restore_mult, get_peak_performance_mult, ActionResult,
 };
 use crate::engine::trait_evolution::{
-    accept_evolution as te_accept_evolution, apply_registered_influence, check_evolution,
-    check_shadow_form, reject_evolution as te_reject_evolution, CATHARSIS_XP_BURST_MULTIPLIER,
+    accept_evolution as te_accept_evolution, apply_item_behavior_style, apply_registered_influence,
+    check_evolution, check_shadow_form, reject_evolution as te_reject_evolution,
+    CATHARSIS_XP_BURST_MULTIPLIER,
 };
 use crate::engine::types::{
     clamp_stat, ActiveEmergentState, AppliedModifier, BehaviorProfile, BehavioralCounters,
@@ -489,6 +490,7 @@ pub fn apply_personality_command(
             now,
             local_hour,
             None,
+            None,
             Some(personality),
         );
 
@@ -726,6 +728,17 @@ pub fn apply_personality_command(
         now,
         local_hour,
     );
+    if matches!(command.command_type.as_str(), "add_item" | "use_item") {
+        if let Some(item_id) = command.item_id.as_deref() {
+            if apply_item_behavior_style(state, &command.command_type, item_id, now) {
+                result.applied_modifiers.push(AppliedModifier {
+                    source: "base".to_string(),
+                    id: "item_behavior_style".to_string(),
+                    description: "Item behavior style applied".to_string(),
+                });
+            }
+        }
+    }
     finish_result(state, result)
 }
 
@@ -809,6 +822,7 @@ fn get_influence_id_for_command(state: &EngineState, command: &PetCommand) -> Op
         "bathe" => Some("action:bathe".to_string()),
         "heal" => Some("action:heal".to_string()),
         "bond" => Some("action:bond".to_string()),
+        "add_item" => None,
         "use_item" => {
             let item_id = command.item_id.as_deref()?;
             let item_influence_id = format!("item:{}", item_id);
@@ -919,6 +933,7 @@ fn get_base_action_result(
                 (HashMap::new(), 0.0, 0.0)
             }
         }
+        "add_item" => (HashMap::new(), 0.0, 0.0),
         _ => (HashMap::new(), 0.0, 0.0),
     }
 }
@@ -1120,6 +1135,7 @@ fn finalize_command(
     local_hour: i32,
 ) {
     let food_id = command.food_id.as_deref();
+    let item_id = command.item_id.as_deref();
 
     let today = now.format("%Y-%m-%d").to_string();
     if state.behavioral_counters.last_day_reset != today {
@@ -1134,6 +1150,7 @@ fn finalize_command(
         now,
         local_hour,
         food_id,
+        item_id,
         Some(personality),
     );
 

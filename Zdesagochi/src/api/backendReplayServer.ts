@@ -187,6 +187,7 @@ const SUPPORTED_COMMAND_TYPES = new Set<string>([
   'heal',
   'bond',
   'use_item',
+  'add_item',
   'equip_room',
   'npc_visit',
   'accept_evolution',

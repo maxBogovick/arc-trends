@@ -4,6 +4,8 @@
 //  Меняй только здесь — всё остальное подхватывает автоматически.
 // ════════════════════════════════════════════════════════════════════════════
 
+import { PERSONALITY_IDS } from './personalityCatalog';
+
 // ── Базовые алиасы ───────────────────────────────────────────────────────────
 
 export type StatKey =
@@ -12,7 +14,7 @@ export type StatKey =
 
 export type ActionType =
   | 'feed' | 'play' | 'sleep' | 'wake'
-  | 'bathe' | 'heal' | 'bond' | 'sync' | 'use_item';
+  | 'bathe' | 'heal' | 'bond' | 'sync' | 'use_item' | 'add_item';
 
 export type StatMultipliers = Partial<Record<StatKey, number>>;
 export type StatAdditives  = Partial<Record<StatKey, number>>;
@@ -37,11 +39,7 @@ export const MODIFIER_CAPS = {
 
 // ── Идентификаторы характеров ────────────────────────────────────────────────
 
-export type PersonalityId =
-  | 'playful'    | 'drowsy'     | 'foodie'   | 'bold'      | 'zen'
-  | 'anxious'    | 'feral'      | 'sage'     | 'pristine'  | 'empath'
-  | 'greedy'     | 'melancholic'| 'chaotic'  | 'stoic'
-  | 'adventurer' | 'paranoid';
+export type PersonalityId = typeof PERSONALITY_IDS[number];
 
 // ── Trait Evolution System — пространство черт ─────────────────────────────
 
@@ -409,12 +407,16 @@ export type RollingCounterKey =
   | 'night_interaction'
   | 'session_gap_48h'
   | 'filth_crisis'
-  | 'play';
+  | 'play'
+  | 'item_add'
+  | 'item_use';
 
 export interface RollingDailyBucket {
   date: string;
   counts: Partial<Record<RollingCounterKey, number>>;
   foodCounts?: Record<string, number>;
+  itemAddCounts?: Record<string, number>;
+  itemUseCounts?: Record<string, number>;
 }
 
 export interface BehavioralRollingWindows {
@@ -513,6 +515,13 @@ export interface BehavioralCounters {
 
   // Lifetime
   uniqueFoodsTried: string[];        // все уникальные foodId за всё время
+  uniqueItemsAdded?: string[];       // все уникальные itemId, добавленные в инвентарь
+  uniqueItemsUsed?: string[];        // все уникальные itemId, использованные из инвентаря
+  dailyItemAddLog?: Record<string, number>;
+  dailyItemUseLog?: Record<string, number>;
+  itemAdds7d?: number;
+  itemUses7d?: number;
+  repeatedItemUse7d?: number;        // максимум повторов одного itemId за 7 дней
   totalBondActions: number;
 
   // Комната (авантюрист + wanderlust)

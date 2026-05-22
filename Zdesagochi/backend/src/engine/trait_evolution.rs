@@ -124,6 +124,214 @@ pub fn apply_registered_influence(
     true
 }
 
+pub fn apply_item_behavior_style(
+    state: &mut EngineState,
+    command_type: &str,
+    item_id: &str,
+    now: DateTime<Utc>,
+) -> bool {
+    if command_type != "add_item" && command_type != "use_item" {
+        return false;
+    }
+
+    let item_counts = crate::engine::personality_engine::rolling_item_counts(
+        &state.behavioral_counters,
+        "both",
+        7,
+        now,
+    );
+    let total_7d: u32 = item_counts.values().sum();
+    let unique_7d = item_counts.len() as u32;
+    let max_repeat_7d = item_counts.values().copied().max().unwrap_or(0);
+    let repeat_ratio = if total_7d > 0 {
+        max_repeat_7d as f64 / total_7d as f64
+    } else {
+        0.0
+    };
+
+    let mut trait_deltas: HashMap<TraitKey, f64> = HashMap::new();
+    let mut behavior_signal: HashMap<BehaviorAxis, f64> = HashMap::new();
+
+    if command_type == "add_item" {
+        add_trait_delta(&mut trait_deltas, TraitKey::Curiosity, 0.45);
+        add_trait_delta(&mut trait_deltas, TraitKey::Order, 0.35);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Exploration, 0.45);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Order, 0.35);
+    } else {
+        add_trait_delta(&mut trait_deltas, TraitKey::Curiosity, 0.35);
+        add_trait_delta(&mut trait_deltas, TraitKey::Vitality, 0.2);
+        add_trait_delta(&mut trait_deltas, TraitKey::Caution, -0.25);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Exploration, 0.35);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Play, 0.2);
+    }
+
+    if total_7d >= 4 && unique_7d >= 3 {
+        let mult = personality_item_style_multiplier(state, "diverse");
+        add_trait_delta(&mut trait_deltas, TraitKey::Curiosity, 1.15 * mult);
+        add_trait_delta(&mut trait_deltas, TraitKey::Sociality, 0.35 * mult);
+        add_trait_delta(&mut trait_deltas, TraitKey::Caution, -0.25 * mult);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Exploration, 1.25 * mult);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Play, 0.35 * mult);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Social, 0.25 * mult);
+    }
+
+    if total_7d >= 4 && repeat_ratio >= 0.65 {
+        let mult = personality_item_style_multiplier(state, "repetitive");
+        add_trait_delta(&mut trait_deltas, TraitKey::Caution, 0.9 * mult);
+        add_trait_delta(&mut trait_deltas, TraitKey::Order, 0.5 * mult);
+        add_trait_delta(&mut trait_deltas, TraitKey::Curiosity, -0.35 * mult);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Order, 0.65 * mult);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Recovery, 0.25 * mult);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Disruption, 0.35 * mult);
+    }
+
+    if total_7d >= 6 {
+        let mult = personality_item_style_multiplier(state, "frequent");
+        add_trait_delta(&mut trait_deltas, TraitKey::Curiosity, 0.45 * mult);
+        add_trait_delta(&mut trait_deltas, TraitKey::Vitality, 0.35 * mult);
+        add_trait_delta(&mut trait_deltas, TraitKey::Order, -0.2 * mult);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Exploration, 0.45 * mult);
+        add_behavior_delta(&mut behavior_signal, BehaviorAxis::Play, 0.35 * mult);
+    }
+
+    let applied_traits = apply_direct_trait_deltas(state, &trait_deltas, now);
+    let applied_behavior = apply_behavior_signal(state, &behavior_signal, now);
+
+    if applied_traits && !state.formation_complete {
+        let influence = RegisteredInfluence {
+            id: format!("item_style:{command_type}:{item_id}"),
+            category: "item".to_string(),
+            label: "Item behavior style".to_string(),
+            trait_deltas: trait_deltas
+                .iter()
+                .map(|(key, value)| (key.as_str().to_string(), *value))
+                .collect(),
+            trauma_delta: None,
+            cooldown_syncs: None,
+            conditions: None,
+            on_apply: None,
+        };
+        update_formation_progress(state, &influence, &trait_deltas, now);
+    }
+
+    applied_traits || applied_behavior
+}
+
+fn apply_direct_trait_deltas(
+    state: &mut EngineState,
+    trait_deltas: &HashMap<TraitKey, f64>,
+    now: DateTime<Utc>,
+) -> bool {
+    let mut applied_any = false;
+    for (trait_key, delta) in trait_deltas {
+        if *delta == 0.0 {
+            continue;
+        }
+        let spent = state
+            .daily_trait_budget
+            .get(trait_key)
+            .copied()
+            .unwrap_or(0.0);
+        let remaining = (daily_budget(*trait_key) - spent).max(0.0);
+        let applied = clamp(*delta, -remaining, remaining);
+        if applied == 0.0 {
+            continue;
+        }
+        state
+            .daily_trait_budget
+            .insert(*trait_key, spent + applied.abs());
+        let current = state.trait_vector.get(trait_key).copied().unwrap_or(50.0);
+        let sensitivity_multiplier = if state.formation_complete {
+            POST_FORMATION_ADAPTATION_MULTIPLIER
+        } else {
+            PRE_FORMATION_SENSITIVITY_MULTIPLIER
+        };
+        state.trait_vector.insert(
+            *trait_key,
+            clamp(
+                current + applied * SMOOTHING_ALPHA * sensitivity_multiplier,
+                0.0,
+                100.0,
+            ),
+        );
+        state.daily_vector_variance += applied.abs();
+        applied_any = true;
+    }
+    if applied_any {
+        update_confused_state(state, now);
+    }
+    applied_any
+}
+
+fn apply_behavior_signal(
+    state: &mut EngineState,
+    signal: &HashMap<BehaviorAxis, f64>,
+    now: DateTime<Utc>,
+) -> bool {
+    if signal.values().all(|v| *v == 0.0) {
+        return false;
+    }
+
+    let elapsed_days = state
+        .behavior_profile
+        .last_updated_at
+        .as_ref()
+        .and_then(|value| value.parse::<DateTime<Utc>>().ok())
+        .map(|last| (now - last).num_seconds().max(0) as f64 / 86_400.0)
+        .unwrap_or(0.0);
+    let decay = if elapsed_days > 0.0 {
+        BEHAVIOR_PROFILE_DECAY_PER_DAY.powf(elapsed_days)
+    } else {
+        1.0
+    };
+
+    for axis in BehaviorAxis::all() {
+        let current = state
+            .behavior_profile
+            .axes
+            .get(axis)
+            .copied()
+            .unwrap_or(0.0)
+            * decay;
+        let added = signal.get(axis).copied().unwrap_or(0.0);
+        state
+            .behavior_profile
+            .axes
+            .insert(*axis, clamp(current + added, 0.0, 100.0));
+    }
+    state.behavior_profile.sample_count = state
+        .behavior_profile
+        .sample_count
+        .saturating_add(1)
+        .min(10_000);
+    state.behavior_profile.last_updated_at = Some(now.to_rfc3339());
+    true
+}
+
+fn add_trait_delta(target: &mut HashMap<TraitKey, f64>, key: TraitKey, value: f64) {
+    *target.entry(key).or_insert(0.0) += value;
+}
+
+fn add_behavior_delta(target: &mut HashMap<BehaviorAxis, f64>, key: BehaviorAxis, value: f64) {
+    *target.entry(key).or_insert(0.0) += value;
+}
+
+fn personality_item_style_multiplier(state: &EngineState, style: &str) -> f64 {
+    if !state.formation_complete {
+        return 1.0;
+    }
+    let personality_id = state.personality.as_str();
+    match (style, personality_id) {
+        ("diverse", "curious" | "adventurer" | "playful" | "chaotic") => 1.25,
+        ("diverse", "stoic" | "pristine") => 0.9,
+        ("repetitive", "paranoid" | "anxious" | "stoic") => 1.35,
+        ("repetitive", "adventurer" | "chaotic" | "playful") => 0.75,
+        ("frequent", "playful" | "bold" | "chaotic") => 1.2,
+        ("frequent", "melancholic" | "drowsy") => 0.8,
+        _ => 1.0,
+    }
+}
+
 fn context_sensitivity_multiplier(
     state: &EngineState,
     influence_id: &str,
@@ -286,63 +494,10 @@ fn behavior_evidence_for_personality(state: &EngineState, personality_id: &str) 
         return f64::INFINITY;
     }
 
-    let axis = |key: BehaviorAxis| {
-        state
-            .behavior_profile
-            .axes
-            .get(&key)
-            .copied()
-            .unwrap_or(0.0)
-    };
-
-    match personality_id {
-        "playful" => axis(BehaviorAxis::Play) + axis(BehaviorAxis::Exploration) * 0.4,
-        "drowsy" => {
-            axis(BehaviorAxis::Disruption) + (25.0 - axis(BehaviorAxis::Play)).max(0.0) * 0.5
-        }
-        "foodie" => axis(BehaviorAxis::Care) + axis(BehaviorAxis::Social) * 0.25,
-        "bold" => {
-            axis(BehaviorAxis::Play)
-                + axis(BehaviorAxis::Exploration) * 0.6
-                + axis(BehaviorAxis::Disruption) * 0.2
-        }
-        "zen" => {
-            axis(BehaviorAxis::Order) + axis(BehaviorAxis::Care) * 0.5
-                - axis(BehaviorAxis::Disruption) * 0.6
-        }
-        "anxious" => axis(BehaviorAxis::Disruption) + axis(BehaviorAxis::Recovery) * 0.5,
-        "feral" => {
-            axis(BehaviorAxis::Play)
-                + axis(BehaviorAxis::Disruption) * 0.8
-                + (30.0 - axis(BehaviorAxis::Social)).max(0.0) * 0.3
-        }
-        "sage" => {
-            axis(BehaviorAxis::Exploration)
-                + axis(BehaviorAxis::Order) * 0.7
-                + axis(BehaviorAxis::Social) * 0.3
-        }
-        "pristine" => axis(BehaviorAxis::Order) + axis(BehaviorAxis::Care) * 0.4,
-        "empath" => {
-            axis(BehaviorAxis::Social)
-                + axis(BehaviorAxis::Care) * 0.5
-                + axis(BehaviorAxis::Recovery) * 0.3
-        }
-        "greedy" => axis(BehaviorAxis::Care) + axis(BehaviorAxis::Exploration) * 0.5,
-        "melancholic" => axis(BehaviorAxis::Disruption) + axis(BehaviorAxis::Social) * 0.2,
-        "chaotic" => {
-            axis(BehaviorAxis::Disruption)
-                + axis(BehaviorAxis::Play) * 0.7
-                + axis(BehaviorAxis::Exploration) * 0.7
-        }
-        "stoic" => axis(BehaviorAxis::Order) + (25.0 - axis(BehaviorAxis::Social)).max(0.0) * 0.4,
-        "adventurer" => {
-            axis(BehaviorAxis::Exploration)
-                + axis(BehaviorAxis::Play) * 0.6
-                + axis(BehaviorAxis::Care) * 0.2
-        }
-        "paranoid" => axis(BehaviorAxis::Disruption) + axis(BehaviorAxis::Order) * 0.4,
-        _ => 0.0,
-    }
+    crate::engine::personality_catalog::behavior_evidence_for_personality(
+        &state.behavior_profile.axes,
+        personality_id,
+    )
 }
 
 fn decay_evolution_readiness(state: &mut EngineState, target: Option<&str>) {
@@ -544,156 +699,12 @@ fn evaluate_influence_condition(state: &EngineState, condition: &InfluenceCondit
     }
 }
 
-// Personality trait positions. Keep in parity with
-// packages/personality-core/src/personalityTraitMap.ts.
 fn personality_position(id: &str) -> TraitVector {
-    let mut map: HashMap<TraitKey, f64> = HashMap::new();
-    match id {
-        "playful" => {
-            map.insert(TraitKey::Vitality, 90.0);
-            map.insert(TraitKey::Sociality, 60.0);
-            map.insert(TraitKey::Order, 20.0);
-            map.insert(TraitKey::Appetite, 40.0);
-            map.insert(TraitKey::Caution, 20.0);
-            map.insert(TraitKey::Curiosity, 60.0);
-        }
-        "drowsy" => {
-            map.insert(TraitKey::Vitality, 10.0);
-            map.insert(TraitKey::Sociality, 40.0);
-            map.insert(TraitKey::Order, 55.0);
-            map.insert(TraitKey::Appetite, 35.0);
-            map.insert(TraitKey::Caution, 40.0);
-            map.insert(TraitKey::Curiosity, 15.0);
-        }
-        "foodie" => {
-            map.insert(TraitKey::Vitality, 55.0);
-            map.insert(TraitKey::Sociality, 50.0);
-            map.insert(TraitKey::Order, 50.0);
-            map.insert(TraitKey::Appetite, 95.0);
-            map.insert(TraitKey::Caution, 30.0);
-            map.insert(TraitKey::Curiosity, 45.0);
-        }
-        "bold" => {
-            map.insert(TraitKey::Vitality, 80.0);
-            map.insert(TraitKey::Sociality, 40.0);
-            map.insert(TraitKey::Order, 35.0);
-            map.insert(TraitKey::Appetite, 45.0);
-            map.insert(TraitKey::Caution, 5.0);
-            map.insert(TraitKey::Curiosity, 55.0);
-        }
-        "zen" => {
-            map.insert(TraitKey::Vitality, 30.0);
-            map.insert(TraitKey::Sociality, 75.0);
-            map.insert(TraitKey::Order, 85.0);
-            map.insert(TraitKey::Appetite, 30.0);
-            map.insert(TraitKey::Caution, 25.0);
-            map.insert(TraitKey::Curiosity, 45.0);
-        }
-        "anxious" => {
-            map.insert(TraitKey::Vitality, 60.0);
-            map.insert(TraitKey::Sociality, 50.0);
-            map.insert(TraitKey::Order, 40.0);
-            map.insert(TraitKey::Appetite, 55.0);
-            map.insert(TraitKey::Caution, 90.0);
-            map.insert(TraitKey::Curiosity, 50.0);
-        }
-        "feral" => {
-            map.insert(TraitKey::Vitality, 75.0);
-            map.insert(TraitKey::Sociality, 10.0);
-            map.insert(TraitKey::Order, 15.0);
-            map.insert(TraitKey::Appetite, 60.0);
-            map.insert(TraitKey::Caution, 15.0);
-            map.insert(TraitKey::Curiosity, 55.0);
-        }
-        "sage" => {
-            map.insert(TraitKey::Vitality, 35.0);
-            map.insert(TraitKey::Sociality, 65.0);
-            map.insert(TraitKey::Order, 70.0);
-            map.insert(TraitKey::Appetite, 40.0);
-            map.insert(TraitKey::Caution, 45.0);
-            map.insert(TraitKey::Curiosity, 80.0);
-        }
-        "pristine" => {
-            map.insert(TraitKey::Vitality, 50.0);
-            map.insert(TraitKey::Sociality, 55.0);
-            map.insert(TraitKey::Order, 80.0);
-            map.insert(TraitKey::Appetite, 40.0);
-            map.insert(TraitKey::Caution, 65.0);
-            map.insert(TraitKey::Curiosity, 40.0);
-        }
-        "empath" => {
-            map.insert(TraitKey::Vitality, 45.0);
-            map.insert(TraitKey::Sociality, 95.0);
-            map.insert(TraitKey::Order, 55.0);
-            map.insert(TraitKey::Appetite, 40.0);
-            map.insert(TraitKey::Caution, 55.0);
-            map.insert(TraitKey::Curiosity, 50.0);
-        }
-        "greedy" => {
-            map.insert(TraitKey::Vitality, 70.0);
-            map.insert(TraitKey::Sociality, 30.0);
-            map.insert(TraitKey::Order, 55.0);
-            map.insert(TraitKey::Appetite, 85.0);
-            map.insert(TraitKey::Caution, 35.0);
-            map.insert(TraitKey::Curiosity, 60.0);
-        }
-        "melancholic" => {
-            map.insert(TraitKey::Vitality, 20.0);
-            map.insert(TraitKey::Sociality, 55.0);
-            map.insert(TraitKey::Order, 60.0);
-            map.insert(TraitKey::Appetite, 35.0);
-            map.insert(TraitKey::Caution, 60.0);
-            map.insert(TraitKey::Curiosity, 65.0);
-        }
-        "chaotic" => {
-            map.insert(TraitKey::Vitality, 70.0);
-            map.insert(TraitKey::Sociality, 40.0);
-            map.insert(TraitKey::Order, 5.0);
-            map.insert(TraitKey::Appetite, 50.0);
-            map.insert(TraitKey::Caution, 20.0);
-            map.insert(TraitKey::Curiosity, 80.0);
-        }
-        "stoic" => {
-            map.insert(TraitKey::Vitality, 15.0);
-            map.insert(TraitKey::Sociality, 35.0);
-            map.insert(TraitKey::Order, 95.0);
-            map.insert(TraitKey::Appetite, 20.0);
-            map.insert(TraitKey::Caution, 30.0);
-            map.insert(TraitKey::Curiosity, 20.0);
-        }
-        "adventurer" => {
-            map.insert(TraitKey::Vitality, 75.0);
-            map.insert(TraitKey::Sociality, 55.0);
-            map.insert(TraitKey::Order, 25.0);
-            map.insert(TraitKey::Appetite, 45.0);
-            map.insert(TraitKey::Caution, 10.0);
-            map.insert(TraitKey::Curiosity, 95.0);
-        }
-        "paranoid" => {
-            map.insert(TraitKey::Vitality, 40.0);
-            map.insert(TraitKey::Sociality, 20.0);
-            map.insert(TraitKey::Order, 65.0);
-            map.insert(TraitKey::Appetite, 35.0);
-            map.insert(TraitKey::Caution, 95.0);
-            map.insert(TraitKey::Curiosity, 55.0);
-        }
-        _ => {
-            for &key in TraitKey::all() {
-                map.insert(key, 50.0);
-            }
-        }
-    }
-    map
+    crate::engine::personality_catalog::personality_position(id)
 }
 
 fn personality_radius_base(id: &str) -> f64 {
-    match id {
-        "playful" | "drowsy" | "foodie" => 25.0,
-        "bold" | "zen" | "anxious" | "sage" | "pristine" | "melancholic" | "stoic" => 22.0,
-        "feral" | "empath" | "greedy" | "chaotic" | "adventurer" => 20.0,
-        "paranoid" => 18.0,
-        _ => 22.0,
-    }
+    crate::engine::personality_catalog::personality_radius_base(id)
 }
 
 pub fn dynamic_radius(id: &str, age_hours: f64) -> f64 {
@@ -1182,7 +1193,7 @@ mod tests {
             ("zen", [30.0, 75.0, 85.0, 30.0, 25.0, 45.0], 22.0),
             ("anxious", [60.0, 50.0, 40.0, 55.0, 90.0, 50.0], 22.0),
             ("feral", [75.0, 10.0, 15.0, 60.0, 15.0, 55.0], 20.0),
-            ("sage", [35.0, 65.0, 70.0, 40.0, 45.0, 80.0], 22.0),
+            ("sage", [35.0, 65.0, 70.0, 40.0, 45.0, 90.0], 22.0),
             ("pristine", [50.0, 55.0, 80.0, 40.0, 65.0, 40.0], 22.0),
             ("empath", [45.0, 95.0, 55.0, 40.0, 55.0, 50.0], 20.0),
             ("greedy", [70.0, 30.0, 55.0, 85.0, 35.0, 60.0], 20.0),
@@ -1191,6 +1202,7 @@ mod tests {
             ("stoic", [15.0, 35.0, 95.0, 20.0, 30.0, 20.0], 22.0),
             ("adventurer", [75.0, 55.0, 25.0, 45.0, 10.0, 95.0], 20.0),
             ("paranoid", [40.0, 20.0, 65.0, 35.0, 95.0, 55.0], 18.0),
+            ("curious", [65.0, 45.0, 60.0, 30.0, 55.0, 95.0], 22.0),
         ];
 
         for (id, expected, radius) in cases {
@@ -1203,6 +1215,18 @@ mod tests {
             assert_close(position[&TraitKey::Curiosity], expected[5]);
             assert_close(personality_radius_base(id), radius);
         }
+    }
+
+    #[test]
+    fn curious_personality_is_registered_in_backend_catalog() {
+        let personality = crate::engine::personalities::get_personality("curious")
+            .expect("curious personality must be registered");
+
+        assert_eq!(personality.name, "Любознательный");
+        assert_close(
+            depth_of_immersion(&personality_position("curious"), "curious", 3.0),
+            1.0,
+        );
     }
 
     #[test]

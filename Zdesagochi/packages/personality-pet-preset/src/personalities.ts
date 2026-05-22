@@ -5,7 +5,7 @@ import type {
 } from '../../personality-core/src/types';
 
 // ════════════════════════════════════════════════════════════════════════════
-//  PERSONALITIES — реестр всех 16 характеров
+//  PERSONALITIES — реестр всех характеров
 //  Добавить новый характер = добавить объект в этот массив.
 //  Движок PersonalityEngine не знает о конкретных id — читает объекты.
 // ════════════════════════════════════════════════════════════════════════════
@@ -724,6 +724,46 @@ export const PERSONALITIES: PersonalityDefinition[] = [
       emergentStateAnims: {
         trust_collapse: { bodyAnimation: 'turned_away', eyeExpression: 'suspicious', overlayTint: 'rgba(0,50,150,0.20)' },
       },
+    },
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 17. ЛЮБОЗНАТЕЛЬНЫЙ
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    id: 'curious',
+    name: 'Любознательный',
+    tagline: 'Сначала изучить, потом действовать',
+    description: 'Тянется к новым деталям, любит порядок в открытиях и не бросается в риск без причины.',
+    emoji: '🔎',
+    rarity: 'rare',
+    linkedSkinIds: [],
+
+    decayRates: { happiness: 1.1, energy: 1.1 },
+    restoreBonus: {
+      play: { happiness: 8 },
+      bond: { bond: 6, happiness: 4 },
+    },
+    xpMultipliers: { play: 1.25, bond: 1.15, feed: 0.9 },
+    coinMultipliers: { play: 1.05 },
+
+    foodPreferences: {
+      lovedIds: ['sushi', 'apple'],
+      hatedIds: ['candy'],
+      loveBonus: { health: 6, happiness: 6 },
+      hatePenalty: { energy: -8 },
+    },
+    autoSleep: { enabled: false, energyThreshold: 20, probability: 0.05 },
+    moodBias: DEFAULT_MOOD_BIAS,
+    naturalHealthRegen: 0,
+    negativeEffectResistance: 0.25,
+    possibleFlags: ['culinary_explorer', 'trust_bond'],
+    emergentTriggers: [],
+    specialRules: {},
+    visualProfile: {
+      idleAnimationOverride: 'focused_scan',
+      statBarTints: {},
+      emergentStateAnims: {},
     },
   },
 ];

@@ -769,6 +769,13 @@ export class MockApiService implements ApiService {
     S.coins -= item.price;
     const qty = (S.inventory.get(itemId) ?? 0) + 1;
     S.inventory.set(itemId, qty);
+    await applyMockCommandOrThrow({
+      type: 'add_item',
+      itemId,
+      itemKind: item.type,
+      quantity: 1,
+      at: mockNow().toISOString(),
+    });
     S.shopBuyCount++;
     addEvent('buy', `Купил «${item.name}»`, item.emoji, { coinsGained: -item.price });
     tickQuest('q_buy');

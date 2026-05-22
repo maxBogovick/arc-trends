@@ -74,11 +74,34 @@ pub async fn buy_item(
     let item = catalog::find_shop_item(&body.item_id)
         .ok_or_else(|| AppError::NotFound(format!("Item {} not found", body.item_id)))?;
 
+    let mut pet = pet_repo::get_pet(&state.db, &auth.user_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Pet not found".into()))?;
+    let mut engine_state = EngineState::from_pet(&pet);
+    let now = Utc::now();
+    let command = PetCommand {
+        command_id: Ulid::new().to_string(),
+        command_type: "add_item".to_string(),
+        at: now.to_rfc3339(),
+        food_id: None,
+        food_effect: None,
+        item_id: Some(body.item_id.clone()),
+        item_effect: None,
+        score_seed: None,
+        coin_balance: 0.0,
+    };
+    let result = apply_personality_command(&mut engine_state, &command, now);
+    if let Some(blocked) = &result.blocked_action {
+        return Err(AppError::BadRequest(blocked.reason.clone()));
+    }
+    engine_state.apply_to_pet(&mut pet);
+
     // Atomic: spend coins + add to inventory + tick shop achievements
     let mut tx = state.db.begin().await?;
     let new_balance = economy_repo::spend_coins_tx(&mut tx, &auth.user_id, item.price).await?;
     economy_repo::add_inventory_tx(&mut tx, &auth.user_id, &body.item_id, 1).await?;
     economy_repo::increment_shop_buy_count_tx(&mut tx, &auth.user_id).await?;
+    pet_repo::upsert_pet_tx(&mut tx, &auth.user_id, &pet).await?;
     tx.commit().await?;
 
     let raw_inv = economy_repo::get_inventory(&state.db, &auth.user_id).await?;
