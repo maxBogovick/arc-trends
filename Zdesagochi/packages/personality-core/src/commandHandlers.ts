@@ -199,6 +199,9 @@ export async function applyPersonalityCommand<TState extends PersonalityState>(
       naturalWake,
       sleptHours,
     });
+    if (!gameplayOutcome.blockedAction && command.variant === 'gentle') {
+      await applyCommandInfluence(nextPet, command, options, ctx, events, influenceCooldowns, currentSync);
+    }
     // Lifecycle hooks: data-driven side effects on wake (early vs natural)
     if (sleptHours < 1) {
       await runInfluenceLifecycleHooks(
@@ -552,10 +555,14 @@ function getBaseActionResult(
     case 'play': {
       const score = playScore ?? getPlayScore(command, context.rng);
       const scaling = rule.scoreScaling;
+      const variant = command.variant ?? 'classic';
+      const statDeltas = getPlayVariantStatDeltas(variant, rule.statDeltas);
+      const xpMultiplier = variant === 'puzzle' ? 0.82 : variant === 'active' ? 1.05 : 1;
+      const coinMultiplier = variant === 'puzzle' ? 0.8 : 1;
       return {
-        statDeltas: { ...rule.statDeltas },
-        xp: scaling ? Math.floor(score * scaling.xpMultiplier) : rule.xp,
-        coins: scaling ? Math.floor(score * scaling.coinMultiplier) + scaling.coinFlat : rule.coins,
+        statDeltas,
+        xp: scaling ? Math.floor(score * scaling.xpMultiplier * xpMultiplier) : Math.round(rule.xp * xpMultiplier),
+        coins: scaling ? Math.floor(score * scaling.coinMultiplier * coinMultiplier) + scaling.coinFlat : Math.round(rule.coins * coinMultiplier),
       };
     }
     case 'feed': {
@@ -583,7 +590,7 @@ function getBaseActionResult(
     case 'heal':
       return { statDeltas: { ...rule.statDeltas }, xp: rule.xp, coins: rule.coins };
     case 'bond':
-      return { statDeltas: { ...rule.statDeltas }, xp: rule.xp, coins: rule.coins };
+      return getBondVariantBaseResult(command.variant ?? 'hug', rule);
     case 'use_item': {
       const effect = command.itemEffect ?? {};
       return {
@@ -603,6 +610,46 @@ function getBaseActionResult(
       return { statDeltas: {}, xp: 0, coins: 0 };
     default:
       return actionType ? { statDeltas: {}, xp: 0, coins: 0 } : null;
+  }
+}
+
+function getPlayVariantStatDeltas(
+  variant: Extract<PetCommand, { type: 'play' }>['variant'],
+  base: Partial<Record<StatKey, number>>,
+): Partial<Record<StatKey, number>> {
+  switch (variant) {
+    case 'active':
+      return { ...base, happiness: 24, energy: -22, bond: 7 };
+    case 'puzzle':
+      return { ...base, happiness: 14, energy: -7, bond: 5 };
+    case 'social':
+      return { ...base, happiness: 22, energy: -14, bond: 12 };
+    case 'classic':
+    default:
+      return { ...base };
+  }
+}
+
+function getBondVariantBaseResult(
+  variant: Extract<PetCommand, { type: 'bond' }>['variant'],
+  rule: { statDeltas: Partial<Record<StatKey, number>>; xp: number; coins: number },
+): { statDeltas: Partial<Record<StatKey, number>>; xp: number; coins: number } {
+  switch (variant) {
+    case 'listen':
+      return {
+        statDeltas: { happiness: 8, bond: 16, health: 2 },
+        xp: Math.max(1, Math.round(rule.xp * 0.8)),
+        coins: 0,
+      };
+    case 'praise':
+      return {
+        statDeltas: { happiness: 12, bond: 18, energy: 2 },
+        xp: Math.max(1, Math.round(rule.xp * 0.9)),
+        coins: 0,
+      };
+    case 'hug':
+    default:
+      return { statDeltas: { ...rule.statDeltas }, xp: rule.xp, coins: rule.coins };
   }
 }
 
@@ -995,7 +1042,7 @@ async function applyRegisteredInfluence(
   }
 
   influenceCooldowns[influence.id] = currentSync;
-  updateBehaviorProfile(pet, influence.id, ctx);
+  updateBehaviorProfile(pet, influence.id, ctx, influence.behaviorDeltas);
   events.push({
     type: 'influence_applied',
     at: command.at,
@@ -1032,15 +1079,23 @@ function getInfluenceIdForCommand(
     case 'feed':
       return 'action:feed';
     case 'play':
-      return 'action:play';
+      return command.variant && command.variant !== 'classic'
+        ? `action:play:${command.variant}`
+        : 'action:play';
     case 'sleep':
+      if (command.variant === 'nap') return 'action:sleep:nap';
+      if (command.variant === 'ritual') return 'action:sleep:ritual';
       return pet.stats.energy > 70 ? 'action:sleep_forced' : 'action:sleep_natural';
+    case 'wake':
+      return command.variant === 'gentle' ? 'action:wake:gentle' : null;
     case 'bathe':
       return 'action:bathe';
     case 'heal':
       return 'action:heal';
     case 'bond':
-      return 'action:bond';
+      return command.variant && command.variant !== 'hug'
+        ? `action:bond:${command.variant}`
+        : 'action:bond';
     case 'use_item': {
       const itemInfluenceId = `item:${command.itemId}`;
       if (registry.some(influence => influence.id === itemInfluenceId)) return itemInfluenceId;
@@ -1052,7 +1107,6 @@ function getInfluenceIdForCommand(
       return 'env:new_room';
     case 'npc_visit':
       return `social:visit_${command.npcPersonalityId}`;
-    case 'wake':
     case 'sync':
     case 'accept_evolution':
     case 'reject_evolution':

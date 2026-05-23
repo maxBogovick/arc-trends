@@ -278,6 +278,7 @@ impl EngineState {
 pub struct PetCommand {
     pub command_id: String,
     pub command_type: String,
+    pub variant: Option<String>,
     pub at: String,
     pub food_id: Option<String>,
     pub food_effect: Option<FoodEffect>,
@@ -618,6 +619,15 @@ pub fn apply_personality_command(
                 description: "Sleep lifecycle influence applied".to_string(),
             });
         }
+        if command.variant.as_deref() == Some("gentle") {
+            if let Some(influence_id) = apply_command_influence(state, command, now) {
+                result.applied_modifiers.push(AppliedModifier {
+                    source: "base".to_string(),
+                    id: influence_id,
+                    description: "Command influence applied".to_string(),
+                });
+            }
+        }
 
         result
             .meta
@@ -810,8 +820,19 @@ fn apply_influence_id(
 fn get_influence_id_for_command(state: &EngineState, command: &PetCommand) -> Option<String> {
     match command.command_type.as_str() {
         "feed" => Some("action:feed".to_string()),
-        "play" => Some("action:play".to_string()),
+        "play" => match command.variant.as_deref() {
+            Some("active") => Some("action:play:active".to_string()),
+            Some("puzzle") => Some("action:play:puzzle".to_string()),
+            Some("social") => Some("action:play:social".to_string()),
+            _ => Some("action:play".to_string()),
+        },
         "sleep" => {
+            if command.variant.as_deref() == Some("nap") {
+                return Some("action:sleep:nap".to_string());
+            }
+            if command.variant.as_deref() == Some("ritual") {
+                return Some("action:sleep:ritual".to_string());
+            }
             let energy = state.stats.get(&StatKey::Energy).copied().unwrap_or(50.0);
             if energy > 70.0 {
                 Some("action:sleep_forced".to_string())
@@ -819,9 +840,20 @@ fn get_influence_id_for_command(state: &EngineState, command: &PetCommand) -> Op
                 Some("action:sleep_natural".to_string())
             }
         }
+        "wake" => {
+            if command.variant.as_deref() == Some("gentle") {
+                Some("action:wake:gentle".to_string())
+            } else {
+                None
+            }
+        }
         "bathe" => Some("action:bathe".to_string()),
         "heal" => Some("action:heal".to_string()),
-        "bond" => Some("action:bond".to_string()),
+        "bond" => match command.variant.as_deref() {
+            Some("listen") => Some("action:bond:listen".to_string()),
+            Some("praise") => Some("action:bond:praise".to_string()),
+            _ => Some("action:bond".to_string()),
+        },
         "add_item" => None,
         "use_item" => {
             let item_id = command.item_id.as_deref()?;
@@ -845,11 +877,17 @@ fn get_base_action_result(
         "play" => {
             let score = play_score.unwrap_or(100.0);
             let mut deltas = HashMap::new();
-            deltas.insert("happiness".to_string(), 20.0);
-            deltas.insert("energy".to_string(), -15.0);
-            deltas.insert("bond".to_string(), 8.0);
-            let xp = (score * 0.5).floor();
-            let coins = (score * 0.1).floor() + 2.0;
+            let (happiness, energy, bond, xp_mult, coin_mult) = match command.variant.as_deref() {
+                Some("active") => (24.0, -22.0, 7.0, 1.05, 1.0),
+                Some("puzzle") => (14.0, -7.0, 5.0, 0.82, 0.8),
+                Some("social") => (22.0, -14.0, 12.0, 1.0, 1.0),
+                _ => (20.0, -15.0, 8.0, 1.0, 1.0),
+            };
+            deltas.insert("happiness".to_string(), happiness);
+            deltas.insert("energy".to_string(), energy);
+            deltas.insert("bond".to_string(), bond);
+            let xp = (score * 0.5 * xp_mult).floor();
+            let coins = (score * 0.1 * coin_mult).floor() + 2.0;
             (deltas, xp, coins)
         }
         "feed" => {
@@ -889,9 +927,21 @@ fn get_base_action_result(
         }
         "bond" => {
             let mut deltas = HashMap::new();
-            deltas.insert("happiness".to_string(), 15.0);
-            deltas.insert("bond".to_string(), 20.0);
-            (deltas, 6.0, 0.0)
+            if command.variant.as_deref() == Some("listen") {
+                deltas.insert("happiness".to_string(), 8.0);
+                deltas.insert("bond".to_string(), 16.0);
+                deltas.insert("health".to_string(), 2.0);
+                (deltas, 5.0, 0.0)
+            } else if command.variant.as_deref() == Some("praise") {
+                deltas.insert("happiness".to_string(), 12.0);
+                deltas.insert("bond".to_string(), 18.0);
+                deltas.insert("energy".to_string(), 2.0);
+                (deltas, 5.0, 0.0)
+            } else {
+                deltas.insert("happiness".to_string(), 15.0);
+                deltas.insert("bond".to_string(), 20.0);
+                (deltas, 6.0, 0.0)
+            }
         }
         "use_item" => {
             if let Some(ref effect) = command.item_effect {
@@ -1310,6 +1360,7 @@ mod tests {
         PetCommand {
             command_id: command_id.to_string(),
             command_type: command_type.to_string(),
+            variant: None,
             at: fixed_now().to_rfc3339(),
             food_id: None,
             food_effect: None,
@@ -1453,6 +1504,7 @@ mod tests {
         PetCommand {
             command_id: input.command_id.clone(),
             command_type: input.command_type.clone(),
+            variant: None,
             at: input.at.clone(),
             food_id: input.food_id.clone(),
             food_effect: None,
@@ -1644,6 +1696,106 @@ mod tests {
 
         assert_eq!(restored.influence_cooldowns.get("action:play"), Some(&0));
         assert_eq!(restored.current_sync, 0);
+    }
+
+    #[test]
+    fn action_variants_produce_distinct_rust_trait_and_behavior_evidence() {
+        let mut active_state = default_state();
+        let mut puzzle_state = default_state();
+
+        let mut active = command("play", "cmd-rust-play-active");
+        active.variant = Some("active".to_string());
+        active.score_seed = Some(120);
+        let mut puzzle = command("play", "cmd-rust-play-puzzle");
+        puzzle.variant = Some("puzzle".to_string());
+        puzzle.score_seed = Some(120);
+
+        apply_personality_command(&mut active_state, &active, fixed_now());
+        apply_personality_command(&mut puzzle_state, &puzzle, fixed_now());
+
+        assert!(
+            active_state.trait_vector[&TraitKey::Vitality]
+                > puzzle_state.trait_vector[&TraitKey::Vitality]
+        );
+        assert!(
+            puzzle_state.trait_vector[&TraitKey::Curiosity]
+                > active_state.trait_vector[&TraitKey::Curiosity]
+        );
+        assert!(
+            puzzle_state.behavior_profile.axes[&crate::engine::types::BehaviorAxis::Exploration]
+                > active_state.behavior_profile.axes
+                    [&crate::engine::types::BehaviorAxis::Exploration]
+        );
+
+        let mut listen_state = default_state();
+        listen_state.trauma_level = 20.0;
+        let mut listen = command("bond", "cmd-rust-bond-listen");
+        listen.variant = Some("listen".to_string());
+        apply_personality_command(&mut listen_state, &listen, fixed_now());
+
+        assert!(
+            listen_state.behavior_profile.axes[&crate::engine::types::BehaviorAxis::Recovery] > 0.0
+        );
+        assert!(listen_state.trauma_level < 20.0);
+
+        let mut social_state = default_state();
+        let mut active_state_2 = default_state();
+        let mut social = command("play", "cmd-rust-play-social");
+        social.variant = Some("social".to_string());
+        social.score_seed = Some(120);
+        let mut active_2 = command("play", "cmd-rust-play-active-2");
+        active_2.variant = Some("active".to_string());
+        active_2.score_seed = Some(120);
+        apply_personality_command(&mut social_state, &social, fixed_now());
+        apply_personality_command(&mut active_state_2, &active_2, fixed_now());
+        assert!(
+            social_state.trait_vector[&TraitKey::Sociality]
+                > active_state_2.trait_vector[&TraitKey::Sociality]
+        );
+
+        let mut praise_state = default_state();
+        praise_state.trauma_level = 20.0;
+        let mut praise = command("bond", "cmd-rust-bond-praise");
+        praise.variant = Some("praise".to_string());
+        apply_personality_command(&mut praise_state, &praise, fixed_now());
+        assert!(
+            praise_state.trait_vector[&TraitKey::Vitality]
+                > listen_state.trait_vector[&TraitKey::Vitality]
+        );
+
+        let mut nap_state = default_state();
+        let mut ritual_state = default_state();
+        let mut nap = command("sleep", "cmd-rust-sleep-nap");
+        nap.variant = Some("nap".to_string());
+        let mut ritual = command("sleep", "cmd-rust-sleep-ritual");
+        ritual.variant = Some("ritual".to_string());
+        apply_personality_command(&mut nap_state, &nap, fixed_now());
+        apply_personality_command(&mut ritual_state, &ritual, fixed_now());
+        assert!(
+            nap_state.trait_vector[&TraitKey::Vitality]
+                > ritual_state.trait_vector[&TraitKey::Vitality]
+        );
+        assert!(
+            ritual_state.behavior_profile.axes[&crate::engine::types::BehaviorAxis::Order]
+                > nap_state.behavior_profile.axes[&crate::engine::types::BehaviorAxis::Order]
+        );
+
+        let mut gentle_wake_state = default_state();
+        gentle_wake_state.is_asleep = true;
+        gentle_wake_state.sleep_started_at = Some("2026-05-04T11:30:00Z".to_string());
+        gentle_wake_state.trauma_level = 10.0;
+        let mut normal_wake_state = gentle_wake_state.clone();
+        let mut gentle = command("wake", "cmd-rust-wake-gentle");
+        gentle.variant = Some("gentle".to_string());
+        let normal = command("wake", "cmd-rust-wake-normal");
+        apply_personality_command(&mut gentle_wake_state, &gentle, fixed_now());
+        apply_personality_command(&mut normal_wake_state, &normal, fixed_now());
+        assert!(gentle_wake_state.trauma_level < normal_wake_state.trauma_level);
+        assert!(
+            gentle_wake_state.behavior_profile.axes[&crate::engine::types::BehaviorAxis::Recovery]
+                > normal_wake_state.behavior_profile.axes
+                    [&crate::engine::types::BehaviorAxis::Recovery]
+        );
     }
 
     #[test]

@@ -17,6 +17,7 @@ import { BehaviorEffects } from './BehaviorEffects';
 import { EvolutionProposalBanner } from '../personality/EvolutionProposalBanner';
 import { ShadowCatharsisProgress } from '../personality/ShadowCatharsisProgress';
 import { LegacyBadge } from '../personality/LegacyBadge';
+import { usePerformancePolicy } from '../../performance/usePerformancePolicy';
 
 export const MOOD_LABELS: Record<PetMood, { text: string; emoji: string; color: string }> = {
   ecstatic: { text: 'В восторге!', emoji: '🤩', color: 'text-yellow-600' },
@@ -56,11 +57,12 @@ interface PetBodyProps {
   facingRight: boolean;
   sceneInteraction: SceneInteraction | null;
   moodTransitionDuration: number;
+  motionEnabled: boolean;
   mouseInRoom?: boolean;
   onPointerDown?: (e: React.PointerEvent) => void;
 }
 
-function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moodTransitionDuration, mouseInRoom = false, onPointerDown }: PetBodyProps) {
+function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moodTransitionDuration, motionEnabled, mouseInRoom = false, onPointerDown }: PetBodyProps) {
   const effectiveDarkness = useDarkness();
   const brightness = Math.max(0.05, 1 - effectiveDarkness * 0.88);
   const isSleeping = mode === 'sleeping' || pet.isAsleep;
@@ -101,10 +103,10 @@ function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moo
             zIndex: -1,
           }}
           animate={{
-            scaleX:  isCarried ? 0.3  : isSleeping ? 1    : [1, 0.65, 1],
-            opacity: isCarried ? 0.05 : isSleeping ? 0.18 : [0.45, 0.15, 0.45],
+            scaleX:  isCarried ? 0.3  : isSleeping || !motionEnabled ? 1    : [1, 0.65, 1],
+            opacity: isCarried ? 0.05 : isSleeping || !motionEnabled ? 0.26 : [0.45, 0.15, 0.45],
           }}
-          transition={{ duration: isCarried ? 0.3 : 3, repeat: isCarried ? 0 : Infinity, ease: 'easeInOut' }}
+          transition={{ duration: isCarried ? 0.3 : 3, repeat: isCarried || !motionEnabled ? 0 : Infinity, ease: 'easeInOut' }}
         />
         <PetTalk pet={pet} mode={mode} />
         <BehaviorEffects pet={pet} mode={mode} sceneInteraction={sceneInteraction} facingRight={facingRight} />
@@ -123,6 +125,7 @@ function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moo
 
 // ── PetScene ──────────────────────────────────────────────────────────────────
 export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
+  const performancePolicy = usePerformancePolicy();
   const {
     pet,
     updatePetName,
@@ -152,7 +155,12 @@ export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
   const [mousePosX, setMousePosX] = useState<number>(50);
 
   // Behavior state machine — paused when mouse is in room
-  const behaviorState = usePetBehaviorState(pet ?? null, actionLoading, placedFurniture, mouseInRoom);
+  const behaviorState = usePetBehaviorState(
+    pet ?? null,
+    actionLoading,
+    placedFurniture,
+    mouseInRoom || !performancePolicy.patrolEnabled,
+  );
 
   // ── Drag state ────────────────────────────────────────────────────────────────
   const sceneRef = useRef<HTMLDivElement>(null);
@@ -271,6 +279,26 @@ export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
         sceneRef={sceneRef}
         onSceneClick={() => setSelectedUid(null)}
       >
+        <div
+          className="absolute top-3 right-3 z-40 flex items-center gap-1 rounded-2xl border border-white/45 bg-white/80 p-1 shadow-sm"
+          onClick={e => e.stopPropagation()}
+        >
+          {(['auto', 'high', 'low'] as const).map(q => (
+            <button
+              key={q}
+              type="button"
+              title={q === 'auto' ? 'Авто качество' : q === 'high' ? 'Высокое качество' : 'Экономный режим'}
+              onClick={() => performancePolicy.setQuality(q)}
+              className="h-7 min-w-8 rounded-xl px-2 text-[11px] font-bold transition-colors"
+              style={{
+                background: performancePolicy.requestedQuality === q ? '#7C3AED' : 'transparent',
+                color: performancePolicy.requestedQuality === q ? 'white' : '#6B7280',
+              }}
+            >
+              {q === 'auto' ? 'Авто' : q === 'high' ? 'HD' : 'Eco'}
+            </button>
+          ))}
+        </div>
 
         {/* Placed furniture items */}
         {placedFurniture.map(placed => {
@@ -374,6 +402,7 @@ export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
           facingRight={displayFacing}
           sceneInteraction={displayInteraction}
           moodTransitionDuration={travelDuration}
+          motionEnabled={performancePolicy.motionEnabled}
           mouseInRoom={mouseInRoom}
           onPointerDown={handlePetPointerDown}
         />

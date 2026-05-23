@@ -17,12 +17,12 @@ import { PERSONALITY_ENGINE_VERSION, PERSONALITY_STATE_SCHEMA_VERSION, STATIC_RE
 
 export type PetCommand =
   | { type: 'feed'; foodId: string; foodEffect?: { hungerRestore: number; happinessBonus: number; healthBonus: number }; at: string; commandId: string }
-  | { type: 'play'; scoreSeed: string; at: string; commandId: string }
-  | { type: 'sleep'; at: string; commandId: string }
-  | { type: 'wake'; at: string; commandId: string }
+  | { type: 'play'; variant?: 'classic' | 'active' | 'puzzle' | 'social'; scoreSeed: string; at: string; commandId: string }
+  | { type: 'sleep'; variant?: 'night' | 'nap' | 'ritual'; at: string; commandId: string }
+  | { type: 'wake'; variant?: 'normal' | 'gentle'; at: string; commandId: string }
   | { type: 'bathe'; at: string; commandId: string }
   | { type: 'heal'; at: string; commandId: string }
-  | { type: 'bond'; at: string; commandId: string }
+  | { type: 'bond'; variant?: 'hug' | 'listen' | 'praise'; at: string; commandId: string }
   | { type: 'use_item'; itemId: string; itemKind?: 'food' | 'toy' | 'medicine' | 'decoration'; itemEffect?: Partial<Record<StatKey | 'xp' | 'coins', number>>; at: string; commandId: string }
   | { type: 'add_item'; itemId: string; itemKind?: 'food' | 'toy' | 'medicine' | 'decoration'; quantity?: number; at: string; commandId: string }
   | { type: 'equip_room'; roomId: string; at: string; commandId: string }

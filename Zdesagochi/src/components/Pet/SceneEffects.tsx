@@ -1,14 +1,16 @@
 import { useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import type { SceneEffect } from '../../data/backgrounds';
+import type { PerformancePolicy } from '../../performance/performancePolicy';
 
 const sr = (i: number, off = 0) => ((i * 137 + off * 31) % 100) / 100;
 
 // ── Canvas hook ───────────────────────────────────────────────────────────────
 
 type DrawFn = (ctx: CanvasRenderingContext2D, t: number, w: number, h: number) => void;
+type CanvasPolicy = Pick<PerformancePolicy, 'canvasEffectsEnabled' | 'targetFps'>;
 
-function useCanvas(draw: DrawFn) {
+function useCanvas(draw: DrawFn, policy: CanvasPolicy) {
   const ref = useRef<HTMLCanvasElement>(null);
   const drawRef = useRef<DrawFn>(draw);
   drawRef.current = draw;
@@ -21,6 +23,7 @@ function useCanvas(draw: DrawFn) {
 
     const ctx = canvas.getContext('2d')!;
     let rafId: number;
+    let lastFrame = 0;
     const t0 = performance.now();
 
     const resize = () => {
@@ -39,14 +42,18 @@ function useCanvas(draw: DrawFn) {
 
     const loop = (now: number) => {
       rafId = requestAnimationFrame(loop);
-      if (document.hidden) return;
+      if (document.hidden || !policy.canvasEffectsEnabled) return;
+      const minFrameMs = 1000 / Math.max(1, policy.targetFps);
+      if (now - lastFrame < minFrameMs) return;
+      lastFrame = now;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawRef.current(ctx, (now - t0) / 1000, canvas.width, canvas.height);
     };
-    rafId = requestAnimationFrame(loop);
+    if (policy.canvasEffectsEnabled) rafId = requestAnimationFrame(loop);
+    else ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    return () => { cancelAnimationFrame(rafId); ro.disconnect(); };
-  }, []);
+    return () => { if (rafId) cancelAnimationFrame(rafId); ro.disconnect(); };
+  }, [policy.canvasEffectsEnabled, policy.targetFps]);
 
   return ref;
 }
@@ -69,7 +76,7 @@ const CANVAS_BASE: React.CSSProperties = {
 
 // ── Dust ──────────────────────────────────────────────────────────────────────
 
-function Dust({ color, count = 14 }: { color: string; count?: number }) {
+function Dust({ color, count = 14, policy }: { color: string; count?: number; policy: CanvasPolicy }) {
   const pts = useMemo(() => Array.from({ length: count }, (_, i) => ({
     bx:   sr(i, 0) * 0.88 + 0.06,
     by:   sr(i, 1) * 0.78 + 0.08,
@@ -100,14 +107,14 @@ function Dust({ color, count = 14 }: { color: string; count?: number }) {
       ctx.arc(x, y, rad, 0, Math.PI * 2);
       ctx.fill();
     }
-  });
+  }, policy);
 
   return <canvas ref={ref} style={CANVAS_BASE} />;
 }
 
 // ── Stars ─────────────────────────────────────────────────────────────────────
 
-function Stars({ count = 32 }: { count?: number }) {
+function Stars({ count = 32, policy }: { count?: number; policy: CanvasPolicy }) {
   const stars = useMemo(() => Array.from({ length: count }, (_, i) => ({
     x:  sr(i, 0) * 0.96 + 0.02,
     y:  sr(i, 1) * 0.95 + 0.02,
@@ -192,14 +199,14 @@ function Stars({ count = 32 }: { count?: number }) {
       ctx.lineTo(x2, y2);
       ctx.stroke();
     }
-  });
+  }, policy);
 
   return <canvas ref={ref} style={CANVAS_BASE} />;
 }
 
 // ── Rain ──────────────────────────────────────────────────────────────────────
 
-function Rain({ color }: { color: string }) {
+function Rain({ color, policy }: { color: string; policy: CanvasPolicy }) {
   const drops = useMemo(() => Array.from({ length: 28 }, (_, i) => ({
     xF:   sr(i, 0) * 0.96,
     w:    sr(i, 1) * 1.2 + 0.5,
@@ -260,14 +267,14 @@ function Rain({ color }: { color: string }) {
       ctx.ellipse(x, y, rw, rh, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
-  });
+  }, policy);
 
   return <canvas ref={ref} style={CANVAS_BASE} />;
 }
 
 // ── Ash / Embers ──────────────────────────────────────────────────────────────
 
-function Ash({ color, count = 22 }: { color: string; count?: number }) {
+function Ash({ color, count = 22, policy }: { color: string; count?: number; policy: CanvasPolicy }) {
   const items = useMemo(() => Array.from({ length: count }, (_, i) => ({
     xF:    sr(i, 0) * 0.88 + 0.06,
     sz:    sr(i, 1) * 3 + 1.2,
@@ -309,14 +316,14 @@ function Ash({ color, count = 22 }: { color: string; count?: number }) {
       ctx.arc(x, y, rad * 2, 0, Math.PI * 2);
       ctx.fill();
     }
-  });
+  }, policy);
 
   return <canvas ref={ref} style={CANVAS_BASE} />;
 }
 
 // ── Aurora ────────────────────────────────────────────────────────────────────
 
-function Aurora({ color, color2 }: { color: string; color2?: string }) {
+function Aurora({ color, color2, policy }: { color: string; color2?: string; policy: CanvasPolicy }) {
   const c2 = color2 ?? '#818CF8';
   const [r1, g1, b1] = useMemo(() => hexToRgb(color), [color]);
   const [r2, g2, b2] = useMemo(() => hexToRgb(c2), [c2]);
@@ -354,14 +361,14 @@ function Aurora({ color, color2 }: { color: string; color2?: string }) {
       ctx.fillRect(-w * 0.12, cy - bandH / 2, w * 1.24, bandH);
       ctx.restore();
     }
-  });
+  }, policy);
 
   return <canvas ref={ref} style={CANVAS_BASE} />;
 }
 
 // ── Lava ──────────────────────────────────────────────────────────────────────
 
-function Lava({ color }: { color: string }) {
+function Lava({ color, policy }: { color: string; policy: CanvasPolicy }) {
   const bubbles = useMemo(() => Array.from({ length: 12 }, (_, i) => ({
     xF:    sr(i, 0) * 0.84 + 0.08,
     botF:  sr(i, 1) * 0.22 + 0.03,
@@ -446,7 +453,7 @@ function Lava({ color }: { color: string }) {
       ctx.arc(x, y, rad * 2, 0, Math.PI * 2);
       ctx.fill();
     }
-  });
+  }, policy);
 
   return <canvas ref={ref} style={CANVAS_BASE} />;
 }
@@ -455,7 +462,7 @@ function Lava({ color }: { color: string }) {
 
 const DR_CHARS = '0123456789ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃ!@#$%&?';
 
-function DigitalRain({ color }: { color: string }) {
+function DigitalRain({ color, policy }: { color: string; policy: CanvasPolicy }) {
   const LINE_H = 18;
   const FONT_SZ = 10;
 
@@ -498,7 +505,7 @@ function DigitalRain({ color }: { color: string }) {
         ctx.fillText(col.chars[j], col.xF * w, cy);
       }
     }
-  });
+  }, policy);
 
   return <canvas ref={ref} style={CANVAS_BASE} />;
 }
@@ -671,23 +678,34 @@ function Glitch({ color }: { color: string }) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-function EffectRenderer({ effect }: { effect: SceneEffect }) {
+function EffectRenderer({ effect, policy }: { effect: SceneEffect; policy: PerformancePolicy }) {
+  if (!policy.canvasEffectsEnabled) {
+    if (effect.type === 'grid') return <Grid color={effect.color ?? '#00D4FF'} opacity={(effect.opacity ?? 0.14) * 0.65} />;
+    return null;
+  }
+  const scaledCount = typeof effect.count === 'number'
+    ? Math.max(1, Math.round(effect.count * policy.particleMultiplier))
+    : undefined;
+
   switch (effect.type) {
-    case 'particles':    return <Dust        color={effect.color ?? '#A855F7'} count={effect.count} />;
-    case 'stars':        return <Stars       count={effect.count} />;
-    case 'rain':         return <Rain        color={effect.color ?? '#EC4899'} />;
-    case 'ash':          return <Ash         color={effect.color ?? '#FF6600'} count={effect.count} />;
+    case 'particles':    return <Dust        color={effect.color ?? '#A855F7'} count={scaledCount} policy={policy} />;
+    case 'stars':        return <Stars       count={scaledCount} policy={policy} />;
+    case 'rain':         return <Rain        color={effect.color ?? '#EC4899'} policy={policy} />;
+    case 'ash':          return <Ash         color={effect.color ?? '#FF6600'} count={scaledCount} policy={policy} />;
     case 'grid':         return <Grid        color={effect.color ?? '#00D4FF'} opacity={effect.opacity} />;
     case 'scan':         return <Scan        color={effect.color ?? '#00FF41'} />;
-    case 'aurora':       return <Aurora      color={effect.color ?? '#10B981'} color2={effect.color2} />;
-    case 'lava':         return <Lava        color={effect.color ?? '#FF5500'} />;
-    case 'digital_rain': return <DigitalRain color={effect.color ?? '#00FF41'} />;
+    case 'aurora':       return <Aurora      color={effect.color ?? '#10B981'} color2={effect.color2} policy={policy} />;
+    case 'lava':         return <Lava        color={effect.color ?? '#FF5500'} policy={policy} />;
+    case 'digital_rain': return <DigitalRain color={effect.color ?? '#00FF41'} policy={policy} />;
     case 'void_rings':   return <VoidRings   color={effect.color ?? '#D946EF'} />;
     case 'glitch':       return <Glitch      color={effect.color ?? '#D946EF'} />;
     default:             return null;
   }
 }
 
-export function SceneEffects({ effects }: { effects: SceneEffect[] }) {
-  return <>{effects.map((e, i) => <EffectRenderer key={i} effect={e} />)}</>;
+export function SceneEffects({ effects, policy }: { effects: SceneEffect[]; policy: PerformancePolicy }) {
+  const limitedEffects = policy.effectiveQuality === 'low'
+    ? effects.slice(0, policy.maxCanvasEffects)
+    : effects;
+  return <>{limitedEffects.map((e, i) => <EffectRenderer key={i} effect={e} policy={policy} />)}</>;
 }

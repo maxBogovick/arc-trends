@@ -28,4 +28,12 @@ export {
   validateInfluenceRegistry,
   validateRemoteInfluence,
 } from './influenceRegistry';
+export {
+  PERSONALITY_GUIDANCE,
+  getPersonalityGuidance,
+  validatePersonalityGuidance,
+  type GuidanceStrength,
+  type PersonalityGuidance,
+  type PersonalityGuidanceAction,
+} from './personalityGuidance';
 export { zdesagochiPetPreset } from './zdesagochiPetPreset';

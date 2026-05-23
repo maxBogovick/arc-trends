@@ -23,9 +23,9 @@ function skyBodyPosition(hour: number): { x: number; y: number } {
 
 function isNightHour(hour: number) { return hour < 6 || hour >= 20; }
 
-interface SkyBodyProps { hour: number; sceneW: number; sceneH: number }
+interface SkyBodyProps { hour: number; sceneW: number; sceneH: number; motionEnabled: boolean }
 
-function SkyBody({ hour, sceneW, sceneH }: SkyBodyProps) {
+function SkyBody({ hour, sceneW, sceneH, motionEnabled }: SkyBodyProps) {
   if (hour < 0) return null;
   const night = isNightHour(hour);
   const pos = night
@@ -69,11 +69,13 @@ function SkyBody({ hour, sceneW, sceneH }: SkyBodyProps) {
     <g>
       {/* outer glow */}
       <motion.g style={{ transformOrigin: `${cx}px ${cy}px` }}
-        animate={{ scale: [1, 1.18, 1] }} transition={{ duration: 4, repeat: Infinity }}>
+        animate={motionEnabled ? { scale: [1, 1.18, 1] } : { scale: 1 }}
+        transition={motionEnabled ? { duration: 4, repeat: Infinity } : { duration: 0 }}>
         <circle cx={cx} cy={cy} r={28} fill={sunColor} opacity={0.12} />
       </motion.g>
       <motion.g style={{ transformOrigin: `${cx}px ${cy}px` }}
-        animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 3, repeat: Infinity }}>
+        animate={motionEnabled ? { scale: [1, 1.15, 1] } : { scale: 1 }}
+        transition={motionEnabled ? { duration: 3, repeat: Infinity } : { duration: 0 }}>
         <circle cx={cx} cy={cy} r={20} fill={sunColor} opacity={0.2} />
       </motion.g>
       {/* sun disc */}
@@ -85,9 +87,9 @@ function SkyBody({ hour, sceneW, sceneH }: SkyBodyProps) {
 
 // ── Light rays through window ────────────────────────────────────────────────
 
-interface RaysProps { hour: number; windowStyle: WindowStyle; sceneW: number; sceneH: number }
+interface RaysProps { hour: number; windowStyle: WindowStyle; sceneW: number; sceneH: number; motionEnabled: boolean }
 
-function LightRays({ hour, windowStyle, sceneW, sceneH }: RaysProps) {
+function LightRays({ hour, windowStyle, sceneW, sceneH, motionEnabled }: RaysProps) {
   if (isNightHour(hour) || hour < 0) return null;
 
   const pos = skyBodyPosition(hour);
@@ -125,8 +127,8 @@ function LightRays({ hour, windowStyle, sceneW, sceneH }: RaysProps) {
             key={i}
             points={`${sx},${wTop} ${t.x - 14},${t.y} ${endX - 14},${endY} ${endX + 14},${endY} ${t.x + 14},${t.y}`}
             fill={`url(#ray_grad_${i})`}
-            animate={{ opacity: [0.18, 0.28, 0.18] }}
-            transition={{ duration: 3 + i * 0.7, repeat: Infinity, delay: i * 0.4 }}
+            animate={motionEnabled ? { opacity: [0.18, 0.28, 0.18] } : { opacity: 0.2 }}
+            transition={motionEnabled ? { duration: 3 + i * 0.7, repeat: Infinity, delay: i * 0.4 } : { duration: 0 }}
           />
         );
       })}
@@ -181,7 +183,7 @@ function SkyTimeOverlay({ hour, w, h }: TimeOverlayProps) {
   return <rect x={0} y={0} width={w} height={h} fill={color} opacity={opacity} style={{ pointerEvents: 'none' }} />;
 }
 
-function NightStars({ hour, w, h }: TimeOverlayProps) {
+function NightStars({ hour, w, h, motionEnabled }: TimeOverlayProps & { motionEnabled: boolean }) {
   const { opacity } = computeSkyDarkness(hour);
   if (opacity <= 0.05) return null;
   const starsOpacity = Math.min(1, opacity / 0.6);
@@ -198,8 +200,8 @@ function NightStars({ hour, w, h }: TimeOverlayProps) {
     <g opacity={starsOpacity}>
       {stars.map((s, i) => (
         <motion.g key={i} style={{ transformOrigin: `${s.x}px ${s.y}px` }}
-          animate={{ opacity: [0.35, 0.95, 0.35] }}
-          transition={{ duration: s.twinkleDur, repeat: Infinity, delay: s.twinkleDelay }}>
+          animate={motionEnabled ? { opacity: [0.35, 0.95, 0.35] } : { opacity: 0.55 }}
+          transition={motionEnabled ? { duration: s.twinkleDur, repeat: Infinity, delay: s.twinkleDelay } : { duration: 0 }}>
           <circle cx={s.x} cy={s.y} r={s.r} fill="white" />
         </motion.g>
       ))}
@@ -561,7 +563,7 @@ function SceneWinter({ w, h }: { w: number; h: number }) {
   );
 }
 
-function Scene({ scene, w, h, hour }: { scene: BackdropScene; w: number; h: number; hour: number }) {
+function Scene({ scene, w, h, hour, motionEnabled }: { scene: BackdropScene; w: number; h: number; hour: number; motionEnabled: boolean }) {
   return (
     <>
       {(() => {
@@ -577,7 +579,7 @@ function Scene({ scene, w, h, hour }: { scene: BackdropScene; w: number; h: numb
         }
       })()}
       {/* night stars appear on all scenes except space/city which already have own stars */}
-      {scene !== 'space' && scene !== 'city' && <NightStars hour={hour} w={w} h={h} />}
+      {scene !== 'space' && scene !== 'city' && <NightStars hour={hour} w={w} h={h} motionEnabled={motionEnabled} />}
       <SkyTimeOverlay hour={hour} w={w} h={h} />
     </>
   );
@@ -740,6 +742,7 @@ interface BackdropProps {
   width: number;
   height: number;
   backWallCssStyle: React.CSSProperties;
+  motionEnabled: boolean;
 }
 
 export function BackdropScene({
@@ -751,6 +754,7 @@ export function BackdropScene({
   width: w,
   height: h,
   backWallCssStyle,
+  motionEnabled,
 }: BackdropProps) {
   if (backdropType === 'wall') return null;
 
@@ -765,8 +769,8 @@ export function BackdropScene({
         style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
         preserveAspectRatio="xMidYMid slice"
       >
-        <Scene scene={backdropScene} w={w} h={h} hour={hour} />
-        <SkyBody hour={hour} sceneW={w} sceneH={h} />
+        <Scene scene={backdropScene} w={w} h={h} hour={hour} motionEnabled={motionEnabled} />
+        <SkyBody hour={hour} sceneW={w} sceneH={h} motionEnabled={motionEnabled} />
       </svg>
     );
   }
@@ -785,8 +789,8 @@ export function BackdropScene({
 
       {/* scene visible only through window glass */}
       <g clipPath={`url(#${clipId})`}>
-        <Scene scene={backdropScene} w={w} h={h} hour={hour} />
-        <SkyBody hour={hour} sceneW={w} sceneH={h} />
+        <Scene scene={backdropScene} w={w} h={h} hour={hour} motionEnabled={motionEnabled} />
+        <SkyBody hour={hour} sceneW={w} sceneH={h} motionEnabled={motionEnabled} />
         {/* glass tint */}
         <rect x={0} y={0} width={w} height={h} fill="rgba(180,210,240,0.06)" />
       </g>
@@ -795,7 +799,7 @@ export function BackdropScene({
       <WallMask style={windowStyle} w={w} h={h} wallStyle={backWallCssStyle} />
 
       {/* light rays on top of everything (no floor spot) */}
-      <LightRays hour={hour} windowStyle={windowStyle} sceneW={w} sceneH={h} />
+      <LightRays hour={hour} windowStyle={windowStyle} sceneW={w} sceneH={h} motionEnabled={motionEnabled} />
 
       {/* window frame on top */}
       <WindowFrame style={windowStyle} w={w} h={h} />

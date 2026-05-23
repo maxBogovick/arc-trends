@@ -253,6 +253,7 @@ export function usePetBehaviorState(
   // ── Effect 3: Patrol state machine (interval) ────────────────────────────
   // Handles only patrol + scene interactions; actions & sleep are handled above.
   useEffect(() => {
+    if (paused) return;
     const id = setInterval(() => {
       // Owner present — freeze state machine
       if (pausedRef.current) return;
@@ -337,7 +338,7 @@ export function usePetBehaviorState(
 
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // single interval — all state read via refs
+  }, [paused]); // all mutable state read via refs while active
 
   // ── Ref for pet mood (readable inside interval) ───────────────────────────
   const petMoodRef = useRef<Pet['mood']>('content');

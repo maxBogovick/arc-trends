@@ -603,17 +603,18 @@ export class MockApiService implements ApiService {
     return finalizePet();
   }
 
-  async playWithPet(): Promise<PlayResult> {
+  async playWithPet(variant: 'classic' | 'active' | 'puzzle' | 'social' = 'classic'): Promise<PlayResult> {
     await delay(rand(200, 380));
     const now = mockNow();
     const score = Math.floor(rand(40, 220));
-    const result = await applyMockCommandOrThrow({ type: 'play', scoreSeed: String(score), at: now.toISOString() });
+    const result = await applyMockCommandOrThrow({ type: 'play', variant, scoreSeed: String(score), at: now.toISOString() });
     const finalXp = result.xpDelta;
     const finalCoins = result.coinDelta;
 
     S.playCount++;
     if (score > S.maxStarScore) S.maxStarScore = score;
-    addEvent('play', `Сыграл в игру (счёт: ${score})`, '🎮', { xpGained: finalXp, coinsGained: finalCoins });
+    const label = variant === 'active' ? 'Активная игра' : variant === 'puzzle' ? 'Головоломка' : variant === 'social' ? 'Совместная игра' : 'Игра';
+    addEvent('play', `${label} (счёт: ${score})`, variant === 'puzzle' ? '🧩' : variant === 'social' ? '🫶' : '🎮', { xpGained: finalXp, coinsGained: finalCoins });
     tickQuest('q_play2');
     checkAchievement('playful', S.playCount);
     checkAchievement('star_catcher', S.maxStarScore);
@@ -622,21 +623,21 @@ export class MockApiService implements ApiService {
     return { pet: finalizePet(), score, xpGained: finalXp, coinsGained: finalCoins, message };
   }
 
-  async sleepPet() {
+  async sleepPet(variant: 'night' | 'nap' | 'ritual' = 'night') {
     await delay(rand(200, 350));
     const now = mockNow();
-    await applyMockCommandOrThrow({ type: 'sleep', at: now.toISOString() });
+    await applyMockCommandOrThrow({ type: 'sleep', variant, at: now.toISOString() });
     S.sleepCount++;
-    addEvent('sleep', 'Пошёл спать', '😴');
+    addEvent('sleep', variant === 'ritual' ? 'Успокоился перед сном' : variant === 'nap' ? 'Лёг на короткий отдых' : 'Пошёл спать', variant === 'ritual' ? '🌙' : '😴');
     checkAchievement('sweet_dreams', S.sleepCount);
     return finalizePet();
   }
 
-  async wakePet() {
+  async wakePet(variant: 'normal' | 'gentle' = 'normal') {
     await delay(rand(200, 350));
     const now = mockNow();
-    await applyMockCommandOrThrow({ type: 'wake', at: now.toISOString() });
-    addEvent('wake', 'Проснулся', '☀️');
+    await applyMockCommandOrThrow({ type: 'wake', variant, at: now.toISOString() });
+    addEvent('wake', variant === 'gentle' ? 'Проснулся мягко' : 'Проснулся', '☀️');
     return finalizePet();
   }
 
@@ -663,12 +664,12 @@ export class MockApiService implements ApiService {
     return finalizePet();
   }
 
-  async bondWithPet() {
+  async bondWithPet(variant: 'hug' | 'listen' | 'praise' = 'hug') {
     await delay(rand(180, 320));
     const now = mockNow();
-    await applyMockCommandOrThrow({ type: 'bond', at: now.toISOString() });
+    await applyMockCommandOrThrow({ type: 'bond', variant, at: now.toISOString() });
     S.bondCount++;
-    addEvent('bond', 'Получил объятия', '🤗');
+    addEvent('bond', variant === 'listen' ? 'Его внимательно выслушали' : variant === 'praise' ? 'Получил тёплую похвалу' : 'Получил объятия', variant === 'listen' ? '👂' : variant === 'praise' ? '✨' : '🤗');
     tickQuest('q_bond3');
     checkAchievement('best_friends', S.bondCount);
     checkAchievement('max_bond', S.pet.stats.bond);

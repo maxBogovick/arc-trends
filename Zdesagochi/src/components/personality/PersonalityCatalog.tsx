@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PERSONALITIES } from '@zdesagochi/personality-pet-preset';
+import { PERSONALITIES, getPersonalityGuidance } from '@zdesagochi/personality-pet-preset';
 import { usePetStore } from '../../store/petStore';
 import type { PersonalityDefinition, PersonalityId } from '../../personality/types';
 
@@ -104,6 +104,7 @@ function DetailPanel({
 
   const loved = def.foodPreferences.lovedIds;
   const hated = def.foodPreferences.hatedIds;
+  const guidance = getPersonalityGuidance(def.id);
 
   return (
     <div className="flex flex-col h-full">
@@ -130,6 +131,60 @@ function DetailPanel({
 
       {/* Description */}
       <p className="text-[12px] text-gray-600 leading-relaxed mb-4">{def.description}</p>
+
+      <div className="mb-4 rounded-2xl p-3" style={{ background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.16)' }}>
+        <p className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wide mb-1.5">
+          Как вести к этому характеру
+        </p>
+        <p className="text-[11px] text-emerald-800/85 leading-snug mb-2">{guidance.summary}</p>
+        <div className="space-y-1">
+          {guidance.aimFor.slice(0, 3).map(text => (
+            <p key={text} className="text-[11px] text-gray-600 leading-snug">✓ {text}</p>
+          ))}
+        </div>
+        <p className="text-[10px] font-semibold text-rose-600 uppercase tracking-wide mt-3 mb-1">
+          Что может увести
+        </p>
+        <div className="space-y-1">
+          {guidance.avoid.slice(0, 2).map(text => (
+            <p key={text} className="text-[11px] text-gray-600 leading-snug">• {text}</p>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
+          Действия для обучения
+        </p>
+        <div className="space-y-1.5">
+          {guidance.actions.map(action => (
+            <div
+              key={`${action.label}-${action.strength}`}
+              className="rounded-xl px-2.5 py-2"
+              style={{
+                background: action.strength === 'avoid' ? 'rgba(239,68,68,0.07)' : action.strength === 'primary' ? 'rgba(99,102,241,0.08)' : 'rgba(107,114,128,0.06)',
+                border: action.strength === 'avoid' ? '1px solid rgba(239,68,68,0.14)' : '1px solid rgba(107,114,128,0.10)',
+              }}
+            >
+              <p className="text-[11px] font-bold text-lumio-text">{action.label}</p>
+              <p className="text-[10px] text-gray-500 leading-snug mt-0.5">{action.note}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {guidance.itemStyle && (
+        <div className="mb-4">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
+            Предметы
+          </p>
+          <div className="space-y-1">
+            {guidance.itemStyle.diverse && <p className="text-[11px] text-gray-500 leading-snug">Разные: {guidance.itemStyle.diverse}</p>}
+            {guidance.itemStyle.repeated && <p className="text-[11px] text-gray-500 leading-snug">Повтор: {guidance.itemStyle.repeated}</p>}
+            {guidance.itemStyle.frequent && <p className="text-[11px] text-gray-500 leading-snug">Часто: {guidance.itemStyle.frequent}</p>}
+          </div>
+        </div>
+      )}
 
       {/* Key modifiers */}
       {keyModifiers.length > 0 && (

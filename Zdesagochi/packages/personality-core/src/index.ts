@@ -66,3 +66,7 @@ export type {
   TraitKey,
   TraitVector,
 } from './types';
+export {
+  BEHAVIOR_AXES,
+  TRAIT_KEYS,
+} from './types';

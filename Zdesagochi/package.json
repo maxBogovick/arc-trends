@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "start:all": "./start-local.sh",
     "build": "tsc && vite build",
     "test": "npm run check:personality-boundaries && npm run check:rust-personality-catalog && npm run check:rust-personality-definitions && npm run typecheck:packages && node scripts/run-personality-tests.mjs && node scripts/personality-core-quickstart-demo.mjs && node scripts/personality-package-name-import-demo.mjs",
     "typecheck:packages": "tsc -p tsconfig.packages.json",

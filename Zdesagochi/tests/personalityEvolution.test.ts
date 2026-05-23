@@ -13,6 +13,9 @@ import { SyncQueue } from '../src/api/syncQueue';
 import { ExplainabilityLog, createExplainabilityRecord, explainCommandRecord } from '../src/api/explainability';
 import { BackendReplayServerApi } from '../src/api/backendReplayServer';
 import { PetService, type PetServiceState } from '../src/api/petService';
+import { RealApiService } from '../src/api/realApi';
+import { resolvePerformancePolicy } from '../src/performance/performancePolicy';
+import { buildPersonalityAssistantReport } from '../src/personality/personalityAssistant';
 import { fromPersonalityState, toPersonalityState } from '../src/api/personalityPetAdapter';
 import {
   deleteOfflinePetSave,
@@ -80,7 +83,7 @@ import { getEmergentStateDef } from '../src/personality/emergentStates';
 import { BASE_ACTION_RULES, validateActionRules } from '../src/personality/actionRules';
 import { PASSIVE_RULES, validatePassiveRules } from '../src/personality/passiveRules';
 import { DECAY_RULES, validateDecayRules } from '../src/personality/decayRules';
-import { validateBalancePatch, validateInfluenceRegistry, validateRemoteInfluence } from '@zdesagochi/personality-pet-preset';
+import { PERSONALITY_GUIDANCE, validateBalancePatch, validateInfluenceRegistry, validatePersonalityGuidance, validateRemoteInfluence } from '@zdesagochi/personality-pet-preset';
 import { PATTERN_RULES, validatePatternRules } from '../src/personality/patternRules';
 import { getPersonality, getPersonalityStrict, validatePersonalitySpecialRules } from '@zdesagochi/personality-pet-preset';
 import { setLayeredEmergentState } from '../src/personality/stateLayers';
@@ -259,6 +262,48 @@ test('personality specialRules validator exposes adapter-owned rules', () => {
   assert.equal(warningKeys.has('paranoid:trustThresholdBonds:engine'), false);
   assert.equal(warningKeys.has('paranoid:healRefuseHealthThreshold:engine'), false);
   assert.equal(warningKeys.has('paranoid:feedRestoreByPhase:engine'), false);
+});
+
+test('personality guidance covers every personality with valid references', () => {
+  assert.deepEqual(validatePersonalityGuidance(), []);
+  assert.deepEqual(
+    new Set(Object.keys(PERSONALITY_GUIDANCE)),
+    new Set(PERSONALITY_IDS),
+  );
+});
+
+test('performance policy degrades expensive effects for Safari and hidden tabs', () => {
+  const safari = resolvePerformancePolicy({
+    quality: 'auto',
+    prefersReducedMotion: false,
+    visible: true,
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+  });
+  assert.equal(safari.isSafari, true);
+  assert.equal(safari.effectiveQuality, 'low');
+  assert.equal(safari.canvasEffectsEnabled, false);
+  assert.equal(safari.auraEffectsEnabled, false);
+  assert.equal(safari.patrolEnabled, false);
+
+  const hidden = resolvePerformancePolicy({
+    quality: 'high',
+    prefersReducedMotion: false,
+    visible: false,
+    userAgent: 'Mozilla/5.0 Chrome/125.0.0.0 Safari/537.36',
+  });
+  assert.equal(hidden.effectiveQuality, 'high');
+  assert.equal(hidden.motionEnabled, false);
+  assert.equal(hidden.canvasEffectsEnabled, false);
+  assert.equal(hidden.patrolEnabled, false);
+
+  const forcedHighSafari = resolvePerformancePolicy({
+    quality: 'high',
+    prefersReducedMotion: false,
+    visible: true,
+    userAgent: 'Mozilla/5.0 Version/17.0 Safari/605.1.15',
+  });
+  assert.equal(forcedHighSafari.effectiveQuality, 'high');
+  assert.equal(forcedHighSafari.canvasEffectsEnabled, true);
 });
 
 test('personality specialRules validator rejects unknown runtime keys', () => {
@@ -1733,6 +1778,202 @@ await testAsync('offline replay remains deterministic for item add and use behav
   assert.deepEqual(first.pet.traitVector, second.pet.traitVector);
   assert.deepEqual(first.pet.behaviorProfile, second.pet.behaviorProfile);
   assert.deepEqual(first.pet.behavioralCounters, second.pet.behavioralCounters);
+});
+
+await testAsync('action variants produce distinct trait and behavior evidence', async () => {
+  const base = makePet({ formationComplete: true, personality: 'playful' });
+  const active = await applyPersonalityCommand(base, {
+    type: 'play',
+    variant: 'active',
+    scoreSeed: '120',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-play-active',
+  });
+  const puzzle = await applyPersonalityCommand(base, {
+    type: 'play',
+    variant: 'puzzle',
+    scoreSeed: '120',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-play-puzzle',
+  });
+
+  assert.equal(active.pet.traitVector.vitality > puzzle.pet.traitVector.vitality, true);
+  assert.equal(puzzle.pet.traitVector.curiosity > active.pet.traitVector.curiosity, true);
+  assert.equal(puzzle.pet.traitVector.order > active.pet.traitVector.order, true);
+  assert.equal((active.pet.behaviorProfile?.axes.disruption ?? 0) > 0, true);
+  assert.equal((puzzle.pet.behaviorProfile?.axes.exploration ?? 0) > (active.pet.behaviorProfile?.axes.exploration ?? 0), true);
+});
+
+await testAsync('bond listen and sleep ritual train recovery without collapsing into legacy actions', async () => {
+  const base = makePet({ formationComplete: true, personality: 'empath', traumaLevel: 20 });
+  const listen = await applyPersonalityCommand(base, {
+    type: 'bond',
+    variant: 'listen',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-bond-listen',
+  }, { currentSync: 5 });
+  const hug = await applyPersonalityCommand(base, {
+    type: 'bond',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-bond-hug',
+  }, { currentSync: 5 });
+
+  assert.equal((listen.pet.behaviorProfile?.axes.recovery ?? 0) > (hug.pet.behaviorProfile?.axes.recovery ?? 0), true);
+  assert.equal(listen.pet.traitVector.caution < hug.pet.traitVector.caution, true);
+  assert.equal((listen.pet.traumaLevel ?? 0) < (hug.pet.traumaLevel ?? 0), true);
+
+  const ritual = await applyPersonalityCommand(base, {
+    type: 'sleep',
+    variant: 'ritual',
+    at: '2026-05-04T02:00:00.000Z',
+    commandId: 'cmd-sleep-ritual',
+  }, { currentSync: 10 });
+  assert.equal((ritual.pet.behaviorProfile?.axes.recovery ?? 0) > 0, true);
+  assert.equal((ritual.pet.behaviorProfile?.axes.order ?? 0) > 0, true);
+});
+
+await testAsync('second slice action variants add social confidence rest and gentle wake semantics', async () => {
+  const base = makePet({ formationComplete: true, personality: 'empath', traumaLevel: 12 });
+
+  const socialPlay = await applyPersonalityCommand(base, {
+    type: 'play',
+    variant: 'social',
+    scoreSeed: '120',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-play-social',
+  });
+  const activePlay = await applyPersonalityCommand(base, {
+    type: 'play',
+    variant: 'active',
+    scoreSeed: '120',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-play-active-2',
+  });
+
+  assert.equal(socialPlay.pet.traitVector.sociality > activePlay.pet.traitVector.sociality, true);
+  assert.equal((socialPlay.pet.behaviorProfile?.axes.social ?? 0) > (activePlay.pet.behaviorProfile?.axes.social ?? 0), true);
+  assert.equal(socialPlay.statDeltas.bond! > activePlay.statDeltas.bond!, true);
+
+  const praise = await applyPersonalityCommand(base, {
+    type: 'bond',
+    variant: 'praise',
+    at: '2026-05-04T02:00:00.000Z',
+    commandId: 'cmd-bond-praise',
+  }, { currentSync: 6 });
+  const listen = await applyPersonalityCommand(base, {
+    type: 'bond',
+    variant: 'listen',
+    at: '2026-05-04T02:00:00.000Z',
+    commandId: 'cmd-bond-listen-2',
+  }, { currentSync: 6 });
+
+  assert.equal(praise.pet.traitVector.vitality > listen.pet.traitVector.vitality, true);
+  assert.equal((listen.pet.behaviorProfile?.axes.recovery ?? 0) > (praise.pet.behaviorProfile?.axes.recovery ?? 0), true);
+
+  const nap = await applyPersonalityCommand(base, {
+    type: 'sleep',
+    variant: 'nap',
+    at: '2026-05-04T03:00:00.000Z',
+    commandId: 'cmd-sleep-nap',
+  }, { currentSync: 8 });
+  const ritual = await applyPersonalityCommand(base, {
+    type: 'sleep',
+    variant: 'ritual',
+    at: '2026-05-04T03:00:00.000Z',
+    commandId: 'cmd-sleep-ritual-2',
+  }, { currentSync: 8 });
+
+  assert.equal(nap.pet.traitVector.vitality > ritual.pet.traitVector.vitality, true);
+  assert.equal((ritual.pet.behaviorProfile?.axes.order ?? 0) > (nap.pet.behaviorProfile?.axes.order ?? 0), true);
+
+  const sleeping = makePet({
+    formationComplete: true,
+    personality: 'empath',
+    isAsleep: true,
+    sleepStartedAt: '2026-05-04T03:30:00.000Z',
+    traumaLevel: 10,
+  });
+  const gentleWake = await applyPersonalityCommand(sleeping, {
+    type: 'wake',
+    variant: 'gentle',
+    at: '2026-05-04T04:00:00.000Z',
+    commandId: 'cmd-wake-gentle',
+  }, { currentSync: 12 });
+  const normalWake = await applyPersonalityCommand(sleeping, {
+    type: 'wake',
+    at: '2026-05-04T04:00:00.000Z',
+    commandId: 'cmd-wake-normal',
+  }, { currentSync: 12 });
+
+  assert.equal(gentleWake.pet.traumaLevel < normalWake.pet.traumaLevel, true);
+  assert.equal(gentleWake.pet.traitVector.caution < normalWake.pet.traitVector.caution, true);
+  assert.equal((gentleWake.pet.behaviorProfile?.axes.recovery ?? 0) > (normalWake.pet.behaviorProfile?.axes.recovery ?? 0), true);
+});
+
+await testAsync('personality assistant explains item-heavy formation separately', async () => {
+  let pet = makePet({ formationComplete: true, personality: 'curious' });
+  const records = [];
+  const commands: PetCommand[] = [
+    { type: 'add_item', itemId: 'puzzle', itemKind: 'toy', quantity: 1, at: '2026-05-04T01:00:00.000Z', commandId: 'cmd-assistant-add-puzzle' },
+    { type: 'use_item', itemId: 'crystal_ball', itemKind: 'toy', at: '2026-05-04T02:00:00.000Z', commandId: 'cmd-assistant-use-crystal' },
+    { type: 'add_item', itemId: 'music_box', itemKind: 'toy', quantity: 1, at: '2026-05-04T03:00:00.000Z', commandId: 'cmd-assistant-add-music' },
+  ];
+
+  for (const command of commands) {
+    const result = await applyPersonalityCommand(pet, command);
+    pet = result.pet;
+    records.push(createExplainabilityRecord(result, command.at));
+  }
+
+  const report = buildPersonalityAssistantReport({ pet, records, targetPersonalityId: 'curious' });
+  assert.equal(report.itemContribution.style, 'diverse');
+  assert.equal(report.itemContribution.uniqueItems >= 3, true);
+  assert.equal(report.actionContributions.some(item => item.commandType === 'add_item'), true);
+  assert.equal(report.formationTimeline.length >= 3, true);
+  assert.equal(report.itemContribution.explanation.includes('curious'), true);
+});
+
+await testAsync('personality assistant does not collapse different histories into one explanation', async () => {
+  let itemPet = makePet({ formationComplete: true, personality: 'curious' });
+  let carePet = makePet({ formationComplete: true, personality: 'empath' });
+  const itemRecords = [];
+  const careRecords = [];
+
+  for (let i = 0; i < 4; i++) {
+    const itemResult = await applyPersonalityCommand(itemPet, {
+      type: i % 2 === 0 ? 'add_item' : 'use_item',
+      itemId: ['puzzle', 'crystal_ball', 'music_box', 'magic_wand'][i],
+      itemKind: 'toy',
+      quantity: 1,
+      at: `2026-05-04T0${i + 1}:00:00.000Z`,
+      commandId: `cmd-assistant-item-${i}`,
+    } as PetCommand);
+    itemPet = itemResult.pet;
+    itemRecords.push(createExplainabilityRecord(itemResult, itemResult.command.at));
+
+    const careResult = await applyPersonalityCommand(carePet, {
+      type: 'bond',
+      at: `2026-05-04T1${i}:00:00.000Z`,
+      commandId: `cmd-assistant-care-${i}`,
+    });
+    carePet = careResult.pet;
+    careRecords.push(createExplainabilityRecord(careResult, careResult.command.at));
+  }
+
+  const itemReport = buildPersonalityAssistantReport({ pet: itemPet, records: itemRecords, targetPersonalityId: 'curious' });
+  const careReport = buildPersonalityAssistantReport({ pet: carePet, records: careRecords, targetPersonalityId: 'empath' });
+
+  assert.notEqual(itemReport.actionContributions[0]?.commandType, careReport.actionContributions[0]?.commandType);
+  assert.equal(itemReport.itemContribution.style, 'diverse');
+  assert.equal(careReport.itemContribution.style, 'none');
+  assert.equal(careReport.dominantBehaviors.some(item => item.key === 'social' || item.key === 'care'), true);
+});
+
+test('personality assistant reports low confidence when history is missing', () => {
+  const report = buildPersonalityAssistantReport({ pet: makePet() });
+  assert.equal(report.confidence.label, 'низкая');
+  assert.equal(report.formationTimeline.length, 0);
+  assert.equal(report.nextBestActions.length > 0, true);
 });
 
 await testAsync('personality command handler gates influences with serializable cooldown state', async () => {
@@ -3238,6 +3479,59 @@ await testAsync('MockApi useInventoryItem writes use_item command to sync queue'
   } finally {
     setMockOfflineStorage(null);
     clearMockOfflineRuntimeState();
+  }
+});
+
+await testAsync('RealApi transparently authenticates and sends bearer token', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+    } as Response;
+  }
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input.toString();
+    calls.push({ url, init });
+
+    if (url.endsWith('/api/auth/login')) {
+      return jsonResponse(401, { message: 'Invalid credentials' });
+    }
+    if (url.endsWith('/api/auth/register')) {
+      return jsonResponse(200, {
+        token: 'token-1',
+        refresh_token: 'refresh-1',
+        user: {
+          id: 'user-1',
+          username: 'dev_user',
+          email: 'dev_user@zdesagochi.local',
+        },
+      });
+    }
+    if (url.endsWith('/api/pet')) {
+      assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer token-1');
+      return jsonResponse(200, makePet());
+    }
+
+    return jsonResponse(404, { message: `unexpected request: ${url}` });
+  }) as typeof fetch;
+
+  try {
+    const api = new RealApiService('http://localhost:8080');
+    const pet = await api.getPet();
+
+    assert.equal(pet.id, 'test-pet');
+    assert.deepEqual(calls.map(call => new URL(call.url).pathname), [
+      '/api/auth/login',
+      '/api/auth/register',
+      '/api/pet',
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 

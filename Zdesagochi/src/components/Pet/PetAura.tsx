@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import type { AuraDef } from '../../data/auras';
+import { usePerformancePolicy } from '../../performance/usePerformancePolicy';
 
 const AURA_CSS = `
 @keyframes auraFlameRise {
@@ -62,7 +63,9 @@ interface Props {
 const sr = (i: number, off = 0) => ((i * 137 + off * 31) % 100) / 100;
 
 export function PetAura({ aura }: Props) {
+  const performancePolicy = usePerformancePolicy();
   if (aura.id === 'none') return null;
+  if (!performancePolicy.auraEffectsEnabled) return <StaticAura aura={aura} />;
 
   return (
     <>
@@ -77,6 +80,23 @@ export function PetAura({ aura }: Props) {
         {aura.id === 'divine'   && <DivineAura   c1={aura.color} c2={aura.color2} />}
       </div>
     </>
+  );
+}
+
+function StaticAura({ aura }: Props) {
+  return (
+    <div className="absolute pointer-events-none" style={{ inset: '-46px', zIndex: 0 }}>
+      <div
+        className="absolute"
+        style={{
+          inset: 28,
+          borderRadius: '50%',
+          background: `radial-gradient(ellipse at 50% 55%, ${aura.color2}24, ${aura.color}16 48%, transparent 72%)`,
+          boxShadow: `0 0 26px 10px ${aura.color}2f`,
+          mixBlendMode: 'screen',
+        }}
+      />
+    </div>
   );
 }
 

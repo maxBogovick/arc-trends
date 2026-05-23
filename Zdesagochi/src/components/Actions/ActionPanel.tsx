@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { usePetStore } from '../../store/petStore';
 import { FoodMenuWrapper } from './FoodMenu';
 import type { Account, Pet } from '../../api';
+import { getActionTrainingHint } from '../../personality/guidanceSelectors';
 
 interface ActionConfig {
   id: string;
@@ -14,7 +15,11 @@ interface ActionConfig {
 const ACTIONS: ActionConfig[] = [
   { id: 'feed',  gradient: 'from-amber-400 to-orange-400', disabled: (p) => p.isAsleep || p.stats.hunger > 90, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.hunger > 90 ? 'Сыт!' : '' },
   { id: 'play',  gradient: 'from-violet-400 to-purple-500', disabled: (p) => p.isAsleep || p.stats.energy < 10, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.energy < 10 ? 'Нет сил' : '' },
+  { id: 'play_puzzle',  gradient: 'from-indigo-400 to-sky-500', disabled: (p) => p.isAsleep || p.stats.energy < 8, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.energy < 8 ? 'Нет сил' : 'Тренирует любопытство и порядок' },
+  { id: 'play_social',  gradient: 'from-cyan-400 to-emerald-500', disabled: (p) => p.isAsleep || p.stats.energy < 10, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.energy < 10 ? 'Нет сил' : 'Тренирует социальность через игру' },
   { id: 'sleep', gradient: 'from-purple-400 to-indigo-500' },
+  { id: 'sleep_nap', gradient: 'from-sky-300 to-blue-400', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Уже спит' : 'Короткое восстановление без сильного ухода в режим' },
+  { id: 'sleep_ritual', gradient: 'from-slate-400 to-violet-500', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Уже спит' : 'Укрепляет режим и восстановление' },
   { id: 'bathe', gradient: 'from-blue-400 to-cyan-400', disabled: (p) => p.isAsleep || p.stats.cleanliness > 90, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.cleanliness > 90 ? 'Чистый!' : '' },
   {
     id: 'heal',
@@ -23,15 +28,23 @@ const ACTIONS: ActionConfig[] = [
     tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.health > 85 && p.traumaLevel < 40 && p.emergentState !== 'shadow_form' ? 'Здоров!' : '',
   },
   { id: 'bond',  gradient: 'from-pink-400 to-rose-400', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Спит' : '' },
+  { id: 'bond_listen',  gradient: 'from-emerald-400 to-teal-500', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Спит' : 'Снижает тревожность и учит восстановлению' },
+  { id: 'bond_praise',  gradient: 'from-yellow-300 to-amber-400', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Спит' : 'Учит уверенности и теплому контакту' },
 ];
 
 const ACTION_META: Record<string, { emoji: (p: Pet) => string; label: (p: Pet) => string }> = {
   feed:  { emoji: () => '🍔', label: () => 'Покормить' },
   play:  { emoji: () => '🎮', label: () => 'Играть' },
+  play_puzzle:  { emoji: () => '🧩', label: () => 'Головоломка' },
+  play_social:  { emoji: () => '🫶', label: () => 'Вместе' },
   sleep: { emoji: (p) => p.isAsleep ? '☀️' : '😴', label: (p) => p.isAsleep ? 'Разбудить' : 'Спать' },
+  sleep_nap: { emoji: () => '💤', label: () => 'Дрёма' },
+  sleep_ritual: { emoji: () => '🌙', label: () => 'Ритуал сна' },
   bathe: { emoji: () => '🛁', label: () => 'Помыть' },
   heal:  { emoji: () => '💊', label: () => 'Лечить' },
   bond:  { emoji: () => '🤗', label: () => 'Обнять' },
+  bond_listen:  { emoji: () => '👂', label: () => 'Выслушать' },
+  bond_praise:  { emoji: () => '✨', label: () => 'Похвала' },
 };
 
 function getGuardianActionHint(pet: Pet, account: Account, actionId: string): string | null {
@@ -62,7 +75,7 @@ function getGuardianActionHint(pet: Pet, account: Account, actionId: string): st
     return 'Игру лучше отложить, когда сил почти не осталось.';
   }
 
-  return null;
+  return getActionTrainingHint(actionId);
 }
 
 function getGuardianPanelHint(pet: Pet, account: Account): string | null {
@@ -85,7 +98,7 @@ function getGuardianPanelHint(pet: Pet, account: Account): string | null {
 }
 
 export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
-  const { pet, account, sleepPet, wakePet, bathePet, healPet, bondWithPet, actionLoading } = usePetStore();
+  const { pet, account, playWithPet, sleepPet, wakePet, bathePet, healPet, bondWithPet, actionLoading } = usePetStore();
   const [showFood, setShowFood] = useState(false);
   const [gameMenu, setGameMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -97,10 +110,16 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
     switch (id) {
       case 'feed':  return setShowFood(true);
       case 'play':  return setGameMenu(true);
-      case 'sleep': return pet.isAsleep ? wakePet() : sleepPet();
+      case 'play_puzzle': return playWithPet('puzzle');
+      case 'play_social': return playWithPet('social');
+      case 'sleep': return pet.isAsleep ? wakePet('gentle') : sleepPet();
+      case 'sleep_nap': return sleepPet('nap');
+      case 'sleep_ritual': return sleepPet('ritual');
       case 'bathe': return bathePet();
       case 'heal':  return healPet();
       case 'bond':  return bondWithPet();
+      case 'bond_listen': return bondWithPet('listen');
+      case 'bond_praise': return bondWithPet('praise');
     }
   };
 
@@ -120,10 +139,16 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
               ⭐ Поймай звёзды
             </button>
             <button
-              onClick={() => { setGameMenu(false); onPlayGame(); /* MemoryGame */ }}
+              onClick={() => { setGameMenu(false); playWithPet('puzzle'); }}
               className="w-full py-2.5 rounded-xl font-bold text-white text-sm"
               style={{ background: 'linear-gradient(135deg,#EC4899,#F43F5E)' }}>
-              🧠 Игра «Память»
+              🧩 Головоломка
+            </button>
+            <button
+              onClick={() => { setGameMenu(false); playWithPet('social'); }}
+              className="w-full py-2.5 rounded-xl font-bold text-white text-sm"
+              style={{ background: 'linear-gradient(135deg,#06B6D4,#10B981)' }}>
+              🫶 Совместная игра
             </button>
             <button onClick={() => setGameMenu(false)} className="text-xs text-lumio-muted hover:text-lumio-text transition-colors">Отмена</button>
           </div>

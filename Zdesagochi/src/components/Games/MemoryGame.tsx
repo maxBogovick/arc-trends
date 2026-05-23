@@ -31,7 +31,7 @@ export function MemoryGame({ onClose }: { onClose: () => void }) {
     setPhase('result');
     setIsPerfect(perfect);
     if (perfect) registerMemoryPerfect();
-    await playWithPet();
+    await playWithPet('puzzle');
   }, [playWithPet, registerMemoryPerfect]);
 
   useEffect(() => {

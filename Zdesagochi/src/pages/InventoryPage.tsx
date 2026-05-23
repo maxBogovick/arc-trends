@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { useEffect } from 'react';
 import { usePetStore } from '../store/petStore';
 import type { ItemRarity } from '../api';
+import { getItemTrainingHint } from '../personality/guidanceSelectors';
 
 const RARITY_GLOW: Record<ItemRarity, string> = {
   common:    'rgba(107,114,128,0.2)',
@@ -45,6 +46,11 @@ export function InventoryPage() {
         <p className="text-sm text-lumio-muted">{inventory.reduce((a, i) => a + i.quantity, 0)} предметов</p>
       </div>
 
+      <div className="rounded-2xl px-3 py-2 bg-emerald-50/80 border border-emerald-100">
+        <p className="text-[11px] font-semibold text-emerald-700">Подсказка характера</p>
+        <p className="text-[11px] text-emerald-700/85 leading-snug mt-0.5">{getItemTrainingHint('use')}</p>
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {inventory.map(({ item, quantity }) => {
           const isLoading = actionLoading === `use_${item.id}`;
@@ -78,6 +84,7 @@ export function InventoryPage() {
               <div>
                 <p className="font-bold text-lumio-text text-sm">{item.name}</p>
                 <p className="text-xs text-lumio-muted leading-tight mt-0.5">{item.description}</p>
+                <p className="text-[10px] text-emerald-700 leading-tight mt-1">{getItemTrainingHint('use', item.id)}</p>
               </div>
 
               {effects.length > 0 && (

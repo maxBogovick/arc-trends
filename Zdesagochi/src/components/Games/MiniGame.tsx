@@ -35,7 +35,7 @@ export function MiniGame({ onClose }: { onClose: () => void }) {
   const endGame = useCallback(async () => {
     stopGame();
     setPhase('result');
-    const r = await playWithPet();
+    const r = await playWithPet('active');
     if (r) setLastResult(r);
   }, [stopGame, playWithPet]);
 

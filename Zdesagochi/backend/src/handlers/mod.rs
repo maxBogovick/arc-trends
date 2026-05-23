@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod command_log;
 pub mod economy;
 pub mod health;
 pub mod pet;

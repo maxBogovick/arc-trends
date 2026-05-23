@@ -16,7 +16,7 @@ import { getAccessoriesBySlot } from '../data/accessories';
 import { FURNITURE, getFurniture } from '../data/roomFurniture';
 import { getPersonalityBySkin } from '@zdesagochi/personality-pet-preset';
 
-export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 'leaderboard' | 'skins' | 'editor' | 'room' | 'personality_test';
+export type TabId = 'home' | 'shop' | 'inventory' | 'quests' | 'achievements' | 'leaderboard' | 'skins' | 'editor' | 'room' | 'personality_test' | 'personality_assistant';
 
 export type FloorStyle = 'flat' | 'grid' | 'wood' | 'tile' | 'marble' | 'metal';
 
@@ -255,12 +255,12 @@ interface PetStore {
 
   loadPet(): Promise<void>;
   feedPet(foodId: string): Promise<void>;
-  playWithPet(): Promise<{ score: number; xpGained: number; coinsGained: number; message: string } | null>;
-  sleepPet(): Promise<void>;
-  wakePet(): Promise<void>;
+  playWithPet(variant?: 'classic' | 'active' | 'puzzle' | 'social'): Promise<{ score: number; xpGained: number; coinsGained: number; message: string } | null>;
+  sleepPet(variant?: 'night' | 'nap' | 'ritual'): Promise<void>;
+  wakePet(variant?: 'normal' | 'gentle'): Promise<void>;
   bathePet(): Promise<void>;
   healPet(): Promise<void>;
-  bondWithPet(): Promise<void>;
+  bondWithPet(variant?: 'hug' | 'listen' | 'praise'): Promise<void>;
   syncPet(): Promise<void>;
   acceptEvolution(): Promise<void>;
   rejectEvolution(): Promise<void>;
@@ -730,10 +730,10 @@ export const usePetStore = create<PetStore>((set, get) => {
       });
     },
 
-    async playWithPet() {
+    async playWithPet(variant = 'classic') {
       let result = null;
-      await action('play', async () => {
-        const r = await api().playWithPet();
+      await action(`play_${variant}`, async () => {
+        const r = await api().playWithPet(variant);
         set({ pet: r.pet, coins: get().coins + r.coinsGained });
         get().notify(`${r.message} +${r.xpGained} XP  +${r.coinsGained} 🪙`, 'xp');
         get().refreshProgress();
@@ -742,16 +742,16 @@ export const usePetStore = create<PetStore>((set, get) => {
       return result;
     },
 
-    async sleepPet() {
+    async sleepPet(variant = 'night') {
       await action('sleep', async () => {
-        set({ pet: await api().sleepPet() });
-        get().notify('😴 Питомец отдыхает...', 'info');
+        set({ pet: await api().sleepPet(variant) });
+        get().notify(variant === 'ritual' ? '🌙 Спокойный ритуал перед сном' : variant === 'nap' ? '😴 Короткий отдых' : '😴 Питомец отдыхает...', 'info');
       });
     },
-    async wakePet() {
+    async wakePet(variant = 'normal') {
       await action('sleep', async () => {
-        set({ pet: await api().wakePet() });
-        get().notify('☀️ Доброе утро!', 'success');
+        set({ pet: await api().wakePet(variant) });
+        get().notify(variant === 'gentle' ? '☀️ Мягкое пробуждение' : '☀️ Доброе утро!', 'success');
       });
     },
     async bathePet() {
@@ -770,12 +770,12 @@ export const usePetStore = create<PetStore>((set, get) => {
         get().refreshProgress();
       });
     },
-    async bondWithPet() {
+    async bondWithPet(variant = 'hug') {
       await action('bond', async () => {
         const before = get().pet;
-        const pet = await api().bondWithPet();
+        const pet = await api().bondWithPet(variant);
         set({ pet });
-        get().notify(formatCareActionMessage('💜 +20 связь', before, pet), 'success');
+        get().notify(formatCareActionMessage(variant === 'listen' ? '👂 Спокойное доверие' : variant === 'praise' ? '✨ Тёплая похвала' : '💜 +20 связь', before, pet), 'success');
         get().refreshProgress();
       });
     },

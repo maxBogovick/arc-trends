@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { usePetStore } from '../store/petStore';
 import type { ShopItem, ItemType, ItemRarity, Room } from '../api';
 import { ROOMS_DATA } from '../data/rooms';
+import { getItemTrainingHint } from '../personality/guidanceSelectors';
 
 const RARITY_STYLE: Record<ItemRarity, { label: string; border: string; bg: string; text: string }> = {
   common:    { label: 'Обычный',    border: '#D1D5DB', bg: '#F9FAFB', text: '#6B7280' },
@@ -44,6 +45,7 @@ function ItemCard({ item, onBuy, canAfford }: { item: ShopItem; onBuy: () => voi
       <div>
         <p className="font-display font-bold text-lumio-text text-sm">{item.name}</p>
         <p className="text-xs text-lumio-muted mt-0.5 leading-tight">{item.description}</p>
+        <p className="text-[10px] text-emerald-700 mt-1 leading-tight">{getItemTrainingHint('buy', item.id)}</p>
       </div>
 
       {effects.length > 0 && (
@@ -146,6 +148,11 @@ export function ShopPage() {
         <div className="px-4 py-2 rounded-2xl" style={{ background: 'linear-gradient(135deg,#FEF3C7,#FDE68A)', border: '1px solid rgba(245,158,11,0.3)' }}>
           <p className="font-display font-bold text-amber-900 text-xl">🪙 {coins.toLocaleString()}</p>
         </div>
+      </div>
+
+      <div className="rounded-2xl px-3 py-2 bg-emerald-50/80 border border-emerald-100">
+        <p className="text-[11px] font-semibold text-emerald-700">Помощник характера</p>
+        <p className="text-[11px] text-emerald-700/85 leading-snug mt-0.5">{getItemTrainingHint('buy')}</p>
       </div>
 
       {/* Filters */}

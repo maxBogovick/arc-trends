@@ -6,6 +6,7 @@ import { getBackground } from '../../data/backgrounds';
 import { SceneEffects } from './SceneEffects';
 import { LightingLayer } from './LightingLayer';
 import { BackdropScene } from './BackdropScene';
+import { usePerformancePolicy } from '../../performance/usePerformancePolicy';
 
 // ── Darkness context ──────────────────────────────────────────────────────────
 // RoomScene computes effectiveDarkness once per minute and shares it via context
@@ -186,14 +187,16 @@ export function RoomScene({
   children,
 }: Props) {
   const { equippedBgId, roomCustomization: c } = usePetStore();
+  const performancePolicy = usePerformancePolicy();
   const bg = getBackground(equippedBgId ?? 'void_dark');
   const accent = c.accentColor;
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
+    if (!performancePolicy.visible) return;
     const t = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [performancePolicy.visible]);
 
   const effectiveDarkness = computeEffectiveDarkness(c, now);
 
@@ -252,6 +255,7 @@ export function RoomScene({
             width={700}
             height={460}
             backWallCssStyle={backWallStyle}
+            motionEnabled={performancePolicy.motionEnabled}
           />
         </div>
 
@@ -322,7 +326,7 @@ export function RoomScene({
 
       {/* Theme animated effects */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 1 }}>
-        <SceneEffects effects={bg.effects} />
+        <SceneEffects effects={bg.effects} policy={performancePolicy} />
       </div>
 
       {/* Ambient darkness — multiply layer that dims the whole room.
@@ -356,8 +360,8 @@ export function RoomScene({
           key={i}
           className="absolute select-none pointer-events-none"
           style={{ left: `${d.x}%`, top: `${d.y}%`, fontSize: d.size, zIndex: 3 }}
-          animate={{ y: [0, -3, 0] }}
-          transition={{ duration: 3 + i * 0.7, repeat: Infinity, delay: i * 0.5 }}
+          animate={performancePolicy.motionEnabled ? { y: [0, -3, 0] } : { y: 0 }}
+          transition={performancePolicy.motionEnabled ? { duration: 3 + i * 0.7, repeat: Infinity, delay: i * 0.5 } : { duration: 0 }}
         >
           {d.emoji}
         </motion.div>

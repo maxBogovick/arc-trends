@@ -256,6 +256,37 @@ async fn auth_pet_action_and_offline_sync_http_flow() -> anyhow::Result<()> {
     );
     assert_eq!(play["coinsGained"], 17);
 
+    let (status, direct_play_results) = harness
+        .get_json("/api/pet/sync/results", Some(&token))
+        .await?;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "direct play command log body: {}",
+        direct_play_results
+    );
+    let play_command_id = direct_play_results
+        .as_array()
+        .and_then(|items| {
+            items.iter().find_map(|item| {
+                (item["command"]["type"] == "play")
+                    .then(|| item["command"]["commandId"].as_str())
+                    .flatten()
+            })
+        })
+        .expect("direct play command must be logged")
+        .to_string();
+    let direct_play_result = direct_play_results
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item["command"]["commandId"] == play_command_id)
+        })
+        .expect("direct play result must be visible");
+    assert_eq!(direct_play_result["pet"]["id"], pet["id"]);
+    assert!(direct_play_result["personalityTelemetry"].is_object());
+
     let command_id = format!("cmd-{}", Ulid::new());
     let (status, ack) = harness
         .post_json(
@@ -263,7 +294,7 @@ async fn auth_pet_action_and_offline_sync_http_flow() -> anyhow::Result<()> {
             Some(&token),
             json!({
                 "clientId": "integration-client",
-                "baseCommandId": null,
+                "baseCommandId": play_command_id,
                 "commands": [{
                     "type": "feed",
                     "commandId": command_id,
@@ -416,6 +447,8 @@ async fn auth_pet_action_and_offline_sync_http_flow() -> anyhow::Result<()> {
 
     let unsupported_room_command_id = format!("cmd-{}", Ulid::new());
     let unsupported_npc_command_id = format!("cmd-{}", Ulid::new());
+    let unsupported_play_variant_command_id = format!("cmd-{}", Ulid::new());
+    let unsupported_bond_variant_command_id = format!("cmd-{}", Ulid::new());
     let (status, unsupported_ack) = harness
         .post_json(
             "/api/pet/sync/commands",
@@ -435,6 +468,19 @@ async fn auth_pet_action_and_offline_sync_http_flow() -> anyhow::Result<()> {
                         "commandId": unsupported_npc_command_id,
                         "npcPersonalityId": "sage",
                         "at": "2026-05-16T12:05:00Z"
+                    },
+                    {
+                        "type": "play",
+                        "variant": "chaos",
+                        "score": 100,
+                        "commandId": unsupported_play_variant_command_id,
+                        "at": "2026-05-16T12:06:00Z"
+                    },
+                    {
+                        "type": "bond",
+                        "variant": "boundary",
+                        "commandId": unsupported_bond_variant_command_id,
+                        "at": "2026-05-16T12:07:00Z"
                     }
                 ]
             }),
@@ -458,7 +504,7 @@ async fn auth_pet_action_and_offline_sync_http_flow() -> anyhow::Result<()> {
             .as_array()
             .unwrap()
             .len(),
-        2
+        4
     );
     assert!(
         unsupported_ack["rejectedCommands"]
@@ -478,6 +524,29 @@ async fn auth_pet_action_and_offline_sync_http_flow() -> anyhow::Result<()> {
         .await?;
     assert_eq!(status, StatusCode::OK, "feed action body: {}", feed_action);
     assert_action_result(&feed_action, "feed");
+
+    let (status, direct_after_feed_results) = harness
+        .get_json(
+            &format!("/api/pet/sync/results?since={}", duplicate_command_id),
+            Some(&token),
+        )
+        .await?;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "direct feed command log body: {}",
+        direct_after_feed_results
+    );
+    assert!(
+        direct_after_feed_results
+            .as_array()
+            .expect("direct feed results array")
+            .iter()
+            .any(|item| item["command"]["type"] == "feed"
+                && item["command"]["foodId"] == "apple"
+                && item["personalityTelemetry"].is_object()),
+        "direct feed endpoint should persist an accepted command result"
+    );
 
     let (status, bathe_action) = harness
         .post_json("/api/pet/bathe", Some(&token), json!({}))
@@ -592,6 +661,37 @@ async fn auth_pet_action_and_offline_sync_http_flow() -> anyhow::Result<()> {
                 .as_f64()
                 .unwrap_or_default(),
         "item influence should advance formation"
+    );
+
+    let (status, direct_item_results) = harness
+        .get_json("/api/pet/sync/results", Some(&token))
+        .await?;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "direct item command log body: {}",
+        direct_item_results
+    );
+    let direct_item_results = direct_item_results
+        .as_array()
+        .expect("direct item command results array");
+    assert!(
+        direct_item_results
+            .iter()
+            .any(|item| item["command"]["type"] == "add_item"
+                && item["command"]["itemId"] == "puzzle"
+                && item["command"]["itemKind"] == "toy"
+                && item["personalityTelemetry"].is_object()),
+        "shop buy should persist an add_item command result"
+    );
+    assert!(
+        direct_item_results
+            .iter()
+            .any(|item| item["command"]["type"] == "use_item"
+                && item["command"]["itemId"] == "puzzle"
+                && item["command"]["itemKind"] == "toy"
+                && item["personalityTelemetry"].is_object()),
+        "inventory use should persist a use_item command result"
     );
 
     let (status, inventory_after_use) = harness.get_json("/api/inventory", Some(&token)).await?;

@@ -144,8 +144,9 @@ export function updateBehaviorProfile(
   pet: PersonalityState,
   influenceId: string,
   ctx: TraitEvolutionContext = {},
+  behaviorDeltas?: Partial<BehaviorVector>,
 ): void {
-  const signal = getBehaviorSignalForInfluence(influenceId);
+  const signal = behaviorDeltas ?? getBehaviorSignalForInfluence(influenceId);
   if (!signal) return;
 
   const now = getNow(ctx);

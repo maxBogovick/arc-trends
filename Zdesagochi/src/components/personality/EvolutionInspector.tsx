@@ -4,6 +4,7 @@ import { DAILY_BUDGET, FORMATION_THRESHOLD, SINGULARITY_THRESHOLD_SYNCS, STABILI
 import { getPersonality } from '@zdesagochi/personality-pet-preset';
 import { BEHAVIOR_AXES, TRAIT_KEYS, type BehaviorAxis, type TraitKey } from '../../personality/types';
 import { usePetStore } from '../../store/petStore';
+import { getCurrentPersonalityHints } from '../../personality/guidanceSelectors';
 
 const TRAIT_LABELS: Record<TraitKey, { label: string; color: string; bg: string }> = {
   vitality: { label: 'Активность', color: '#EF4444', bg: 'rgba(239,68,68,0.12)' },
@@ -89,6 +90,7 @@ export function EvolutionInspector() {
       ? 'Мягкие действия останутся главным способом восстанавливать доверие.'
       : 'Новая форма начнёт путь спокойнее благодаря накопленному опыту.',
   ];
+  const personalityHints = getCurrentPersonalityHints(pet);
 
   const confirmNewLife = async () => {
     await beginNewLife();
@@ -160,6 +162,25 @@ export function EvolutionInspector() {
           </div>
         </div>
       )}
+
+      <div className="rounded-2xl px-3 py-3 space-y-2 bg-white/60 border border-white/70">
+        <p className="text-[11px] font-semibold text-lumio-text">Помощник обучения</p>
+        <div className="space-y-1.5">
+          {personalityHints.map(hint => (
+            <div
+              key={hint.title}
+              className="rounded-xl px-2.5 py-2"
+              style={{
+                background: hint.tone === 'good' ? 'rgba(16,185,129,0.08)' : hint.tone === 'warn' ? 'rgba(239,68,68,0.07)' : 'rgba(99,102,241,0.07)',
+                border: hint.tone === 'good' ? '1px solid rgba(16,185,129,0.14)' : hint.tone === 'warn' ? '1px solid rgba(239,68,68,0.14)' : '1px solid rgba(99,102,241,0.12)',
+              }}
+            >
+              <p className="text-[10px] font-bold text-lumio-text">{hint.title}</p>
+              <p className="text-[10px] text-gray-500 leading-snug mt-0.5">{hint.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div className="space-y-2">
         <div className="h-2 rounded-full overflow-hidden bg-gray-100">

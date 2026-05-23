@@ -29,6 +29,7 @@ export interface ExplainabilityRecord {
 export interface CommandExplanation {
   commandId: string;
   commandType: PetCommand['type'];
+  commandVariant?: string;
   at: string;
   title: string;
   summary: string;
@@ -42,6 +43,7 @@ export interface CommandExplanation {
 export interface PersonalityTelemetrySample {
   commandId: string;
   commandType: PetCommand['type'];
+  commandVariant?: string;
   recordedAt: string;
   personalityId: string;
   formationComplete: boolean;
@@ -266,9 +268,11 @@ export function createPersonalityTelemetrySample(result: PetCommandResult, recor
   const profile = result.pet.behaviorProfile;
   const dominantBehaviorAxis = profile ? dominantAxis(profile.axes) : null;
 
+  const commandVariant = 'variant' in result.command ? result.command.variant : undefined;
   return {
     commandId: result.command.commandId,
     commandType: result.command.type,
+    ...(commandVariant ? { commandVariant } : {}),
     recordedAt,
     personalityId: result.pet.personality,
     formationComplete: result.pet.formationComplete,

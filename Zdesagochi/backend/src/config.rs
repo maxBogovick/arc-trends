@@ -42,7 +42,7 @@ impl Config {
                 .context("PORT must be a number")?,
             environment: std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
             cors_origins: std::env::var("CORS_ORIGINS")
-                .unwrap_or_else(|_| "http://localhost:5173".to_string())
+                .unwrap_or_else(|_| "http://localhost:5173,http://localhost:5174".to_string())
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect(),

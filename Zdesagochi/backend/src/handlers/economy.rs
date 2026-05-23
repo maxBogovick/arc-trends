@@ -1,11 +1,12 @@
 use crate::{
     db::{economy_repo, pet_repo},
-    domain::economy::{BuyResult, InventoryItem, ItemEffect},
+    domain::economy::{BuyResult, InventoryItem, ItemEffect, ItemType},
     engine::{
         apply_personality_command, catalog,
         command_handlers::{EngineState, ItemEffect as CommandItemEffect, PetCommand},
     },
     error::AppError,
+    handlers::command_log,
     middleware::auth::AuthUser,
     state::AppState,
 };
@@ -77,18 +78,20 @@ pub async fn buy_item(
     let mut pet = pet_repo::get_pet(&state.db, &auth.user_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Pet not found".into()))?;
+    let coin_balance = economy_repo::get_coins(&state.db, &auth.user_id).await? as f64;
     let mut engine_state = EngineState::from_pet(&pet);
     let now = Utc::now();
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "add_item".to_string(),
+        variant: None,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
         item_id: Some(body.item_id.clone()),
         item_effect: None,
         score_seed: None,
-        coin_balance: 0.0,
+        coin_balance,
     };
     let result = apply_personality_command(&mut engine_state, &command, now);
     if let Some(blocked) = &result.blocked_action {
@@ -102,6 +105,19 @@ pub async fn buy_item(
     economy_repo::add_inventory_tx(&mut tx, &auth.user_id, &body.item_id, 1).await?;
     economy_repo::increment_shop_buy_count_tx(&mut tx, &auth.user_id).await?;
     pet_repo::upsert_pet_tx(&mut tx, &auth.user_id, &pet).await?;
+    command_log::insert_engine_command_tx(
+        &mut tx,
+        &pet,
+        &auth.user_id,
+        &command,
+        &result,
+        &pet,
+        now,
+        Some(item_kind_str(&item.item_type)),
+        "accepted",
+        None,
+    )
+    .await?;
     tx.commit().await?;
 
     let raw_inv = economy_repo::get_inventory(&state.db, &auth.user_id).await?;
@@ -172,6 +188,7 @@ pub async fn use_inventory_item(
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "use_item".to_string(),
+        variant: None,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
@@ -194,6 +211,19 @@ pub async fn use_inventory_item(
         economy_repo::add_coins_tx(&mut tx, &auth.user_id, result.coin_delta).await?;
     }
     pet_repo::upsert_pet_tx(&mut tx, &auth.user_id, &pet).await?;
+    command_log::insert_engine_command_tx(
+        &mut tx,
+        &pet,
+        &auth.user_id,
+        &command,
+        &result,
+        &pet,
+        now,
+        Some(item_kind_str(&item.item_type)),
+        "accepted",
+        None,
+    )
+    .await?;
     tx.commit().await?;
 
     Ok(Json(pet))
@@ -209,5 +239,14 @@ fn to_command_item_effect(effect: &ItemEffect) -> CommandItemEffect {
         bond: effect.bond.map(f64::from),
         xp: effect.xp.map(f64::from),
         coins: None,
+    }
+}
+
+fn item_kind_str(item_type: &ItemType) -> &'static str {
+    match item_type {
+        ItemType::Food => "food",
+        ItemType::Toy => "toy",
+        ItemType::Medicine => "medicine",
+        ItemType::Decoration => "decoration",
     }
 }

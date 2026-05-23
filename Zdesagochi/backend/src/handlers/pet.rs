@@ -8,8 +8,11 @@ use utoipa::ToSchema;
 use crate::{
     db::{economy_repo, pet_repo, progress_repo},
     domain::pet::{Account, NewLifeResult, Pet, PetEvent},
-    engine::{apply_personality_command, EngineState, FoodEffect, PetCommand},
+    engine::{
+        apply_personality_command, types::PetCommandResult, EngineState, FoodEffect, PetCommand,
+    },
     error::AppError,
+    handlers::command_log,
     middleware::auth::AuthUser,
     state::AppState,
 };
@@ -27,6 +30,7 @@ pub struct FeedRequest {
     pub food_id: Option<String>,
     #[serde(rename = "foodEffect")]
     pub food_effect: Option<FoodEffectRequest>,
+    pub variant: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, ToSchema)]
@@ -42,6 +46,22 @@ pub struct FoodEffectRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PlayRequest {
     pub score: Option<u32>,
+    pub variant: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SleepRequest {
+    pub variant: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct WakeRequest {
+    pub variant: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BondRequest {
+    pub variant: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -93,6 +113,29 @@ async fn load_coin_balance(state: &AppState, user_id: &str) -> Result<f64, AppEr
     Ok(coins as f64)
 }
 
+fn ensure_supported_variant(command_type: &str, variant: Option<&str>) -> Result<(), AppError> {
+    let Some(variant) = variant else {
+        return Ok(());
+    };
+
+    let supported = match command_type {
+        "play" => matches!(variant, "classic" | "active" | "puzzle" | "social"),
+        "sleep" => matches!(variant, "night" | "nap" | "ritual"),
+        "wake" => matches!(variant, "normal" | "gentle"),
+        "bond" => matches!(variant, "hug" | "listen" | "praise"),
+        _ => false,
+    };
+
+    if supported {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(format!(
+            "Unsupported variant '{}' for command type '{}'.",
+            variant, command_type
+        )))
+    }
+}
+
 fn build_pet_event(
     event_type: &str,
     description: &str,
@@ -124,6 +167,9 @@ async fn persist_action_tx(
     emoji: &str,
     xp: Option<i32>,
     coins: Option<i32>,
+    command: &PetCommand,
+    result: &PetCommandResult,
+    at: chrono::DateTime<Utc>,
 ) -> Result<(), AppError> {
     let event = build_pet_event(event_type, description, emoji, xp, coins);
     let mut tx = state.db.begin().await?;
@@ -139,6 +185,10 @@ async fn persist_action_tx(
         progress_repo::tick_quest_tx(&mut tx, user_id, quest_id).await?;
     }
     pet_repo::insert_event_tx(&mut tx, &event, &pet.id).await?;
+    command_log::insert_engine_command_tx(
+        &mut tx, pet, user_id, command, result, pet, at, None, "accepted", None,
+    )
+    .await?;
 
     tx.commit().await?;
     Ok(())
@@ -283,9 +333,11 @@ pub async fn feed_pet(
     let coin_balance = load_coin_balance(&state, &auth.user_id).await?;
     let mut engine_state = EngineState::from_pet(&pet);
     let now = Utc::now();
+    ensure_supported_variant("feed", req.variant.as_deref())?;
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "feed".to_string(),
+        variant: req.variant,
         at: now.to_rfc3339(),
         food_id: req.food_id,
         food_effect: req.food_effect.map(|fe| FoodEffect {
@@ -318,6 +370,9 @@ pub async fn feed_pet(
         "🍕",
         Some(result.xp_delta),
         Some(result.coin_delta),
+        &command,
+        &result,
+        now,
     )
     .await?;
 
@@ -346,13 +401,17 @@ pub async fn play_with_pet(
         .await?
         .ok_or_else(|| AppError::NotFound("Pet not found".to_string()))?;
 
-    let score_seed = body.and_then(|b| b.score);
+    let play_body = body.map(|b| b.0);
+    let score_seed = play_body.as_ref().and_then(|b| b.score);
+    let variant = play_body.and_then(|b| b.variant);
+    ensure_supported_variant("play", variant.as_deref())?;
     let coin_balance = load_coin_balance(&state, &auth.user_id).await?;
     let mut engine_state = EngineState::from_pet(&pet);
     let now = Utc::now();
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "play".to_string(),
+        variant,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
@@ -387,6 +446,9 @@ pub async fn play_with_pet(
         "🎮",
         Some(result.xp_delta),
         Some(result.coin_delta),
+        &command,
+        &result,
+        now,
     )
     .await?;
 
@@ -415,6 +477,7 @@ pub async fn play_with_pet(
 pub async fn sleep_pet(
     State(state): State<AppState>,
     auth: AuthUser,
+    body: Option<Json<SleepRequest>>,
 ) -> Result<Json<ActionResult>, AppError> {
     let mut pet = pet_repo::get_pet(&state.db, &auth.user_id)
         .await?
@@ -423,9 +486,12 @@ pub async fn sleep_pet(
     let coin_balance = load_coin_balance(&state, &auth.user_id).await?;
     let mut engine_state = EngineState::from_pet(&pet);
     let now = Utc::now();
+    let variant = body.and_then(|Json(b)| b.variant);
+    ensure_supported_variant("sleep", variant.as_deref())?;
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "sleep".to_string(),
+        variant,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
@@ -454,6 +520,9 @@ pub async fn sleep_pet(
         "😴",
         None,
         None,
+        &command,
+        &result,
+        now,
     )
     .await?;
 
@@ -475,6 +544,7 @@ pub async fn sleep_pet(
 pub async fn wake_pet(
     State(state): State<AppState>,
     auth: AuthUser,
+    body: Option<Json<WakeRequest>>,
 ) -> Result<Json<ActionResult>, AppError> {
     let mut pet = pet_repo::get_pet(&state.db, &auth.user_id)
         .await?
@@ -483,9 +553,12 @@ pub async fn wake_pet(
     let coin_balance = load_coin_balance(&state, &auth.user_id).await?;
     let mut engine_state = EngineState::from_pet(&pet);
     let now = Utc::now();
+    let variant = body.and_then(|Json(b)| b.variant);
+    ensure_supported_variant("wake", variant.as_deref())?;
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "wake".to_string(),
+        variant,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
@@ -514,6 +587,9 @@ pub async fn wake_pet(
         "☀️",
         None,
         None,
+        &command,
+        &result,
+        now,
     )
     .await?;
 
@@ -546,6 +622,7 @@ pub async fn bathe_pet(
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "bathe".to_string(),
+        variant: None,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
@@ -574,6 +651,9 @@ pub async fn bathe_pet(
         "🛁",
         Some(result.xp_delta),
         None,
+        &command,
+        &result,
+        now,
     )
     .await?;
 
@@ -606,6 +686,7 @@ pub async fn heal_pet(
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "heal".to_string(),
+        variant: None,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
@@ -634,6 +715,9 @@ pub async fn heal_pet(
         "💊",
         Some(result.xp_delta),
         None,
+        &command,
+        &result,
+        now,
     )
     .await?;
 
@@ -655,6 +739,7 @@ pub async fn heal_pet(
 pub async fn bond_with_pet(
     State(state): State<AppState>,
     auth: AuthUser,
+    body: Option<Json<BondRequest>>,
 ) -> Result<Json<ActionResult>, AppError> {
     let mut pet = pet_repo::get_pet(&state.db, &auth.user_id)
         .await?
@@ -663,9 +748,12 @@ pub async fn bond_with_pet(
     let coin_balance = load_coin_balance(&state, &auth.user_id).await?;
     let mut engine_state = EngineState::from_pet(&pet);
     let now = Utc::now();
+    let variant = body.and_then(|Json(b)| b.variant);
+    ensure_supported_variant("bond", variant.as_deref())?;
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "bond".to_string(),
+        variant,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
@@ -694,6 +782,9 @@ pub async fn bond_with_pet(
         "💜",
         Some(result.xp_delta),
         None,
+        &command,
+        &result,
+        now,
     )
     .await?;
 
@@ -726,6 +817,7 @@ pub async fn sync_pet(
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "sync".to_string(),
+        variant: None,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
@@ -735,9 +827,24 @@ pub async fn sync_pet(
         coin_balance,
     };
 
-    apply_personality_command(&mut engine_state, &command, now);
+    let result = apply_personality_command(&mut engine_state, &command, now);
     engine_state.apply_to_pet(&mut pet);
-    pet_repo::upsert_pet(&state.db, &auth.user_id, &pet).await?;
+    let mut tx = state.db.begin().await?;
+    pet_repo::upsert_pet_tx(&mut tx, &auth.user_id, &pet).await?;
+    command_log::insert_engine_command_tx(
+        &mut tx,
+        &pet,
+        &auth.user_id,
+        &command,
+        &result,
+        &pet,
+        now,
+        None,
+        "accepted",
+        None,
+    )
+    .await?;
+    tx.commit().await?;
 
     Ok(Json(pet))
 }
@@ -756,6 +863,7 @@ pub async fn accept_evolution(
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "accept_evolution".to_string(),
+        variant: None,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
@@ -780,6 +888,9 @@ pub async fn accept_evolution(
         "✨",
         None,
         None,
+        &command,
+        &result,
+        now,
     )
     .await?;
 
@@ -800,6 +911,7 @@ pub async fn reject_evolution(
     let command = PetCommand {
         command_id: Ulid::new().to_string(),
         command_type: "reject_evolution".to_string(),
+        variant: None,
         at: now.to_rfc3339(),
         food_id: None,
         food_effect: None,
@@ -809,9 +921,24 @@ pub async fn reject_evolution(
         coin_balance,
     };
 
-    apply_personality_command(&mut engine_state, &command, now);
+    let result = apply_personality_command(&mut engine_state, &command, now);
     engine_state.apply_to_pet(&mut pet);
-    pet_repo::upsert_pet(&state.db, &auth.user_id, &pet).await?;
+    let mut tx = state.db.begin().await?;
+    pet_repo::upsert_pet_tx(&mut tx, &auth.user_id, &pet).await?;
+    command_log::insert_engine_command_tx(
+        &mut tx,
+        &pet,
+        &auth.user_id,
+        &command,
+        &result,
+        &pet,
+        now,
+        None,
+        "accepted",
+        None,
+    )
+    .await?;
+    tx.commit().await?;
 
     Ok(Json(pet))
 }

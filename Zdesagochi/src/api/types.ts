@@ -321,12 +321,12 @@ export interface ApiService {
   // Питомец
   getPet(): Promise<Pet>;
   feedPet(foodId: string): Promise<Pet>;
-  playWithPet(): Promise<PlayResult>;
-  sleepPet(): Promise<Pet>;
-  wakePet(): Promise<Pet>;
+  playWithPet(variant?: 'classic' | 'active' | 'puzzle' | 'social'): Promise<PlayResult>;
+  sleepPet(variant?: 'night' | 'nap' | 'ritual'): Promise<Pet>;
+  wakePet(variant?: 'normal' | 'gentle'): Promise<Pet>;
   bathePet(): Promise<Pet>;
   healPet(): Promise<Pet>;
-  bondWithPet(): Promise<Pet>;
+  bondWithPet(variant?: 'hug' | 'listen' | 'praise'): Promise<Pet>;
   syncPet(): Promise<Pet>;
   acceptEvolution(): Promise<Pet>;
   rejectEvolution(): Promise<Pet>;

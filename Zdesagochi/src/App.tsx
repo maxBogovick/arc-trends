@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { usePetStore } from './store/petStore';
 import { Sidebar } from './components/Navigation/Sidebar';
+import { Header } from './components/UI/Header';
 import { Notifications } from './components/UI/Notifications';
 import { HomePage } from './components/Home/HomePage';
 import { MiniGame } from './components/Games/MiniGame';
@@ -15,6 +16,7 @@ import { SkinsPage } from './pages/SkinsPage';
 import { PetEditorPage } from './pages/PetEditorPage';
 import { RoomEditorPage } from './pages/RoomEditorPage';
 import { PersonalityTestPage } from './pages/PersonalityTestPage';
+import { PersonalityAssistantPage } from './pages/PersonalityAssistantPage';
 type GameType = 'stars' | 'memory' | null;
 
 const SYNC_MS = 15_000;
@@ -48,6 +50,7 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto min-h-dvh pb-24 md:pb-0">
+        <Header />
         <div className="max-w-5xl mx-auto px-4 py-6">
           <AnimatePresence mode="wait">
             <motion.div
@@ -65,6 +68,7 @@ export default function App() {
               {activeTab === 'achievements' && <AchievementsPage />}
               {activeTab === 'leaderboard'  && <LeaderboardPage />}
               {activeTab === 'personality_test' && <PersonalityTestPage />}
+              {activeTab === 'personality_assistant' && <PersonalityAssistantPage />}
             </motion.div>
           </AnimatePresence>
         </div>

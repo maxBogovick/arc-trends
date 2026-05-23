@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
 import { usePetStore, type TabId } from '../../store/petStore';
-import { ApiModeToggle } from '../UI/ApiModeToggle';
 
 interface NavItem {
   id: TabId;
@@ -19,6 +18,7 @@ const ITEMS: NavItem[] = [
   { id: 'achievements', emoji: '🏆', label: 'Достижения' },
   { id: 'leaderboard',  emoji: '📊', label: 'Рейтинг' },
   { id: 'personality_test', emoji: '🧪', label: 'Тест' },
+  { id: 'personality_assistant', emoji: '🧭', label: 'Характер' },
 ];
 
 export function Sidebar() {
@@ -127,8 +127,6 @@ export function Sidebar() {
           <p className="font-display font-bold text-amber-900 text-xl">🪙 {coins.toLocaleString()}</p>
         </div>
 
-        {/* API Toggle */}
-        <ApiModeToggle compact />
       </aside>
 
       {/* Mobile bottom bar */}

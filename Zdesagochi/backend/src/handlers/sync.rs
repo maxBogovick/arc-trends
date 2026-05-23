@@ -51,6 +51,7 @@ pub struct ServerCommandAck {
 struct RuntimePetCommand {
     #[serde(rename = "type")]
     command_type: String,
+    variant: Option<String>,
     command_id: String,
     at: String,
     food_id: Option<String>,
@@ -189,6 +190,18 @@ pub async fn submit_commands(
             continue;
         }
 
+        if let Err(message) =
+            validate_command_variant(&parsed.command_type, parsed.variant.as_deref())
+        {
+            rejected.push(parsed.command_id.clone());
+            rejected_cmds.push(RejectedCommand {
+                command_id: parsed.command_id,
+                reason: "invalid_command".into(),
+                message,
+            });
+            continue;
+        }
+
         parsed_commands.push(ParsedCommand {
             command: parsed,
             raw: cmd_json,
@@ -226,6 +239,7 @@ pub async fn submit_commands(
         let command = PetCommand {
             command_id: cmd_id.clone(),
             command_type: parsed.command.command_type.clone(),
+            variant: parsed.command.variant.clone(),
             at: parsed.at.to_rfc3339(),
             food_id: parsed.command.food_id.clone(),
             food_effect: parsed.command.food_effect.map(|effect| FoodEffect {
@@ -317,7 +331,7 @@ pub async fn submit_commands(
     }))
 }
 
-fn command_result_json(
+pub(crate) fn command_result_json(
     result: &PetCommandResult,
     pet: &Pet,
     raw_command: &serde_json::Value,
@@ -387,6 +401,7 @@ fn personality_telemetry_sample(
     serde_json::json!({
         "commandId": command.command_id,
         "commandType": command.command_type,
+        "commandVariant": command.variant,
         "recordedAt": at.to_rfc3339(),
         "personalityId": pet.personality,
         "formationComplete": pet.formation_complete,
@@ -529,6 +544,29 @@ fn is_supported_command_type(command_type: &str) -> bool {
     )
 }
 
+fn validate_command_variant(command_type: &str, variant: Option<&str>) -> Result<(), String> {
+    let Some(variant) = variant else {
+        return Ok(());
+    };
+
+    let supported = match command_type {
+        "play" => matches!(variant, "classic" | "active" | "puzzle" | "social"),
+        "sleep" => matches!(variant, "night" | "nap" | "ritual"),
+        "wake" => matches!(variant, "normal" | "gentle"),
+        "bond" => matches!(variant, "hug" | "listen" | "praise"),
+        _ => false,
+    };
+
+    if supported {
+        Ok(())
+    } else {
+        Err(format!(
+            "Unsupported variant '{}' for command type '{}'.",
+            variant, command_type
+        ))
+    }
+}
+
 fn rejected_command_id(command: &serde_json::Value, index: usize) -> String {
     command
         .get("commandId")
@@ -624,6 +662,7 @@ mod tests {
         let command = PetCommand {
             command_id: "cmd-play-1".to_string(),
             command_type: "play".to_string(),
+            variant: None,
             at: "2026-05-16T12:00:00Z".to_string(),
             food_id: None,
             food_effect: None,
@@ -689,6 +728,7 @@ mod tests {
         let command = PetCommand {
             command_id: "cmd-wake-1".to_string(),
             command_type: "wake".to_string(),
+            variant: None,
             at: "2026-05-16T12:00:00Z".to_string(),
             food_id: None,
             food_effect: None,

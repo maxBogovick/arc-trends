@@ -147,6 +147,7 @@ export interface RegisteredInfluence {
   category: InfluenceCategory;
   label: string;
   traitDeltas: Partial<Record<TraitKey, number>>;
+  behaviorDeltas?: Partial<Record<BehaviorAxis, number>>;
   traumaDelta?: number;
   cooldownSyncs?: number;
   conditions?: InfluenceCondition[];

@@ -16,18 +16,142 @@ interface PetActionResult {
   events: string[];
 }
 
+interface AuthResponse {
+  token: string;
+  refresh_token: string;
+  user: {
+    id: string;
+    username: string;
+    email: string;
+  };
+}
+
+interface StoredAuth {
+  token: string;
+  refreshToken: string;
+  email: string;
+}
+
+const AUTH_STORAGE_KEY = 'zdesagochi:real-api-auth:v1';
+const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
+const DEV_AUTH = {
+  username: viteEnv.VITE_DEV_AUTH_USERNAME ?? 'dev_user',
+  email: viteEnv.VITE_DEV_AUTH_EMAIL ?? 'dev_user@zdesagochi.local',
+  password: viteEnv.VITE_DEV_AUTH_PASSWORD ?? 'zdesagochi-dev-password',
+};
+
+let inMemoryAuth: StoredAuth | null = null;
+
+function readStoredAuth(): StoredAuth | null {
+  if (typeof window === 'undefined' || !window.localStorage) return inMemoryAuth;
+  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) return inMemoryAuth;
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredAuth>;
+    if (parsed.token && parsed.refreshToken && parsed.email) {
+      inMemoryAuth = {
+        token: parsed.token,
+        refreshToken: parsed.refreshToken,
+        email: parsed.email,
+      };
+      return inMemoryAuth;
+    }
+  } catch {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+  return inMemoryAuth;
+}
+
+function writeStoredAuth(auth: StoredAuth | null): void {
+  inMemoryAuth = auth;
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  if (!auth) {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+}
+
 export class RealApiService implements ApiService {
   private readonly base: string;
+  private authPromise: Promise<StoredAuth> | null = null;
 
   constructor(baseUrl: string) {
     this.base = baseUrl.replace(/\/$/, '');
   }
 
-  private async req<T>(path: string, opts?: RequestInit): Promise<T> {
+  private async unauthenticatedReq<T>(path: string, opts?: RequestInit): Promise<T> {
     const res = await fetch(`${this.base}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...opts?.headers },
       ...opts,
+      headers: { 'Content-Type': 'application/json', ...opts?.headers },
     });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { message?: string }).message ?? `HTTP ${res.status}: ${path}`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  private async authenticate(): Promise<StoredAuth> {
+    const existing = readStoredAuth();
+    if (existing?.token) return existing;
+    if (this.authPromise) return this.authPromise;
+
+    this.authPromise = (async () => {
+      const credentials = {
+        email: DEV_AUTH.email,
+        password: DEV_AUTH.password,
+      };
+
+      let response: AuthResponse;
+      try {
+        response = await this.unauthenticatedReq<AuthResponse>('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify(credentials),
+        });
+      } catch {
+        response = await this.unauthenticatedReq<AuthResponse>('/api/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: DEV_AUTH.username,
+            email: DEV_AUTH.email,
+            password: DEV_AUTH.password,
+          }),
+        });
+      }
+
+      const auth: StoredAuth = {
+        token: response.token,
+        refreshToken: response.refresh_token,
+        email: response.user.email,
+      };
+      writeStoredAuth(auth);
+      return auth;
+    })();
+
+    try {
+      return await this.authPromise;
+    } finally {
+      this.authPromise = null;
+    }
+  }
+
+  private async req<T>(path: string, opts?: RequestInit, retryOnUnauthorized = true): Promise<T> {
+    const auth = await this.authenticate();
+    const res = await fetch(`${this.base}${path}`, {
+      ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${auth.token}`,
+        ...opts?.headers,
+      },
+    });
+
+    if (res.status === 401 && retryOnUnauthorized) {
+      writeStoredAuth(null);
+      return this.req<T>(path, opts, false);
+    }
+
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error((body as { message?: string }).message ?? `HTTP ${res.status}: ${path}`);
@@ -45,12 +169,20 @@ export class RealApiService implements ApiService {
   // Питомец
   getPet()                  { return this.req<Pet>('/api/pet'); }
   feedPet(foodId: string)   { return this.postPetAction('/api/pet/feed', { foodId }); }
-  playWithPet()             { return this.post<PlayResult>('/api/pet/play'); }
-  sleepPet()                { return this.postPetAction('/api/pet/sleep'); }
-  wakePet()                 { return this.postPetAction('/api/pet/wake'); }
+  playWithPet(variant?: 'classic' | 'active' | 'puzzle' | 'social') {
+    return this.post<PlayResult>('/api/pet/play', variant ? { variant } : undefined);
+  }
+  sleepPet(variant?: 'night' | 'nap' | 'ritual') {
+    return this.postPetAction('/api/pet/sleep', variant ? { variant } : undefined);
+  }
+  wakePet(variant?: 'normal' | 'gentle') {
+    return this.postPetAction('/api/pet/wake', variant ? { variant } : undefined);
+  }
   bathePet()                { return this.postPetAction('/api/pet/bathe'); }
   healPet()                 { return this.postPetAction('/api/pet/heal'); }
-  bondWithPet()             { return this.postPetAction('/api/pet/bond'); }
+  bondWithPet(variant?: 'hug' | 'listen' | 'praise') {
+    return this.postPetAction('/api/pet/bond', variant ? { variant } : undefined);
+  }
   syncPet()                 { return this.post<Pet>('/api/pet/sync'); }
   acceptEvolution()         { return this.post<Pet>('/api/pet/evolution/accept'); }
   rejectEvolution()         { return this.post<Pet>('/api/pet/evolution/reject'); }
