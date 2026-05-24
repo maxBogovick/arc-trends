@@ -1,6 +1,6 @@
 # Pet Action System Session Handoff
 
-Last updated: 2026-05-23.
+Last updated: 2026-05-24.
 
 Use this file to continue pet action/personality work in a new session.
 
@@ -13,7 +13,7 @@ Primary architecture map:
 
 ## Current Status
 
-The action system has two implemented production slices.
+The action system has two implemented production action slices and one implemented UI/recommendation slice.
 
 The important rule remains:
 
@@ -22,6 +22,14 @@ UI intent -> command -> engine result -> personality evidence -> persistence -> 
 ```
 
 Do not add UI-only pet actions. New actions must enter the personality engine as commands or command variants and must preserve TypeScript/Rust behavior where backend replay applies them.
+
+The action panel has already been moved away from a flat button wall:
+
+- recommended actions are shown first;
+- recommendations come from pet state, assistant guidance, and engine evidence;
+- the full action list is behind progressive disclosure;
+- full actions are grouped by intent: Care, Play, Bond, Routine, Items;
+- Items is navigation to existing shop/inventory flows, not a new UI-only pet action.
 
 ## Implemented Slice 1
 
@@ -140,6 +148,40 @@ Important tests already exist around:
 - `offline replay remains deterministic for item add and use behavior`;
 - `behavior semantics: item collection semantics separate diverse collectors from repeated item reliance`.
 
+## Implemented UI/Recommendation Slice
+
+### Action Panel
+
+The frontend action panel now:
+
+- calls `getRecommendedPetActions(pet)` to rank 3-5 actions;
+- displays recommended actions before the complete list;
+- uses progressive disclosure for the complete action list;
+- groups complete actions by intent:
+  - Care: `feed`, `bathe`, `heal`;
+  - Play: `play`, `play_puzzle`, `play_social`;
+  - Bond: `bond`, `bond_listen`, `bond_praise`;
+  - Routine: `sleep`, `sleep_nap`, `sleep_ritual`;
+  - Items: inventory/shop navigation for already implemented item commands.
+
+Recommendation evidence sources:
+
+- `pet_state`: immediate stats such as hunger, energy, health, cleanliness, bond, happiness, and sleep state;
+- `engine_evidence`: `confusedState`, `emergentState`, `traumaLevel`, `traitVector`, and `behaviorProfile`;
+- `assistant_guidance`: target guidance from `evolutionReadinessTarget` or `currentTargetZone`, mapped only to supported action variants.
+
+Current selector tests cover:
+
+- urgent pet state outranking decorative/default ordering;
+- trauma/high caution recommending recovery/trust actions;
+- assistant evolution guidance mapping to supported command variants;
+- no recommendation of unsupported risky variants such as `play:chaos` or `wake:forceful`.
+
+Important boundary:
+
+- This slice did not add new engine behavior, backend command support, or command variants.
+- Existing action buttons still call the same supported command variants.
+
 ## Important Files Changed
 
 TypeScript engine:
@@ -174,6 +216,7 @@ Frontend/app:
 - `src/api/realApi.ts`
 - `src/store/petStore.ts`
 - `src/components/Actions/ActionPanel.tsx`
+- `src/personality/guidanceSelectors.ts`
 - `src/personality/personalityAssistant.ts`
 
 Tests:
@@ -181,6 +224,8 @@ Tests:
 - `tests/personalityEvolution.test.ts`
 - `backend/tests/http_integration.rs`
 - Rust unit tests inside `backend/src/engine/command_handlers.rs`
+
+Current UI recommendation tests live in `tests/personalityEvolution.test.ts`.
 
 ## Backend Command Log Status
 
@@ -229,6 +274,19 @@ Do not silently map unsupported variants to legacy behavior.
 
 ## Known Unimplemented Backlog
 
+### Safe Exploration Actions
+
+Candidate next safe slice remains:
+
+- `explore:room`;
+- `explore:inspect_item`.
+
+Open design decision:
+
+- whether to add a new `explore` command family or model these as item/room command variants.
+
+These must be engine actions, not UI-only buttons. If backend can receive them, update direct endpoint support and offline sync support together, then add TS tests and Rust parity tests.
+
 ### Risky Actions
 
 Do not implement these as simple influence rows:
@@ -247,16 +305,13 @@ They need a separate risk design:
 - tests proving repeated risk is visible and recoverable;
 - TypeScript/Rust parity.
 
-### Exploration Actions
+### UI Follow-Up
 
-Candidate next safe slice:
+Possible future refinement:
 
-- `explore:room`
-- `explore:inspect_item`
-
-Open design decision:
-
-- whether to add a new `explore` command family or model these as item/room command variants.
+- add a compact explanation affordance for why a recommended action was selected;
+- consider whether item recommendation should surface a specific owned item once item inventory recommendation policy exists;
+- keep the action panel grouped by intent as new safe actions are added.
 
 Prefer a new command family only if the command has a distinct payload and lifecycle. Otherwise use existing `add_item`, `use_item`, or room/equipment events.
 

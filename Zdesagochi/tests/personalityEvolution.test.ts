@@ -16,6 +16,7 @@ import { PetService, type PetServiceState } from '../src/api/petService';
 import { RealApiService } from '../src/api/realApi';
 import { resolvePerformancePolicy } from '../src/performance/performancePolicy';
 import { buildPersonalityAssistantReport } from '../src/personality/personalityAssistant';
+import { getRecommendedPetActions } from '../src/personality/guidanceSelectors';
 import { fromPersonalityState, toPersonalityState } from '../src/api/personalityPetAdapter';
 import {
   deleteOfflinePetSave,
@@ -1974,6 +1975,52 @@ test('personality assistant reports low confidence when history is missing', () 
   assert.equal(report.confidence.label, 'низкая');
   assert.equal(report.formationTimeline.length, 0);
   assert.equal(report.nextBestActions.length > 0, true);
+});
+
+test('action recommendations prioritize urgent pet state over decorative ordering', () => {
+  const pet = makePet({
+    stats: { hunger: 18, happiness: 82, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  });
+
+  const recommendations = getRecommendedPetActions(pet);
+
+  assert.equal(recommendations[0]?.actionId, 'feed');
+  assert.equal(recommendations[0]?.evidence, 'pet_state');
+  assert.equal(recommendations.length >= 3, true);
+  assert.equal(recommendations.length <= 5, true);
+});
+
+test('action recommendations use engine evidence for recovery and trust states', () => {
+  const pet = makePet({
+    traumaLevel: 55,
+    traitVector: { ...createInitialTraitVector(), caution: 70 },
+    behaviorProfile: {
+      axes: { care: 3, play: 4, social: 0, order: 2, exploration: 1, disruption: 0, recovery: 0 },
+      sampleCount: 10,
+      lastUpdatedAt: '2026-05-04T00:00:00.000Z',
+    },
+  });
+
+  const recommendations = getRecommendedPetActions(pet);
+
+  assert.equal(recommendations[0]?.actionId, 'bond_listen');
+  assert.equal(recommendations[0]?.evidence, 'engine_evidence');
+  assert.equal(recommendations.some(item => item.actionId === 'heal'), true);
+});
+
+test('action recommendations map assistant evolution guidance to supported command variants', () => {
+  const pet = makePet({
+    currentTargetZone: 'curious',
+    evolutionReadinessTarget: 'curious',
+    stats: { hunger: 82, happiness: 80, energy: 82, health: 80, cleanliness: 80, bond: 80 },
+  });
+
+  const recommendations = getRecommendedPetActions(pet);
+  const recommendedIds = new Set(recommendations.map(item => item.actionId));
+
+  assert.equal(recommendedIds.has('play_puzzle'), true);
+  assert.equal(recommendations.some(item => item.evidence === 'assistant_guidance'), true);
+  assert.equal(recommendations.every(item => !item.actionId.includes('chaos') && !item.actionId.includes('forceful')), true);
 });
 
 await testAsync('personality command handler gates influences with serializable cooldown state', async () => {

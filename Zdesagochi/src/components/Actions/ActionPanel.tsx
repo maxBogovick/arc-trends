@@ -3,33 +3,46 @@ import { useState } from 'react';
 import { usePetStore } from '../../store/petStore';
 import { FoodMenuWrapper } from './FoodMenu';
 import type { Account, Pet } from '../../api';
-import { getActionTrainingHint } from '../../personality/guidanceSelectors';
+import { getActionTrainingHint, getRecommendedPetActions, type ActionRecommendation } from '../../personality/guidanceSelectors';
+
+type ActionIntent = 'care' | 'play' | 'bond' | 'routine';
 
 interface ActionConfig {
   id: string;
+  intent: ActionIntent;
   gradient: string;
   disabled?: (pet: Pet) => boolean;
   tooltip?: (pet: Pet) => string;
 }
 
 const ACTIONS: ActionConfig[] = [
-  { id: 'feed',  gradient: 'from-amber-400 to-orange-400', disabled: (p) => p.isAsleep || p.stats.hunger > 90, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.hunger > 90 ? 'Сыт!' : '' },
-  { id: 'play',  gradient: 'from-violet-400 to-purple-500', disabled: (p) => p.isAsleep || p.stats.energy < 10, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.energy < 10 ? 'Нет сил' : '' },
-  { id: 'play_puzzle',  gradient: 'from-indigo-400 to-sky-500', disabled: (p) => p.isAsleep || p.stats.energy < 8, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.energy < 8 ? 'Нет сил' : 'Тренирует любопытство и порядок' },
-  { id: 'play_social',  gradient: 'from-cyan-400 to-emerald-500', disabled: (p) => p.isAsleep || p.stats.energy < 10, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.energy < 10 ? 'Нет сил' : 'Тренирует социальность через игру' },
-  { id: 'sleep', gradient: 'from-purple-400 to-indigo-500' },
-  { id: 'sleep_nap', gradient: 'from-sky-300 to-blue-400', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Уже спит' : 'Короткое восстановление без сильного ухода в режим' },
-  { id: 'sleep_ritual', gradient: 'from-slate-400 to-violet-500', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Уже спит' : 'Укрепляет режим и восстановление' },
-  { id: 'bathe', gradient: 'from-blue-400 to-cyan-400', disabled: (p) => p.isAsleep || p.stats.cleanliness > 90, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.cleanliness > 90 ? 'Чистый!' : '' },
+  { id: 'feed', intent: 'care', gradient: 'from-amber-400 to-orange-400', disabled: (p) => p.isAsleep || p.stats.hunger > 90, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.hunger > 90 ? 'Сыт!' : '' },
+  { id: 'bathe', intent: 'care', gradient: 'from-blue-400 to-cyan-400', disabled: (p) => p.isAsleep || p.stats.cleanliness > 90, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.cleanliness > 90 ? 'Чистый!' : '' },
   {
     id: 'heal',
+    intent: 'care',
     gradient: 'from-red-400 to-pink-400',
     disabled: (p) => p.isAsleep || (p.stats.health > 85 && p.traumaLevel < 40 && p.emergentState !== 'shadow_form'),
     tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.health > 85 && p.traumaLevel < 40 && p.emergentState !== 'shadow_form' ? 'Здоров!' : '',
   },
-  { id: 'bond',  gradient: 'from-pink-400 to-rose-400', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Спит' : '' },
-  { id: 'bond_listen',  gradient: 'from-emerald-400 to-teal-500', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Спит' : 'Снижает тревожность и учит восстановлению' },
-  { id: 'bond_praise',  gradient: 'from-yellow-300 to-amber-400', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Спит' : 'Учит уверенности и теплому контакту' },
+  { id: 'play', intent: 'play', gradient: 'from-violet-400 to-purple-500', disabled: (p) => p.isAsleep || p.stats.energy < 10, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.energy < 10 ? 'Нет сил' : '' },
+  { id: 'play_puzzle', intent: 'play', gradient: 'from-indigo-400 to-sky-500', disabled: (p) => p.isAsleep || p.stats.energy < 8, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.energy < 8 ? 'Нет сил' : 'Тренирует любопытство и порядок' },
+  { id: 'play_social', intent: 'play', gradient: 'from-cyan-400 to-emerald-500', disabled: (p) => p.isAsleep || p.stats.energy < 10, tooltip: (p) => p.isAsleep ? 'Спит' : p.stats.energy < 10 ? 'Нет сил' : 'Тренирует социальность через игру' },
+  { id: 'bond', intent: 'bond', gradient: 'from-pink-400 to-rose-400', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Спит' : '' },
+  { id: 'bond_listen', intent: 'bond', gradient: 'from-emerald-400 to-teal-500', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Спит' : 'Снижает тревожность и учит восстановлению' },
+  { id: 'bond_praise', intent: 'bond', gradient: 'from-yellow-300 to-amber-400', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Спит' : 'Учит уверенности и теплому контакту' },
+  { id: 'sleep', intent: 'routine', gradient: 'from-purple-400 to-indigo-500' },
+  { id: 'sleep_nap', intent: 'routine', gradient: 'from-sky-300 to-blue-400', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Уже спит' : 'Короткое восстановление без сильного ухода в режим' },
+  { id: 'sleep_ritual', intent: 'routine', gradient: 'from-slate-400 to-violet-500', disabled: (p) => p.isAsleep, tooltip: (p) => p.isAsleep ? 'Уже спит' : 'Укрепляет режим и восстановление' },
+];
+
+const ACTION_BY_ID = new Map(ACTIONS.map(action => [action.id, action]));
+
+const ACTION_GROUPS: Array<{ id: ActionIntent; title: string; ids: string[] }> = [
+  { id: 'care', title: 'Care', ids: ['feed', 'bathe', 'heal'] },
+  { id: 'play', title: 'Play', ids: ['play', 'play_puzzle', 'play_social'] },
+  { id: 'bond', title: 'Bond', ids: ['bond', 'bond_listen', 'bond_praise'] },
+  { id: 'routine', title: 'Routine', ids: ['sleep', 'sleep_nap', 'sleep_ritual'] },
 ];
 
 const ACTION_META: Record<string, { emoji: (p: Pet) => string; label: (p: Pet) => string }> = {
@@ -98,13 +111,16 @@ function getGuardianPanelHint(pet: Pet, account: Account): string | null {
 }
 
 export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
-  const { pet, account, playWithPet, sleepPet, wakePet, bathePet, healPet, bondWithPet, actionLoading } = usePetStore();
+  const { pet, account, playWithPet, sleepPet, wakePet, bathePet, healPet, bondWithPet, setActiveTab, actionLoading } = usePetStore();
   const [showFood, setShowFood] = useState(false);
   const [gameMenu, setGameMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
   if (!pet) return null;
   const guardianHint = getGuardianPanelHint(pet, account);
+  const recommendations = getRecommendedPetActions(pet).filter(item => ACTION_BY_ID.has(item.actionId));
+  const recommendationById = new Map(recommendations.map(item => [item.actionId, item]));
 
   const handleAction = async (id: string) => {
     switch (id) {
@@ -121,6 +137,52 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
       case 'bond_listen': return bondWithPet('listen');
       case 'bond_praise': return bondWithPet('praise');
     }
+  };
+
+  const renderActionButton = (cfg: ActionConfig, recommendation?: ActionRecommendation, compact = false) => {
+    const meta = ACTION_META[cfg.id];
+    const emoji = meta.emoji(pet);
+    const label = meta.label(pet);
+    const isDisabled = (cfg.disabled?.(pet) ?? false) || !!actionLoading;
+    const isActive = actionLoading === cfg.id
+      || (cfg.id.startsWith('sleep') && actionLoading === 'sleep')
+      || (cfg.id.startsWith('bond') && actionLoading === 'bond');
+    const actionHint = getGuardianActionHint(pet, account, cfg.id);
+    const tooltip = recommendation?.reason ?? actionHint ?? cfg.tooltip?.(pet) ?? '';
+
+    return (
+      <motion.button
+        key={cfg.id}
+        whileTap={{ scale: 0.96 }}
+        whileHover={isDisabled ? {} : { scale: 1.02, y: -1 }}
+        onClick={() => !isDisabled && handleAction(cfg.id)}
+        disabled={isDisabled}
+        title={tooltip}
+        className={`relative overflow-hidden rounded-2xl transition-all group ${compact ? 'min-h-[76px] p-2.5' : 'min-h-[92px] p-3'} flex flex-col items-center justify-center gap-1.5`}
+        style={{
+          background: isDisabled ? '#F3F4F6' : recommendation ? '#F0FDF4' : 'linear-gradient(135deg,#F8FAFC,#F1F5F9)',
+          border: recommendation ? '1px solid rgba(16,185,129,0.22)' : '1px solid rgba(148,163,184,0.18)',
+          boxShadow: isDisabled ? 'none' : recommendation ? '0 5px 16px rgba(16,185,129,0.12)' : '0 3px 10px rgba(15,23,42,0.06)',
+          opacity: isDisabled ? 0.5 : 1,
+          cursor: isDisabled ? 'not-allowed' : 'pointer',
+        }}
+      >
+        {!isDisabled && (
+          <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl bg-gradient-to-br ${cfg.gradient}`}
+            style={{ opacity: isActive ? 0.18 : undefined }} />
+        )}
+        <span className={`${compact ? 'text-xl' : 'text-2xl'} relative z-10`}>
+          {isActive ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }}>⏳</motion.span> : emoji}
+        </span>
+        <span className="text-[11px] font-bold text-lumio-text relative z-10 leading-tight text-center">{label}</span>
+        {recommendation && !compact && (
+          <span className="text-[10px] text-emerald-700/85 relative z-10 leading-tight text-center line-clamp-2">{recommendation.reason}</span>
+        )}
+        {(recommendation || actionHint) && (
+          <span className="absolute right-1.5 top-1.5 z-10 h-2 w-2 rounded-full bg-emerald-400" />
+        )}
+      </motion.button>
+    );
   };
 
   return (
@@ -165,7 +227,7 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
           className="w-full flex items-center justify-between"
         >
           <h3 className="font-display font-bold text-lumio-text text-sm">Действия</h3>
-          <span className="text-xs text-gray-400">{collapsed ? '▼' : '▲'} {ACTIONS.length}</span>
+          <span className="text-xs text-gray-400">{collapsed ? '▼' : '▲'} {recommendations.length}/{ACTIONS.length}</span>
         </button>
 
         <AnimatePresence initial={false}>
@@ -185,46 +247,77 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
                     <p className="text-[11px] text-emerald-700/85 leading-snug mt-0.5">{guardianHint}</p>
                   </div>
                 )}
-                <div className="grid grid-cols-3 gap-2">
-                  {ACTIONS.map(cfg => {
-                    const meta = ACTION_META[cfg.id];
-                    const emoji = meta.emoji(pet);
-                    const label = meta.label(pet);
-                    const isDisabled = (cfg.disabled?.(pet) ?? false) || !!actionLoading;
-                    const isActive = actionLoading === cfg.id || (cfg.id === 'sleep' && actionLoading === 'sleep');
-                    const actionHint = getGuardianActionHint(pet, account, cfg.id);
-                    const tooltip = actionHint ?? cfg.tooltip?.(pet) ?? '';
+                <div className="space-y-3">
+                  <section>
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Рекомендуем</p>
+                      <p className="text-[10px] text-lumio-muted">по состоянию и engine evidence</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {recommendations.slice(0, 5).map(item => {
+                        const cfg = ACTION_BY_ID.get(item.actionId);
+                        return cfg ? renderActionButton(cfg, item) : null;
+                      })}
+                    </div>
+                  </section>
 
-                    return (
-                      <motion.button
-                        key={cfg.id}
-                        whileTap={{ scale: 0.9 }}
-                        whileHover={isDisabled ? {} : { scale: 1.03, y: -2 }}
-                        onClick={() => !isDisabled && handleAction(cfg.id)}
-                        disabled={isDisabled}
-                        title={tooltip}
-                        className="flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all group relative overflow-hidden"
-                        style={{
-                          background: isDisabled ? '#F3F4F6' : 'linear-gradient(135deg,#F5F3FF,#EDE9FE)',
-                          boxShadow: isDisabled ? 'none' : '0 4px 12px rgba(124,58,237,0.10)',
-                          opacity: isDisabled ? 0.5 : 1,
-                          cursor: isDisabled ? 'not-allowed' : 'pointer',
-                        }}
+                  <button
+                    onClick={() => setShowAll(v => !v)}
+                    className="w-full rounded-2xl px-3 py-2 text-xs font-bold text-lumio-purple bg-violet-50 border border-violet-100 hover:bg-violet-100 transition-colors"
+                  >
+                    {showAll ? 'Скрыть полный список' : 'Показать все действия'}
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {showAll && (
+                      <motion.div
+                        key="all-actions"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.16 }}
+                        className="overflow-hidden"
                       >
-                        {!isDisabled && (
-                          <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl bg-gradient-to-br ${cfg.gradient}`}
-                            style={{ opacity: isActive ? 0.18 : undefined }} />
-                        )}
-                        <span className="text-2xl relative z-10">
-                          {isActive ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }}>⏳</motion.span> : emoji}
-                        </span>
-                        <span className="text-[11px] font-bold text-lumio-text relative z-10 leading-tight text-center">{label}</span>
-                        {actionHint && (
-                          <span className="absolute right-1.5 top-1.5 z-10 h-2 w-2 rounded-full bg-emerald-400" />
-                        )}
-                      </motion.button>
-                    );
-                  })}
+                        <div className="space-y-3 pt-1">
+                          {ACTION_GROUPS.map(group => (
+                            <section key={group.id}>
+                              <p className="mb-1.5 text-[11px] font-bold text-lumio-muted">{group.title}</p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {group.ids.map(id => {
+                                  const cfg = ACTION_BY_ID.get(id);
+                                  return cfg ? renderActionButton(cfg, recommendationById.get(id), true) : null;
+                                })}
+                              </div>
+                            </section>
+                          ))}
+
+                          <section>
+                            <p className="mb-1.5 text-[11px] font-bold text-lumio-muted">Items</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setActiveTab('inventory')}
+                                className="min-h-[64px] rounded-2xl bg-slate-50 border border-slate-200 px-3 py-2 text-center text-xs font-bold text-lumio-text hover:bg-slate-100 transition-colors"
+                                title={getActionTrainingHint('use_item')}
+                              >
+                                <span className="block text-xl mb-1">🎒</span>
+                                Инвентарь
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setActiveTab('shop')}
+                                className="min-h-[64px] rounded-2xl bg-slate-50 border border-slate-200 px-3 py-2 text-center text-xs font-bold text-lumio-text hover:bg-slate-100 transition-colors"
+                                title={getActionTrainingHint('add_item')}
+                              >
+                                <span className="block text-xl mb-1">🛍️</span>
+                                Магазин
+                              </button>
+                            </div>
+                          </section>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </motion.div>

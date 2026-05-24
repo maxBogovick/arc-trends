@@ -1,6 +1,6 @@
 # Pet Action System Architecture
 
-Last verified against current architecture on 2026-05-23.
+Last verified against current architecture on 2026-05-24.
 
 This document defines stable architecture rules for pet actions in Zdesagochi. It does not define release priorities or balance numbers. Use it together with `docs/personality_engine_llm_knowledge_base.md`.
 
@@ -187,6 +187,26 @@ Recommended structure:
 - friendly hints, not raw engine terms.
 
 Do not rely on a flat grid once actions become numerous. Exact UI limits belong in product/design guidance, not this architecture contract.
+
+Current implementation follows this structure:
+
+- recommended actions are displayed first;
+- complete actions are hidden behind progressive disclosure;
+- complete action groups are Care, Play, Bond, Routine, and Items;
+- Items links to existing inventory/shop flows rather than creating UI-only item actions.
+
+Recommendation selectors must be evidence-based. Acceptable signals include:
+
+- immediate pet state such as stats and sleep state;
+- engine-owned state such as `confusedState`, `emergentState`, `traumaLevel`, `traitVector`, and `behaviorProfile`;
+- assistant guidance derived from a current target/evolution direction.
+
+Recommendation selectors must not:
+
+- recommend unsupported variants;
+- map unsupported variants into legacy behavior;
+- introduce new UI pet actions without engine behavior;
+- surface risky actions before warning, trauma, and recovery policy exists.
 
 ## Testing Expectations
 
