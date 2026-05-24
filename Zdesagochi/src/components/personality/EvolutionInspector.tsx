@@ -38,6 +38,7 @@ function fmt(value: number | undefined): string {
 
 export function EvolutionInspector() {
   const [newLifeOpen, setNewLifeOpen] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
   const pet = usePetStore(s => s.pet);
   const account = usePetStore(s => s.account);
   const apiMode = usePetStore(s => s.apiMode);
@@ -118,48 +119,56 @@ export function EvolutionInspector() {
       </div>
 
       {IS_DEV && (
-        <div className="rounded-2xl px-3 py-3 space-y-2 bg-white/60 border border-white/70">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Debug time</p>
-            <span className="text-[10px] text-gray-400">{apiMode === 'mock' ? `×${debugTimeScale}` : 'real api'}</span>
-          </div>
+        <div className="rounded-2xl bg-white/45 border border-white/70 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setDebugOpen(v => !v)}
+            className="w-full px-3 py-2 flex items-center justify-between gap-2"
+          >
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Debug time</span>
+            <span className="text-[10px] text-gray-400">{debugOpen ? '▲' : '▼'} {apiMode === 'mock' ? `×${debugTimeScale}` : 'real api'}</span>
+          </button>
 
-          <div className="grid grid-cols-4 gap-1.5">
-            {[1, 10, 60, 240].map(scale => (
-              <button
-                key={scale}
-                type="button"
-                disabled={apiMode !== 'mock'}
-                onClick={() => setDebugTimeScale(scale)}
-                className="rounded-lg py-1.5 text-[11px] font-semibold disabled:opacity-40"
-                style={{
-                  background: debugTimeScale === scale ? '#6366F1' : 'rgba(99,102,241,0.10)',
-                  color: debugTimeScale === scale ? 'white' : '#4F46E5',
-                }}
-              >
-                ×{scale}
-              </button>
-            ))}
-          </div>
+          {debugOpen && (
+            <div className="px-3 pb-3 space-y-2">
+              <div className="grid grid-cols-4 gap-1.5">
+                {[1, 10, 60, 240].map(scale => (
+                  <button
+                    key={scale}
+                    type="button"
+                    disabled={apiMode !== 'mock'}
+                    onClick={() => setDebugTimeScale(scale)}
+                    className="rounded-lg py-1.5 text-[11px] font-semibold disabled:opacity-40"
+                    style={{
+                      background: debugTimeScale === scale ? '#6366F1' : 'rgba(99,102,241,0.10)',
+                      color: debugTimeScale === scale ? 'white' : '#4F46E5',
+                    }}
+                  >
+                    ×{scale}
+                  </button>
+                ))}
+              </div>
 
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              disabled={apiMode !== 'mock'}
-              onClick={() => advanceDebugTime(1)}
-              className="rounded-lg py-1.5 text-[11px] font-semibold bg-emerald-50 text-emerald-700 disabled:opacity-40"
-            >
-              +1ч + sync
-            </button>
-            <button
-              type="button"
-              disabled={apiMode !== 'mock'}
-              onClick={() => syncPet()}
-              className="rounded-lg py-1.5 text-[11px] font-semibold bg-gray-100 text-gray-600 disabled:opacity-40"
-            >
-              sync now
-            </button>
-          </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  disabled={apiMode !== 'mock'}
+                  onClick={() => advanceDebugTime(1)}
+                  className="rounded-lg py-1.5 text-[11px] font-semibold bg-emerald-50 text-emerald-700 disabled:opacity-40"
+                >
+                  +1ч + sync
+                </button>
+                <button
+                  type="button"
+                  disabled={apiMode !== 'mock'}
+                  onClick={() => syncPet()}
+                  className="rounded-lg py-1.5 text-[11px] font-semibold bg-gray-100 text-gray-600 disabled:opacity-40"
+                >
+                  sync now
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

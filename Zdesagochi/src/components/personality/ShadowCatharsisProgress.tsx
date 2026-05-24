@@ -3,7 +3,7 @@ import { usePetStore } from '../../store/petStore';
 
 const CATHARSIS_THRESHOLD = 100;
 
-export function ShadowCatharsisProgress() {
+export function ShadowCatharsisProgress({ showBurst = true }: { showBurst?: boolean }) {
   const { pet } = usePetStore();
 
   const inShadow = pet?.emergentState === 'shadow_form'
@@ -38,7 +38,9 @@ export function ShadowCatharsisProgress() {
             <span className="text-xl leading-none">🌑</span>
             <div>
               <div className="text-xs font-bold text-purple-300 uppercase tracking-wide">Теневая форма</div>
-              <div className="text-xs text-purple-200 mt-0.5">Проявляй заботу, чтобы найти путь обратно</div>
+              <div className="text-xs text-purple-200 mt-0.5">
+                Что делать: выбирай спокойную заботу, слушание и отдых. Так заполняется путь восстановления.
+              </div>
             </div>
             <div className="ml-auto text-xs font-bold text-purple-300">{pct}%</div>
           </div>
@@ -55,12 +57,12 @@ export function ShadowCatharsisProgress() {
           </div>
 
           <div className="text-[10px] text-purple-400 text-center">
-            Катарсис: {progress} / {CATHARSIS_THRESHOLD}
+            Восстановление: {progress} / {CATHARSIS_THRESHOLD}
           </div>
         </motion.div>
       )}
 
-      {burstActive && !inShadow && (
+      {showBurst && burstActive && !inShadow && (
         <motion.div
           key="catharsis-burst"
           initial={{ opacity: 0, scale: 0.95 }}
@@ -75,8 +77,8 @@ export function ShadowCatharsisProgress() {
         >
           <span className="text-lg leading-none">🌅</span>
           <div>
-            <div className="text-xs font-bold text-yellow-700">Катарсис!</div>
-            <div className="text-[10px] text-yellow-600">XP ×5 ещё активен</div>
+            <div className="text-xs font-bold text-yellow-700">Окно восстановления</div>
+            <div className="text-[10px] text-yellow-600">Мягкие действия сейчас особенно полезны. XP за действия ×5.</div>
           </div>
         </motion.div>
       )}

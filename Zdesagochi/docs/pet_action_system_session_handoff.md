@@ -182,6 +182,25 @@ Important boundary:
 - This slice did not add new engine behavior, backend command support, or command variants.
 - Existing action buttons still call the same supported command variants.
 
+### Header Recovery Banner
+
+The catharsis/recovery banner in `src/components/UI/Header.tsx` is no longer only informational.
+
+When the recovery window is active, the expanded "Выбирай эти действия" row exposes direct quick actions:
+
+- `Выслушать` -> `bondWithPet('listen')`;
+- `Дрёма` -> `sleepPet('nap')`;
+- `Покормить` -> `feedPet(recoveryFood.id)` using an available food item;
+- `Обнять` -> `bondWithPet('hug')`.
+
+The buttons use existing engine-backed commands only. They do not introduce UI-only actions or new variants.
+
+Current disabled states:
+
+- all quick actions disable while another pet action is loading;
+- soft interaction actions disable while the pet is asleep;
+- feeding disables when no food is loaded or the pet is already very full.
+
 ## Important Files Changed
 
 TypeScript engine:
