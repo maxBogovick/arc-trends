@@ -39,6 +39,7 @@ function fmt(value: number | undefined): string {
 export function EvolutionInspector() {
   const [newLifeOpen, setNewLifeOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const pet = usePetStore(s => s.pet);
   const account = usePetStore(s => s.account);
   const apiMode = usePetStore(s => s.apiMode);
@@ -107,16 +108,53 @@ export function EvolutionInspector() {
             {pet.formationComplete ? 'характер сформирован' : `формирование ${Math.round(formationPct)}%`}
           </p>
         </div>
-        <span
-          className="text-[10px] font-semibold px-2 py-1 rounded-full"
-          style={{
-            background: pet.confusedState ? 'rgba(239,68,68,0.10)' : 'rgba(16,185,129,0.10)',
-            color: pet.confusedState ? '#DC2626' : '#059669',
-          }}
-        >
-          variance {Math.round(variance)}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span
+            className="text-[10px] font-semibold px-2 py-1 rounded-full"
+            style={{
+              background: pet.confusedState ? 'rgba(239,68,68,0.10)' : 'rgba(16,185,129,0.10)',
+              color: pet.confusedState ? '#DC2626' : '#059669',
+            }}
+          >
+            variance {Math.round(variance)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(v => !v)}
+            className="rounded-full bg-white/70 px-2 py-1 text-[10px] font-bold text-gray-500 border border-white/80"
+          >
+            {detailsOpen ? 'Свернуть' : 'Открыть'}
+          </button>
+        </div>
       </div>
+
+      {!detailsOpen ? (
+        <>
+          <div className="rounded-2xl px-3 py-3 bg-white/60 border border-white/70">
+            <p className="text-[11px] font-semibold text-lumio-text">
+              {personalityHints[0]?.title ?? 'Помощник обучения'}
+            </p>
+            <p className="text-[10px] text-gray-500 leading-snug mt-0.5">
+              {personalityHints[0]?.body ?? 'Подробности характера скрыты, чтобы не перегружать главный экран.'}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="h-2 rounded-full overflow-hidden bg-gray-100">
+              <motion.div
+                className="h-full rounded-full"
+                style={{ background: pet.formationComplete ? '#10B981' : '#6366F1' }}
+                animate={{ width: `${formationPct}%` }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+              />
+            </div>
+            <p className="text-[10px] text-gray-400">
+              {pet.formationComplete ? 'Характер уже сформирован. Детали доступны по кнопке.' : `Формирование ${Math.round(formationPct)}%`}
+            </p>
+          </div>
+        </>
+      ) : (
+        <>
 
       {IS_DEV && (
         <div className="rounded-2xl bg-white/45 border border-white/70 overflow-hidden">
@@ -590,6 +628,8 @@ export function EvolutionInspector() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

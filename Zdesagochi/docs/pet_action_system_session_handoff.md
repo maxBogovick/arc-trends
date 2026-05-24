@@ -30,6 +30,7 @@ The action panel has already been moved away from a flat button wall:
 - the full action list is behind progressive disclosure;
 - full actions are grouped by intent: Care, Play, Bond, Routine, Items;
 - Items is navigation to existing shop/inventory flows, not a new UI-only pet action.
+- users can customize an engine-backed quick-action grid and choose 3x3, 4x4, or 5x5 density.
 
 ## Implemented Slice 1
 
@@ -155,7 +156,11 @@ Important tests already exist around:
 The frontend action panel now:
 
 - calls `getRecommendedPetActions(pet)` to rank 3-5 actions;
-- displays recommended actions before the complete list;
+- displays "Лучшее сейчас" before habitual quick actions and before the complete list;
+- includes a persistent customizable quick-action grid:
+  - grid size options: 3x3, 4x4, 5x5;
+  - stored in `localStorage`;
+  - choices are limited to already supported engine-backed actions only;
 - uses progressive disclosure for the complete action list;
 - groups complete actions by intent:
   - Care: `feed`, `bathe`, `heal`;
@@ -181,6 +186,11 @@ Important boundary:
 
 - This slice did not add new engine behavior, backend command support, or command variants.
 - Existing action buttons still call the same supported command variants.
+- The `feed` action no longer opens an action-panel picker. It auto-selects a food item:
+  - strongest hunger restore when hunger is very low;
+  - best health bonus when health is low;
+  - gentle food such as apple/milk/salad when the pet is stable.
+- Detailed evolution/debug information is collapsed by default in `EvolutionInspector`; the main screen keeps a short status card and opens details on demand.
 
 ### Header Recovery Banner
 
