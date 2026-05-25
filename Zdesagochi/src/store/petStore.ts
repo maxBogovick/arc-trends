@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import {
   createApiService, MockApiService, syncPersonalityFromSkin, setPersonalityDirectly,
   advanceMockTime, getMockTimeScale, setMockTimeScale,
-  getMockAccount,
+  getMockAccount, setMockCoinsForClient,
   type ApiMode, type Pet, type FoodItem, type ShopItem, type InventoryItem,
   type Achievement, type DailyQuest, type Room, type LeaderboardEntry, type PetEvent,
   type Account,
@@ -363,6 +363,104 @@ function persistRoom(customization: RoomCustomization, placed: PlacedFurnitureIt
   localStorage.setItem('placedFurniture', JSON.stringify(safePlaced));
 }
 
+const PET_UI_STATE_KEY = 'zdesagochi:pet-ui-state:v1';
+
+const DEFAULT_ACCESSORY_CONFIGS = {
+  head: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
+  face: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
+  back: { scale: 1, x: 0, y: 0, rotation: 0, behind: true },
+  neck: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
+  clothing: { scale: 1, x: 0, y: 0, rotation: 0, behind: true },
+};
+
+type PetUiState = Pick<PetStore,
+  | 'coins'
+  | 'ownedSkins'
+  | 'equippedSkinId'
+  | 'equippedBodyId'
+  | 'equippedHeadId'
+  | 'equippedEarsId'
+  | 'equippedBodyPartId'
+  | 'equippedLimbsId'
+  | 'equippedArmsId'
+  | 'equippedLegsId'
+  | 'equippedTailId'
+  | 'partColors'
+  | 'gradientEnabled'
+  | 'equippedOutfitId'
+  | 'outfitColor'
+  | 'outfitColor2'
+  | 'equippedNoseId'
+  | 'equippedMouthStyleId'
+  | 'equippedBgId'
+  | 'ownedBgs'
+  | 'petColorOverride'
+  | 'gradientDirection'
+  | 'petMorph'
+  | 'equippedAuraId'
+  | 'ownedAuras'
+  | 'ownedAccessoriesList'
+  | 'equippedAccessories'
+  | 'accessoryConfigs'
+  | 'eyeStyleOverride'
+  | 'eyeColorOverride'
+  | 'overlayOverride'
+>;
+
+function readPetUiState(): Partial<PetUiState> {
+  try {
+    const raw = localStorage.getItem(PET_UI_STATE_KEY) ?? localStorage.getItem('pet_appearance_debug');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function buildPetUiState(s: PetStore): PetUiState {
+  return {
+    coins: s.coins,
+    ownedSkins: s.ownedSkins,
+    equippedSkinId: s.equippedSkinId,
+    equippedBodyId: s.equippedBodyId,
+    equippedHeadId: s.equippedHeadId,
+    equippedEarsId: s.equippedEarsId,
+    equippedBodyPartId: s.equippedBodyPartId,
+    equippedLimbsId: s.equippedLimbsId,
+    equippedArmsId: s.equippedArmsId,
+    equippedLegsId: s.equippedLegsId,
+    equippedTailId: s.equippedTailId,
+    partColors: s.partColors,
+    gradientEnabled: s.gradientEnabled,
+    equippedOutfitId: s.equippedOutfitId,
+    outfitColor: s.outfitColor,
+    outfitColor2: s.outfitColor2,
+    equippedNoseId: s.equippedNoseId,
+    equippedMouthStyleId: s.equippedMouthStyleId,
+    equippedBgId: s.equippedBgId,
+    ownedBgs: s.ownedBgs,
+    petColorOverride: s.petColorOverride,
+    gradientDirection: s.gradientDirection,
+    petMorph: s.petMorph,
+    equippedAuraId: s.equippedAuraId,
+    ownedAuras: s.ownedAuras,
+    ownedAccessoriesList: s.ownedAccessoriesList,
+    equippedAccessories: s.equippedAccessories,
+    accessoryConfigs: s.accessoryConfigs,
+    eyeStyleOverride: s.eyeStyleOverride,
+    eyeColorOverride: s.eyeColorOverride,
+    overlayOverride: s.overlayOverride,
+  };
+}
+
+function persistPetUiState(s: PetStore) {
+  const snapshot = buildPetUiState(s);
+  localStorage.setItem(PET_UI_STATE_KEY, JSON.stringify(snapshot));
+  if (s.apiMode === 'mock') setMockCoinsForClient(snapshot.coins);
+}
+
 function formatCareActionMessage(base: string, before: Pet | null, after: Pet): string {
   if (!before) return base;
 
@@ -381,6 +479,9 @@ function formatCareActionMessage(base: string, before: Pet | null, after: Pet): 
 
 export const usePetStore = create<PetStore>((set, get) => {
   const api = () => createApiService(get().apiMode, get().apiBaseUrl);
+  const savedUi = readPetUiState();
+  const defaultOwnedSkins = SKINS.filter(s => s.price === 0).map(s => s.id);
+  const defaultOwnedBgs = BACKGROUNDS.filter(b => b.price === 0).map(b => b.id);
 
   async function action(key: string, fn: () => Promise<void>) {
     set({ actionLoading: key });
@@ -390,49 +491,43 @@ export const usePetStore = create<PetStore>((set, get) => {
   }
 
   return {
-    pet: null, account: {}, coins: 0, isLoading: false, actionLoading: null, activeTab: 'home',
+    pet: null, account: {}, coins: savedUi.coins ?? 0, isLoading: false, actionLoading: null, activeTab: 'home',
     foods: [], shopItems: [], inventory: [], achievements: [], quests: [],
     rooms: [], leaderboard: [], events: [],
     apiMode: 'mock', apiBaseUrl: 'http://localhost:3000',
     notifications: [], debugTimeScale: getMockTimeScale(),
-    ownedSkins: SKINS.filter(s => s.price === 0).map(s => s.id),
-    equippedSkinId: 'default',
-    equippedBodyId: 'blob',
-    equippedHeadId: 'round' as HeadId,
-    equippedEarsId: 'none' as EarsId,
-    equippedBodyPartId: 'chubby' as BodyPartId,
-    equippedLimbsId: 'none' as LimbsId,
-    equippedArmsId: 'none' as ArmsId,
-    equippedLegsId: 'none' as LegsId,
-    equippedTailId: 'none' as TailId,
-    partColors: { head: null, ears: null, body: null, arms: null, legs: null, tail: null } as Record<PartColorKey, string | null>,
-    gradientEnabled: true,
-    equippedOutfitId: 'none' as OutfitId,
-    outfitColor: '#FFFFFF',
-    outfitColor2: '#AAAAAA',
-    equippedNoseId: 'none' as NoseId,
-    equippedMouthStyleId: 'auto' as MouthStyleId,
-    equippedBgId: 'void_dark',
-    ownedBgs: BACKGROUNDS.filter(b => b.price === 0).map(b => b.id),
+    ownedSkins: [...new Set([...defaultOwnedSkins, ...(savedUi.ownedSkins ?? [])])],
+    equippedSkinId: savedUi.equippedSkinId ?? 'default',
+    equippedBodyId: savedUi.equippedBodyId ?? 'blob',
+    equippedHeadId: savedUi.equippedHeadId ?? 'round' as HeadId,
+    equippedEarsId: savedUi.equippedEarsId ?? 'none' as EarsId,
+    equippedBodyPartId: savedUi.equippedBodyPartId ?? 'chubby' as BodyPartId,
+    equippedLimbsId: savedUi.equippedLimbsId ?? 'none' as LimbsId,
+    equippedArmsId: savedUi.equippedArmsId ?? 'none' as ArmsId,
+    equippedLegsId: savedUi.equippedLegsId ?? 'none' as LegsId,
+    equippedTailId: savedUi.equippedTailId ?? 'none' as TailId,
+    partColors: savedUi.partColors ?? { head: null, ears: null, body: null, arms: null, legs: null, tail: null } as Record<PartColorKey, string | null>,
+    gradientEnabled: savedUi.gradientEnabled ?? true,
+    equippedOutfitId: savedUi.equippedOutfitId ?? 'none' as OutfitId,
+    outfitColor: savedUi.outfitColor ?? '#FFFFFF',
+    outfitColor2: savedUi.outfitColor2 ?? '#AAAAAA',
+    equippedNoseId: savedUi.equippedNoseId ?? 'none' as NoseId,
+    equippedMouthStyleId: savedUi.equippedMouthStyleId ?? 'auto' as MouthStyleId,
+    equippedBgId: savedUi.equippedBgId ?? 'void_dark',
+    ownedBgs: [...new Set([...defaultOwnedBgs, ...(savedUi.ownedBgs ?? [])])],
     ownedFurnitureIds: loadOwnedFurnitureIds(),
     placedFurniture: loadPlacedFurniture(),
-    petColorOverride: null,
-    gradientDirection: 'radial',
-    petMorph: { scale: 1, width: 1, height: 1, headScale: 1, earsScale: 1, limbsScale: 1, squish: 1 },
-    equippedAuraId: 'none',
-    ownedAuras: ['none'],
-    equippedAccessories: { head: 'none_head', face: 'none_face', back: 'none_back', neck: 'none_neck', clothing: 'none_clothing' },
-    ownedAccessoriesList: [],
-    accessoryConfigs: {
-      head: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
-      face: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
-      back: { scale: 1, x: 0, y: 0, rotation: 0, behind: true },
-      neck: { scale: 1, x: 0, y: 0, rotation: 0, behind: false },
-      clothing: { scale: 1, x: 0, y: 0, rotation: 0, behind: true },
-    },
-    eyeStyleOverride: null,
-    eyeColorOverride: null,
-    overlayOverride: null,
+    petColorOverride: savedUi.petColorOverride ?? null,
+    gradientDirection: savedUi.gradientDirection ?? 'radial',
+    petMorph: savedUi.petMorph ?? { scale: 1, width: 1, height: 1, headScale: 1, earsScale: 1, limbsScale: 1, squish: 1 },
+    equippedAuraId: savedUi.equippedAuraId ?? 'none',
+    ownedAuras: [...new Set(['none', ...(savedUi.ownedAuras ?? [])])],
+    equippedAccessories: savedUi.equippedAccessories ?? { head: 'none_head', face: 'none_face', back: 'none_back', neck: 'none_neck', clothing: 'none_clothing' },
+    ownedAccessoriesList: savedUi.ownedAccessoriesList ?? [],
+    accessoryConfigs: savedUi.accessoryConfigs ?? DEFAULT_ACCESSORY_CONFIGS,
+    eyeStyleOverride: savedUi.eyeStyleOverride ?? null,
+    eyeColorOverride: savedUi.eyeColorOverride ?? null,
+    overlayOverride: savedUi.overlayOverride ?? null,
     roomCustomization: loadRoomCustomization(),
     roomPresets: JSON.parse(localStorage.getItem('roomPresets') || '[]'),
 
@@ -542,6 +637,7 @@ export const usePetStore = create<PetStore>((set, get) => {
       const preset = state.petPresets[name];
       if (preset) {
         set({ ...preset });
+        persistPetUiState(get());
         state.notify(`Пресет "${name}" загружен`, 'info');
       }
     },
@@ -627,6 +723,7 @@ export const usePetStore = create<PetStore>((set, get) => {
         overlayOverride: state.overlayOverride,
       };
       set({ ...prev, history: rest, future: [currentSnapshot, ...state.future].slice(0, 50) });
+      persistPetUiState(get());
       get().notify('Действие отменено', 'info');
     },
 
@@ -663,6 +760,7 @@ export const usePetStore = create<PetStore>((set, get) => {
         overlayOverride: state.overlayOverride,
       };
       set({ ...next, future: rest, history: [currentSnapshot, ...state.history].slice(0, 50) });
+      persistPetUiState(get());
       get().notify('Действие возвращено', 'info');
     },
 
@@ -735,6 +833,7 @@ export const usePetStore = create<PetStore>((set, get) => {
       await action(`play_${variant}`, async () => {
         const r = await api().playWithPet(variant);
         set({ pet: r.pet, coins: get().coins + r.coinsGained });
+        persistPetUiState(get());
         get().notify(`${r.message} +${r.xpGained} XP  +${r.coinsGained} 🪙`, 'xp');
         get().refreshProgress();
         result = r;
@@ -826,22 +925,9 @@ export const usePetStore = create<PetStore>((set, get) => {
         if (!owned.includes(equippedAccessories.neck) && !equippedAccessories.neck.startsWith('none')) equippedAccessories.neck = 'none_neck';
         if (!owned.includes(equippedAccessories.clothing) && !equippedAccessories.clothing.startsWith('none')) equippedAccessories.clothing = 'none_clothing';
 
-        const config = {
-          equippedSkinId: s.equippedSkinId,
-          equippedBodyId: s.equippedBodyId,
-          equippedBgId: s.equippedBgId,
-          petColorOverride: s.petColorOverride,
-          petMorph: s.petMorph,
-          equippedAuraId: s.equippedAuraId,
-          equippedAccessories,
-          accessoryConfigs: s.accessoryConfigs,
-        };
-        
         // Sync local state if we changed something
         set({ equippedAccessories });
-        // In a real app, we'd send this to the API
-        // For now, we simulate persistence
-        localStorage.setItem('pet_appearance_debug', JSON.stringify(config));
+        persistPetUiState(get());
         get().notify('✨ Внешний вид сохранён!', 'success');
       });
     },
@@ -873,6 +959,7 @@ export const usePetStore = create<PetStore>((set, get) => {
           equippedAccessories: config.acc,
           accessoryConfigs: config.cfg,
         });
+        persistPetUiState(get());
         get().notify('👗 Облик импортирован!', 'success');
         return true;
       } catch {
@@ -887,7 +974,10 @@ export const usePetStore = create<PetStore>((set, get) => {
     // ── Economy ────────────────────────────────────────────────────────────
 
     async loadCoins() {
-      try { set({ coins: (await api().getCoins()).coins }); } catch { /* silent */ }
+      try {
+        set({ coins: (await api().getCoins()).coins });
+        persistPetUiState(get());
+      } catch { /* silent */ }
     },
     async loadShop() {
       try { set({ shopItems: await api().getShop() }); } catch { /* silent */ }
@@ -896,6 +986,7 @@ export const usePetStore = create<PetStore>((set, get) => {
       await action(`buy_${itemId}`, async () => {
         const result = await api().buyItem(itemId);
         set({ coins: result.coins, inventory: result.inventory });
+        persistPetUiState(get());
         get().notify(`🛒 «${result.item.name}» — -${result.item.price} 🪙`, 'success');
         get().refreshProgress();
       });
@@ -924,6 +1015,7 @@ export const usePetStore = create<PetStore>((set, get) => {
         const result = await api().claimAchievement(achievementId);
         set({ coins: result.newBalance });
         set(s => ({ achievements: s.achievements.map(a => a.id === achievementId ? result.achievement : a) }));
+        persistPetUiState(get());
         get().notify(`🏆 «${result.achievement.name}» — +${result.coins} 🪙`, 'coins');
       });
     },
@@ -935,6 +1027,7 @@ export const usePetStore = create<PetStore>((set, get) => {
         const result = await api().claimQuestReward(questId);
         set({ coins: result.newBalance });
         set(s => ({ quests: s.quests.map(q => q.id === questId ? result.quest : q) }));
+        persistPetUiState(get());
         get().notify(`🎯 «${result.quest.name}» — +${result.coins} 🪙 +${result.xp} XP`, 'coins');
         await get().loadPet();
       });
@@ -997,6 +1090,7 @@ export const usePetStore = create<PetStore>((set, get) => {
         get().notify(`Нужен уровень ${skin.requiredLevel} 🔒`, 'error'); return;
       }
       set(s => ({ coins: s.coins - skin.price, ownedSkins: [...s.ownedSkins, skinId] }));
+      persistPetUiState(get());
       get().notify(`✨ Скин «${skin.name}» куплен!`, 'coins');
       get().equipSkin(skinId);
     },
@@ -1010,6 +1104,7 @@ export const usePetStore = create<PetStore>((set, get) => {
         syncPersonalityFromSkin(skinId);
         get().loadPet();
       }
+      persistPetUiState(get());
       get().notify(`🎨 Надет «${skin.name}» · характер: ${linkedPersonality.name}`, 'success');
     },
 
@@ -1023,22 +1118,23 @@ export const usePetStore = create<PetStore>((set, get) => {
     equipBody(shapeId) {
       get().recordHistory();
       set({ equippedBodyId: shapeId });
+      persistPetUiState(get());
     },
 
-    equipHead(id) { get().recordHistory(); set({ equippedHeadId: id }); },
-    equipEars(id) { get().recordHistory(); set({ equippedEarsId: id }); },
-    equipBodyPart(id) { get().recordHistory(); set({ equippedBodyPartId: id }); },
-    equipLimbs(id) { get().recordHistory(); set({ equippedLimbsId: id }); },
-    equipArms(id) { get().recordHistory(); set({ equippedArmsId: id }); },
-    equipLegs(id) { get().recordHistory(); set({ equippedLegsId: id }); },
-    equipTail(id) { get().recordHistory(); set({ equippedTailId: id }); },
-    setPartColor(part, color) { get().recordHistory(); set(s => ({ partColors: { ...s.partColors, [part]: color } })); },
-    setGradientEnabled(enabled) { get().recordHistory(); set({ gradientEnabled: enabled }); },
-    equipOutfit(id) { get().recordHistory(); set({ equippedOutfitId: id }); },
-    setOutfitColor(c) { set({ outfitColor: c }); },
-    setOutfitColor2(c) { set({ outfitColor2: c }); },
-    equipNose(id) { get().recordHistory(); set({ equippedNoseId: id }); },
-    equipMouthStyle(id) { get().recordHistory(); set({ equippedMouthStyleId: id }); },
+    equipHead(id) { get().recordHistory(); set({ equippedHeadId: id }); persistPetUiState(get()); },
+    equipEars(id) { get().recordHistory(); set({ equippedEarsId: id }); persistPetUiState(get()); },
+    equipBodyPart(id) { get().recordHistory(); set({ equippedBodyPartId: id }); persistPetUiState(get()); },
+    equipLimbs(id) { get().recordHistory(); set({ equippedLimbsId: id }); persistPetUiState(get()); },
+    equipArms(id) { get().recordHistory(); set({ equippedArmsId: id }); persistPetUiState(get()); },
+    equipLegs(id) { get().recordHistory(); set({ equippedLegsId: id }); persistPetUiState(get()); },
+    equipTail(id) { get().recordHistory(); set({ equippedTailId: id }); persistPetUiState(get()); },
+    setPartColor(part, color) { get().recordHistory(); set(s => ({ partColors: { ...s.partColors, [part]: color } })); persistPetUiState(get()); },
+    setGradientEnabled(enabled) { get().recordHistory(); set({ gradientEnabled: enabled }); persistPetUiState(get()); },
+    equipOutfit(id) { get().recordHistory(); set({ equippedOutfitId: id }); persistPetUiState(get()); },
+    setOutfitColor(c) { set({ outfitColor: c }); persistPetUiState(get()); },
+    setOutfitColor2(c) { set({ outfitColor2: c }); persistPetUiState(get()); },
+    equipNose(id) { get().recordHistory(); set({ equippedNoseId: id }); persistPetUiState(get()); },
+    equipMouthStyle(id) { get().recordHistory(); set({ equippedMouthStyleId: id }); persistPetUiState(get()); },
 
     buyBg(bgId) {
       const bg = getBackground(bgId);
@@ -1049,6 +1145,7 @@ export const usePetStore = create<PetStore>((set, get) => {
         get().notify(`Нужен уровень ${bg.requiredLevel} 🔒`, 'error'); return;
       }
       set(s => ({ coins: s.coins - bg.price, ownedBgs: [...s.ownedBgs, bgId] }));
+      persistPetUiState(get());
       get().notify(`🌌 Фон «${bg.name}» куплен!`, 'coins');
       get().equipBg(bgId);
     },
@@ -1057,20 +1154,23 @@ export const usePetStore = create<PetStore>((set, get) => {
       get().recordHistory();
       const bg = getBackground(bgId);
       set({ equippedBgId: bgId });
+      persistPetUiState(get());
       get().notify(`🌌 Фон «${bg.name}» активирован`, 'success');
     },
 
     setPetColorOverride(c) {
       get().recordHistory();
       set({ petColorOverride: c });
+      persistPetUiState(get());
     },
 
     setGradientDirection(d) {
       get().recordHistory();
       set({ gradientDirection: d });
+      persistPetUiState(get());
     },
 
-    setPetMorph(m) { set({ petMorph: m }); },
+    setPetMorph(m) { set({ petMorph: m }); persistPetUiState(get()); },
 
     buyAura(auraId) {
       const { coins, ownedAuras } = get();
@@ -1078,6 +1178,7 @@ export const usePetStore = create<PetStore>((set, get) => {
       if (ownedAuras.includes(auraId)) { get().equipAura(auraId); return; }
       if (coins < aura.price) { get().notify('Недостаточно монет 🪙', 'error'); return; }
       set(s => ({ coins: s.coins - aura.price, ownedAuras: [...s.ownedAuras, auraId] }));
+      persistPetUiState(get());
       get().notify(`💫 Аура «${aura.name}» куплена!`, 'coins');
       get().equipAura(auraId);
     },
@@ -1086,15 +1187,18 @@ export const usePetStore = create<PetStore>((set, get) => {
       get().recordHistory();
       const aura = getAura(auraId);
       set({ equippedAuraId: auraId });
+      persistPetUiState(get());
       if (auraId !== 'none') get().notify(`💫 Аура «${aura.name}» активирована`, 'success');
     },
 
     setAccessory(slot, id) {
       get().recordHistory();
       set(s => ({ equippedAccessories: { ...s.equippedAccessories, [slot]: id } }));
+      persistPetUiState(get());
     },
     setAccessoryConfig(slot, config) {
       set(s => ({ accessoryConfigs: { ...s.accessoryConfigs, [slot]: config } }));
+      persistPetUiState(get());
     },
 
     buyAccessory(id) {
@@ -1111,12 +1215,13 @@ export const usePetStore = create<PetStore>((set, get) => {
         coins: s.coins - acc.price, 
         ownedAccessoriesList: [...s.ownedAccessoriesList, id] 
       }));
+      persistPetUiState(get());
       get().notify(`🕶️ «${acc.name}» куплен!`, 'coins');
     },
 
-    setEyeStyleOverride(s) { get().recordHistory(); set({ eyeStyleOverride: s }); },
-    setEyeColorOverride(c) { set({ eyeColorOverride: c }); },
-    setOverlayOverride(s) { get().recordHistory(); set({ overlayOverride: s }); },
+    setEyeStyleOverride(s) { get().recordHistory(); set({ eyeStyleOverride: s }); persistPetUiState(get()); },
+    setEyeColorOverride(c) { set({ eyeColorOverride: c }); persistPetUiState(get()); },
+    setOverlayOverride(s) { get().recordHistory(); set({ overlayOverride: s }); persistPetUiState(get()); },
     setRoomCustomization(partial) {
       set(s => {
         const next = stripBase64FromCustomization({ ...s.roomCustomization, ...partial });
@@ -1220,6 +1325,7 @@ export const usePetStore = create<PetStore>((set, get) => {
         coins: s.coins - def.price,
         ownedFurnitureIds: nextOwned,
       }));
+      persistPetUiState(get());
       get().notify(`🛋️ «${def.name}» куплено!`, 'coins');
       get().addRoomFurniture(itemId);
     },

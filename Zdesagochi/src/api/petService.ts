@@ -1,6 +1,6 @@
 import type { Account, Pet } from './types';
 import { ExplainabilityLog } from './explainability';
-import { LocalSave, inventoryEntriesToMap } from './localSave';
+import { LocalSave, inventoryEntriesToMap, type MockProgressSaveState } from './localSave';
 import { SyncQueue } from './syncQueue';
 import type { InfluenceCooldownState, PersonalityRuntime, PetCommand, PetCommandResult } from '@zdesagochi/personality-core';
 import { createBrowserOfflineStorage, type OfflineKeyValueStorage } from './offlineStorage';
@@ -20,6 +20,7 @@ export interface PetServiceState {
   coins: number;
   inventory: Map<string, number>;
   influenceCooldowns: InfluenceCooldownState;
+  mockProgress?: MockProgressSaveState;
 }
 
 export interface PetServiceRuntime {
@@ -67,6 +68,7 @@ export class PetService {
       coins: loaded.snapshot.coins,
       inventory: inventoryEntriesToMap(loaded.snapshot.inventory),
       influenceCooldowns: loaded.snapshot.influenceCooldowns,
+      mockProgress: loaded.snapshot.mockProgress,
     });
   }
 

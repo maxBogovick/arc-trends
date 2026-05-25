@@ -16,6 +16,7 @@ import type {
 import type { InfluenceCooldownState, PetCommand } from '@zdesagochi/personality-core';
 import type { OfflineKeyValueStorage } from './offlineStorage';
 import { PetService, type PetCommandDraft } from './petService';
+import type { MockProgressSaveState } from './localSave';
 import { calcMoodWithBias, createDefaultCounters } from '../personality/PersonalityEngine';
 import {
   recordLegacy,
@@ -91,6 +92,31 @@ export function clearMockOfflineRuntimeState(): void {
   offlineCommandCounter = 0;
   offlineHydrated = false;
   influenceCooldowns.clear();
+  traitSyncCounter = 0;
+  mockTimeScale = 1;
+  mockVirtualNowMs = Date.now();
+  mockRealAnchorMs = Date.now();
+  eventCounter = 0;
+  S.account = {};
+  S.pet = createInitialMockPet();
+  S.coins = 200;
+  S.inventory = new Map();
+  S.achievements = makeAchievements();
+  S.quests = makeQuests();
+  S.events = [];
+  S.purchasedRooms = new Set(['default']);
+  S.feedCount = 0;
+  S.playCount = 0;
+  S.bondCount = 0;
+  S.batheCount = 0;
+  S.healCount = 0;
+  S.sleepCount = 0;
+  S.foodsTried = new Set();
+  S.maxStarScore = 0;
+  S.shopBuyCount = 0;
+  S.roomBuyCount = 0;
+  S.healthySyncs = 0;
+  S.memoryPerfect = 0;
 }
 
 // ─── Справочники ──────────────────────────────────────────────────────────────
@@ -383,6 +409,71 @@ function restoreCooldowns(cooldowns: InfluenceCooldownState): void {
   }
 }
 
+function buildMockProgressState(): MockProgressSaveState {
+  return {
+    achievements: S.achievements.map(a => ({ ...a })),
+    quests: S.quests.map(q => ({ ...q })),
+    events: S.events.map(e => ({ ...e })),
+    purchasedRooms: Array.from(S.purchasedRooms),
+    foodsTried: Array.from(S.foodsTried),
+    counters: {
+      feedCount: S.feedCount,
+      playCount: S.playCount,
+      bondCount: S.bondCount,
+      batheCount: S.batheCount,
+      healCount: S.healCount,
+      sleepCount: S.sleepCount,
+      maxStarScore: S.maxStarScore,
+      shopBuyCount: S.shopBuyCount,
+      roomBuyCount: S.roomBuyCount,
+      healthySyncs: S.healthySyncs,
+      memoryPerfect: S.memoryPerfect,
+    },
+    traitSyncCounter,
+    offlineCommandCounter,
+    mockTimeScale,
+    mockVirtualNowMs,
+  };
+}
+
+function mergeSavedAchievements(saved: Achievement[]): Achievement[] {
+  const byId = new Map(saved.map(a => [a.id, a]));
+  return makeAchievements().map(base => ({ ...base, ...byId.get(base.id) }));
+}
+
+function mergeSavedQuests(saved: DailyQuest[]): DailyQuest[] {
+  const byId = new Map(saved.map(q => [q.id, q]));
+  return makeQuests().map(base => ({ ...base, ...byId.get(base.id) }));
+}
+
+function restoreMockProgressState(saved: MockProgressSaveState): void {
+  S.achievements = mergeSavedAchievements(saved.achievements);
+  S.quests = mergeSavedQuests(saved.quests);
+  S.events = saved.events.map(e => ({ ...e })).slice(0, 50);
+  S.purchasedRooms = new Set(['default', ...saved.purchasedRooms]);
+  S.foodsTried = new Set(saved.foodsTried);
+  S.feedCount = saved.counters.feedCount;
+  S.playCount = saved.counters.playCount;
+  S.bondCount = saved.counters.bondCount;
+  S.batheCount = saved.counters.batheCount;
+  S.healCount = saved.counters.healCount;
+  S.sleepCount = saved.counters.sleepCount;
+  S.maxStarScore = saved.counters.maxStarScore;
+  S.shopBuyCount = saved.counters.shopBuyCount;
+  S.roomBuyCount = saved.counters.roomBuyCount;
+  S.healthySyncs = saved.counters.healthySyncs;
+  S.memoryPerfect = saved.counters.memoryPerfect;
+  traitSyncCounter = saved.traitSyncCounter;
+  offlineCommandCounter = saved.offlineCommandCounter;
+  mockTimeScale = clamp(saved.mockTimeScale, 1, 240);
+  mockVirtualNowMs = saved.mockVirtualNowMs;
+  mockRealAnchorMs = Date.now();
+  eventCounter = Math.max(
+    eventCounter,
+    ...S.events.map(evt => Number(evt.id.replace(/^evt-/, '')) || 0),
+  );
+}
+
 function nextOfflineCommandId(type: PetCommand['type']): string {
   offlineCommandCounter++;
   return `mock-${offlineCommandCounter}-${type}-${currentMockIso()}`;
@@ -398,6 +489,7 @@ function createMockPetService(): PetService {
       coins: S.coins,
       inventory: S.inventory,
       influenceCooldowns: cooldownMapToRecord(),
+      mockProgress: buildMockProgressState(),
     }),
     setState: patch => {
       if (patch.pet) S.pet = normalizePetEvolutionFields(patch.pet);
@@ -405,6 +497,7 @@ function createMockPetService(): PetService {
       if (typeof patch.coins === 'number') S.coins = patch.coins;
       if (patch.inventory) S.inventory = patch.inventory;
       if (patch.influenceCooldowns) restoreCooldowns(patch.influenceCooldowns);
+      if (patch.mockProgress) restoreMockProgressState(patch.mockProgress);
     },
     nowIso: currentMockIso,
     nextCommandId: nextOfflineCommandId,
@@ -541,12 +634,15 @@ function finalizePet(): Pet {
 
 // Синхронизировать personality с надетым скином
 export function syncPersonalityFromSkin(skinId: string) {
+  ensureOfflineHydrated();
   const p = getPersonalityBySkin(skinId);
   S.pet.personality = p.id;
+  persistOfflineState();
 }
 
 // Напрямую установить характер (для каталога / начального выбора)
 export function setPersonalityDirectly(personalityId: string) {
+  ensureOfflineHydrated();
   const p = getPersonality(personalityId as any);
   if (!p) return;
   S.pet.personality = p.id;
@@ -557,11 +653,18 @@ export function setPersonalityDirectly(personalityId: string) {
   S.pet.emergentState = null;
   S.pet.emergentStateEnteredAt = undefined;
   S.pet.stateLayers = {};
+  persistOfflineState();
 }
 
 export function getMockAccount(): Account {
   ensureOfflineHydrated();
   return { ...S.account };
+}
+
+export function setMockCoinsForClient(coins: number): void {
+  ensureOfflineHydrated();
+  S.coins = Math.max(0, Math.floor(coins));
+  persistOfflineState();
 }
 
 export function completeMockPetLifecycle(): Account {
@@ -745,6 +848,7 @@ export class MockApiService implements ApiService {
   }
 
   async getPetEvents() {
+    ensureOfflineHydrated();
     await delay(rand(100, 200));
     return [...S.events];
   }
@@ -756,7 +860,7 @@ export class MockApiService implements ApiService {
 
   // ─── Экономика ─────────────────────────────────────────────────────────────
 
-  async getCoins() { await delay(rand(80, 150)); return { coins: S.coins }; }
+  async getCoins() { ensureOfflineHydrated(); await delay(rand(80, 150)); return { coins: S.coins }; }
 
   async getShop() { await delay(rand(150, 280)); return [...SHOP_ITEMS]; }
 
@@ -788,6 +892,7 @@ export class MockApiService implements ApiService {
   }
 
   async getInventory() {
+    ensureOfflineHydrated();
     await delay(rand(120, 220));
     return this._buildInventory();
   }
@@ -818,7 +923,7 @@ export class MockApiService implements ApiService {
 
   // ─── Достижения ────────────────────────────────────────────────────────────
 
-  async getAchievements() { await delay(rand(120, 220)); return S.achievements.map(a => ({ ...a })); }
+  async getAchievements() { ensureOfflineHydrated(); await delay(rand(120, 220)); return S.achievements.map(a => ({ ...a })); }
 
   async claimAchievement(achievementId: string): Promise<ClaimResult> {
     await delay(rand(200, 350));
@@ -835,7 +940,7 @@ export class MockApiService implements ApiService {
 
   // ─── Квесты ────────────────────────────────────────────────────────────────
 
-  async getQuests() { await delay(rand(120, 220)); return S.quests.map(q => ({ ...q })); }
+  async getQuests() { ensureOfflineHydrated(); await delay(rand(120, 220)); return S.quests.map(q => ({ ...q })); }
 
   async claimQuestReward(questId: string): Promise<QuestClaimResult> {
     await delay(rand(200, 350));
@@ -855,6 +960,7 @@ export class MockApiService implements ApiService {
   // ─── Комнаты ───────────────────────────────────────────────────────────────
 
   async getRooms() {
+    ensureOfflineHydrated();
     await delay(rand(120, 220));
     return ROOMS.map(r => ({ ...r, unlocked: S.purchasedRooms.has(r.id) }));
   }
@@ -903,7 +1009,9 @@ export class MockApiService implements ApiService {
 
   /** Публичный метод для регистрации идеального прохождения Memory */
   registerMemoryPerfect() {
+    ensureOfflineHydrated();
     S.memoryPerfect++;
     checkAchievement('memory_master', S.memoryPerfect);
+    persistOfflineState();
   }
 }

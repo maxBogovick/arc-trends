@@ -3520,6 +3520,41 @@ await testAsync('MockApi persists local save and sync queue without gameplay log
   }
 });
 
+await testAsync('MockApi persists progress quests achievements events and rooms offline', async () => {
+  const storage = makeMemoryStorage();
+  setMockOfflineStorage(storage);
+  clearMockOfflineRuntimeState();
+
+  try {
+    const api = new MockApiService();
+    await api.getPet();
+    await api.bondWithPet();
+    await api.bondWithPet('listen');
+    await api.bondWithPet('praise');
+
+    const saved = new LocalSave(storage).load();
+    assert.equal(saved.ok, true);
+    if (!saved.ok) assert.fail('local save was not persisted');
+    assert.equal(saved.snapshot.mockProgress?.counters.bondCount, 3);
+    assert.equal(saved.snapshot.mockProgress?.events.some(event => event.type === 'bond'), true);
+
+    clearMockOfflineRuntimeState();
+    const rehydratedApi = new MockApiService();
+    const achievements = await rehydratedApi.getAchievements();
+    const quests = await rehydratedApi.getQuests();
+    const events = await rehydratedApi.getPetEvents();
+    const rooms = await rehydratedApi.getRooms();
+
+    assert.equal(achievements.find(a => a.id === 'max_bond')?.unlocked, true);
+    assert.equal(quests.find(q => q.id === 'q_bond3')?.completed, true);
+    assert.equal(events.filter(event => event.type === 'bond').length >= 3, true);
+    assert.equal(rooms.find(room => room.id === 'default')?.unlocked, true);
+  } finally {
+    setMockOfflineStorage(null);
+    clearMockOfflineRuntimeState();
+  }
+});
+
 await testAsync('MockApi useInventoryItem writes use_item command to sync queue', async () => {
   const storage = makeMemoryStorage();
   setMockOfflineStorage(storage);

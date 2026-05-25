@@ -8,7 +8,7 @@ export {
   MockApiService, FOODS, syncPersonalityFromSkin, setPersonalityDirectly,
   advanceMockTime, getMockTimeScale, setMockTimeScale,
   setMockOfflineStorage, clearMockOfflineRuntimeState,
-  completeMockPetLifecycle, getMockAccount,
+  completeMockPetLifecycle, getMockAccount, setMockCoinsForClient,
 } from './mockApi';
 export { RealApiService } from './realApi';
 export { LocalSave, DEFAULT_LOCAL_SAVE_KEY, inventoryEntriesToMap } from './localSave';
