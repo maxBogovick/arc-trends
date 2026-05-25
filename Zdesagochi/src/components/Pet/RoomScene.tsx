@@ -188,6 +188,7 @@ export function RoomScene({
 }: Props) {
   const { equippedBgId, roomCustomization: c } = usePetStore();
   const performancePolicy = usePerformancePolicy();
+  const minEffects = performancePolicy.allEffectsDisabled;
   const bg = getBackground(equippedBgId ?? 'void_dark');
   const accent = c.accentColor;
 
@@ -220,12 +221,14 @@ export function RoomScene({
         height,
         maxWidth,
         background: c.wallColor,
-        boxShadow: [
-          `0 24px 88px ${accent}44`,
-          `0 6px 28px rgba(0,0,0,0.7)`,
-          `inset 0 1px 0 rgba(255,255,255,0.07)`,
-          `inset 0 0 120px ${accent}0C`,
-        ].join(', '),
+        boxShadow: minEffects
+          ? 'none'
+          : [
+              `0 24px 88px ${accent}44`,
+              `0 6px 28px rgba(0,0,0,0.7)`,
+              `inset 0 1px 0 rgba(255,255,255,0.07)`,
+              `inset 0 0 120px ${accent}0C`,
+            ].join(', '),
       }}
     >
       {/* Perspective container — intentionally separate from overflow:hidden above */}
@@ -352,10 +355,10 @@ export function RoomScene({
       />
 
       {/* Light sources — mix-blend-mode: screen layer */}
-      <LightingLayer />
+      {!minEffects && <LightingLayer />}
 
       {/* Theme decorations */}
-      {(bg.decorations ?? []).map((d, i) => (
+      {!minEffects && (bg.decorations ?? []).map((d, i) => (
         <motion.div
           key={i}
           className="absolute select-none pointer-events-none"

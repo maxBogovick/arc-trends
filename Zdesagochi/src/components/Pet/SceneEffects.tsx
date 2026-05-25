@@ -704,6 +704,8 @@ function EffectRenderer({ effect, policy }: { effect: SceneEffect; policy: Perfo
 }
 
 export function SceneEffects({ effects, policy }: { effects: SceneEffect[]; policy: PerformancePolicy }) {
+  if (policy.allEffectsDisabled) return null;
+
   const limitedEffects = policy.effectiveQuality === 'low'
     ? effects.slice(0, policy.maxCanvasEffects)
     : effects;

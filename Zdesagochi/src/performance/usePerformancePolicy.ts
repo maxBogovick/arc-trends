@@ -7,6 +7,8 @@ import {
   type PerformanceQuality,
 } from './performancePolicy';
 
+const PERFORMANCE_QUALITY_EVENT = 'zdesagochi:performance-quality-change';
+
 function readStoredQuality(): PerformanceQuality {
   if (typeof window === 'undefined') return 'auto';
   return normalizePerformanceQuality(window.localStorage.getItem(PERFORMANCE_QUALITY_STORAGE_KEY));
@@ -46,22 +48,41 @@ export function usePerformancePolicy(): PerformancePolicy & {
     return () => media.removeEventListener('change', onChange);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onQualityChange = () => setQualityState(readStoredQuality());
+    window.addEventListener('storage', onQualityChange);
+    window.addEventListener(PERFORMANCE_QUALITY_EVENT, onQualityChange);
+    return () => {
+      window.removeEventListener('storage', onQualityChange);
+      window.removeEventListener(PERFORMANCE_QUALITY_EVENT, onQualityChange);
+    };
+  }, []);
+
   const setQuality = (next: PerformanceQuality) => {
     const normalized = normalizePerformanceQuality(next);
     setQualityState(normalized);
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(PERFORMANCE_QUALITY_STORAGE_KEY, normalized);
+      window.dispatchEvent(new Event(PERFORMANCE_QUALITY_EVENT));
     }
   };
 
-  return {
-    ...useMemo(() => resolvePerformancePolicy({
+  const policy = useMemo(() => resolvePerformancePolicy({
       quality,
       prefersReducedMotion,
       visible,
       userAgent: getUserAgent(),
-    }), [quality, prefersReducedMotion, visible]),
+    }), [quality, prefersReducedMotion, visible]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.dataset.performanceQuality = policy.requestedQuality;
+    document.documentElement.dataset.performanceEffects = policy.allEffectsDisabled ? 'off' : 'on';
+  }, [policy.allEffectsDisabled, policy.requestedQuality]);
+
+  return {
+    ...policy,
     setQuality,
   };
 }
-

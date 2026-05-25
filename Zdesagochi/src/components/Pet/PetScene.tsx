@@ -20,12 +20,12 @@ import { usePerformancePolicy } from '../../performance/usePerformancePolicy';
 
 export const MOOD_LABELS: Record<PetMood, { text: string; emoji: string; color: string }> = {
   ecstatic: { text: 'В восторге!', emoji: '🤩', color: 'text-yellow-600' },
-  happy:    { text: 'Счастливый', emoji: '😊', color: 'text-indigo-600' },
-  content:  { text: 'Доволен',    emoji: '🙂', color: 'text-blue-600'   },
-  sad:      { text: 'Грустит',    emoji: '😢', color: 'text-blue-500'   },
-  tired:    { text: 'Устал',      emoji: '😴', color: 'text-gray-500'   },
-  sick:     { text: 'Болеет',     emoji: '🤒', color: 'text-emerald-600' },
-  sleeping: { text: 'Спит',       emoji: '💤', color: 'text-purple-500' },
+  happy: { text: 'Счастливый', emoji: '😊', color: 'text-indigo-600' },
+  content: { text: 'Доволен', emoji: '🙂', color: 'text-blue-600' },
+  sad: { text: 'Грустит', emoji: '😢', color: 'text-blue-500' },
+  tired: { text: 'Устал', emoji: '😴', color: 'text-gray-500' },
+  sick: { text: 'Болеет', emoji: '🤒', color: 'text-emerald-600' },
+  sleeping: { text: 'Спит', emoji: '💤', color: 'text-purple-500' },
 };
 
 // ── Travel speed by mood ──────────────────────────────────────────────────────
@@ -56,8 +56,8 @@ function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moo
   const effectiveDarkness = useDarkness();
   const brightness = Math.max(0.05, 1 - effectiveDarkness * 0.88);
   const isSleeping = mode === 'sleeping' || pet.isAsleep;
-  const isCarried  = mode === 'carried' || mode === 'being_grabbed';
-  const isLanding  = mode === 'landing';
+  const isCarried = mode === 'carried' || mode === 'being_grabbed';
+  const isLanding = mode === 'landing';
 
   return (
     <motion.div
@@ -66,7 +66,7 @@ function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moo
       animate={{ left: `${petX}%`, y: petY }}
       transition={{
         left: { duration: moodTransitionDuration, ease: 'easeInOut' },
-        y:    { duration: isLanding ? 0.32 : moodTransitionDuration, ease: isLanding ? [0.4, 0, 0.8, 1] : 'easeOut' },
+        y: { duration: isLanding ? 0.32 : moodTransitionDuration, ease: isLanding ? [0.4, 0, 0.8, 1] : 'easeOut' },
       }}
     >
       {/* translateX(-50%) centres the pet on its position point */}
@@ -93,13 +93,15 @@ function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moo
             zIndex: -1,
           }}
           animate={{
-            scaleX:  isCarried ? 0.3  : isSleeping || !motionEnabled ? 1    : [1, 0.65, 1],
+            scaleX: isCarried ? 0.3 : isSleeping || !motionEnabled ? 1 : [1, 0.65, 1],
             opacity: isCarried ? 0.05 : isSleeping || !motionEnabled ? 0.26 : [0.45, 0.15, 0.45],
           }}
           transition={{ duration: isCarried ? 0.3 : 3, repeat: isCarried || !motionEnabled ? 0 : Infinity, ease: 'easeInOut' }}
         />
         <PetTalk pet={pet} mode={mode} />
-        <BehaviorEffects pet={pet} mode={mode} sceneInteraction={sceneInteraction} facingRight={facingRight} />
+        {motionEnabled && (
+          <BehaviorEffects pet={pet} mode={mode} sceneInteraction={sceneInteraction} facingRight={facingRight} />
+        )}
         <PetDisplay
           pet={pet}
           size={270}
@@ -202,7 +204,7 @@ export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
 
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pet?.isAsleep, actionLoading, behaviorState.petX, behaviorState.warpTo]);
 
   // ── Scene pointer tracking ────────────────────────────────────────────────────
@@ -211,40 +213,40 @@ export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
     if (!el) return;
     const onEnter = () => setMouseInRoom(true);
     const onLeave = () => setMouseInRoom(false);
-    const onMove  = (ev: PointerEvent) => {
+    const onMove = (ev: PointerEvent) => {
       const rect = el.getBoundingClientRect();
       setMousePosX(((ev.clientX - rect.left) / rect.width) * 100);
     };
     el.addEventListener('pointerenter', onEnter);
     el.addEventListener('pointerleave', onLeave);
-    el.addEventListener('pointermove',  onMove);
+    el.addEventListener('pointermove', onMove);
     return () => {
       el.removeEventListener('pointerenter', onEnter);
       el.removeEventListener('pointerleave', onLeave);
-      el.removeEventListener('pointermove',  onMove);
+      el.removeEventListener('pointermove', onMove);
     };
   }, []);
 
   // Effective display values: drag overrides behavior state
-  const displayX       = dragState ? dragState.x : behaviorState.petX;
-  const displayY       = dragState ? dragState.y : 0;
-  const displayMode    = dragState ? dragState.phase : behaviorState.mode;
+  const displayX = dragState ? dragState.x : behaviorState.petX;
+  const displayY = dragState ? dragState.y : 0;
+  const displayMode = dragState ? dragState.phase : behaviorState.mode;
   const isSleeping = behaviorState.mode === 'sleeping' || !!pet?.isAsleep;
   const isActionMode = behaviorState.mode === 'eating'
     || behaviorState.mode === 'playing'
     || behaviorState.mode === 'cleaning'
     || behaviorState.mode === 'medicine';
   // When mouse is in room, pet turns to face the cursor (disabled while sleeping)
-  const mouseFacing    = mouseInRoom && !dragState && !isSleeping && !isActionMode ? mousePosX > displayX : null;
-  const displayFacing  = mouseFacing !== null ? mouseFacing : dragState ? dragState.x >= 50 : behaviorState.facingRight;
+  const mouseFacing = mouseInRoom && !dragState && !isSleeping && !isActionMode ? mousePosX > displayX : null;
+  const displayFacing = mouseFacing !== null ? mouseFacing : dragState ? dragState.x >= 50 : behaviorState.facingRight;
   const displayInteraction = dragState ? null : behaviorState.sceneInteraction;
 
   const selectedPlaced = placedFurniture.find(p => p.uid === selectedUid) ?? null;
-  const selectedDef    = selectedPlaced ? getFurniture(selectedPlaced.itemId) : null;
+  const selectedDef = selectedPlaced ? getFurniture(selectedPlaced.itemId) : null;
 
   if (!pet) return null;
 
-  const moodInfo  = MOOD_LABELS[pet.mood];
+  const moodInfo = MOOD_LABELS[pet.mood];
 
   const isDragging = dragState !== null;
   const travelDuration = isDragging ? 0.06 : patrolTransitionDuration(behaviorState.mode, pet.mood);
@@ -263,11 +265,19 @@ export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
           className="absolute top-3 right-3 z-40 flex items-center gap-1 rounded-2xl border border-white/45 bg-white/80 p-1 shadow-sm"
           onClick={e => e.stopPropagation()}
         >
-          {(['auto', 'high', 'low'] as const).map(q => (
+          {(['auto', 'high', 'low', 'min'] as const).map(q => (
             <button
               key={q}
               type="button"
-              title={q === 'auto' ? 'Авто качество' : q === 'high' ? 'Высокое качество' : 'Экономный режим'}
+              title={
+                q === 'auto'
+                  ? 'Авто качество'
+                  : q === 'high'
+                    ? 'Высокое качество'
+                    : q === 'low'
+                      ? 'Экономный режим'
+                      : 'Минимум: отключить все эффекты'
+              }
               onClick={() => performancePolicy.setQuality(q)}
               className="h-7 min-w-8 rounded-xl px-2 text-[11px] font-bold transition-colors"
               style={{
@@ -275,7 +285,7 @@ export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
                 color: performancePolicy.requestedQuality === q ? 'white' : '#6B7280',
               }}
             >
-              {q === 'auto' ? 'Авто' : q === 'high' ? 'HD' : 'Eco'}
+              {q === 'auto' ? 'Авто' : q === 'high' ? 'HD' : q === 'low' ? 'Eco' : 'Мин'}
             </button>
           ))}
         </div>
@@ -301,15 +311,17 @@ export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
         })}
 
         {/* Ephemeral action props (food bowl / table / toy ball / bubbles) */}
-        <SceneProps
-          activeAction={behaviorState.activeAction}
-          mode={behaviorState.mode}
-          archetype={archetype}
-          petX={displayX}
-          facingRight={displayFacing}
-          transitionDuration={travelDuration}
-          petSize={270}
-        />
+        {!performancePolicy.allEffectsDisabled && (
+          <SceneProps
+            activeAction={behaviorState.activeAction}
+            mode={behaviorState.mode}
+            archetype={archetype}
+            petX={displayX}
+            facingRight={displayFacing}
+            transitionDuration={travelDuration}
+            petSize={270}
+          />
+        )}
 
         {/* Effects popup for lamp items */}
         <AnimatePresence>

@@ -307,6 +307,25 @@ test('performance policy degrades expensive effects for Safari and hidden tabs',
   assert.equal(forcedHighSafari.canvasEffectsEnabled, true);
 });
 
+test('performance policy min mode disables every visual effect layer', () => {
+  const min = resolvePerformancePolicy({
+    quality: 'min',
+    prefersReducedMotion: false,
+    visible: true,
+    userAgent: 'Mozilla/5.0 Chrome/125.0.0.0 Safari/537.36',
+  });
+
+  assert.equal(min.requestedQuality, 'min');
+  assert.equal(min.effectiveQuality, 'low');
+  assert.equal(min.motionEnabled, false);
+  assert.equal(min.canvasEffectsEnabled, false);
+  assert.equal(min.auraEffectsEnabled, false);
+  assert.equal(min.patrolEnabled, false);
+  assert.equal(min.allEffectsDisabled, true);
+  assert.equal(min.maxCanvasEffects, 0);
+  assert.equal(min.particleMultiplier, 0);
+});
+
 test('personality specialRules validator rejects unknown runtime keys', () => {
   const base = getPersonality('playful');
   const issues = validatePersonalitySpecialRules([{

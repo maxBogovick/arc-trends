@@ -17,6 +17,28 @@
     background: #F5F3FF;
   }
 
+  html[data-performance-effects="off"] *,
+  html[data-performance-effects="off"] *::before,
+  html[data-performance-effects="off"] *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+
+  html[data-performance-effects="off"] #root::before,
+  html[data-performance-effects="off"] #root::after {
+    background-image: none !important;
+    opacity: 0 !important;
+  }
+
+  html[data-performance-effects="off"] * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    filter: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
   /* Mesh gradient background */
   #root::before {
     content: '';

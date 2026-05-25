@@ -65,6 +65,7 @@ const sr = (i: number, off = 0) => ((i * 137 + off * 31) % 100) / 100;
 export function PetAura({ aura }: Props) {
   const performancePolicy = usePerformancePolicy();
   if (aura.id === 'none') return null;
+  if (performancePolicy.allEffectsDisabled) return null;
   if (!performancePolicy.auraEffectsEnabled) return <StaticAura aura={aura} />;
 
   return (
