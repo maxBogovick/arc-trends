@@ -17,6 +17,7 @@ import { RealApiService } from '../src/api/realApi';
 import { resolvePerformancePolicy } from '../src/performance/performancePolicy';
 import { buildPersonalityAssistantReport } from '../src/personality/personalityAssistant';
 import { getRecommendedPetActions } from '../src/personality/guidanceSelectors';
+import { getProactivePetSuggestion } from '../src/personality/proactiveSuggestions';
 import { fromPersonalityState, toPersonalityState } from '../src/api/personalityPetAdapter';
 import {
   deleteOfflinePetSave,
@@ -2040,6 +2041,70 @@ test('action recommendations map assistant evolution guidance to supported comma
   assert.equal(recommendedIds.has('play_puzzle'), true);
   assert.equal(recommendations.some(item => item.evidence === 'assistant_guidance'), true);
   assert.equal(recommendations.every(item => !item.actionId.includes('chaos') && !item.actionId.includes('forceful')), true);
+});
+
+test('proactive pet suggestion prioritizes urgent needs with actionable CTA', () => {
+  const pet = makePet({
+    stats: { hunger: 12, happiness: 82, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  });
+
+  const suggestion = getProactivePetSuggestion({ pet });
+
+  assert.equal(suggestion.actionId, 'feed');
+  assert.equal(suggestion.source, 'need');
+  assert.equal(suggestion.tone, 'urgent');
+});
+
+test('proactive pet suggestion uses evolution guidance when state is stable', () => {
+  const pet = makePet({
+    currentTargetZone: 'curious',
+    evolutionReadinessTarget: 'curious',
+    stats: { hunger: 82, happiness: 80, energy: 82, health: 80, cleanliness: 80, bond: 80 },
+  });
+
+  const suggestion = getProactivePetSuggestion({ pet });
+
+  assert.equal(suggestion.actionId, 'play_puzzle');
+  assert.equal(suggestion.source, 'evolution');
+});
+
+test('proactive pet suggestion offers gentle wake only after enough sleep energy', () => {
+  const tiredSleeper = makePet({
+    isAsleep: true,
+    mood: 'sleeping',
+    stats: { hunger: 80, happiness: 80, energy: 45, health: 80, cleanliness: 80, bond: 80 },
+  });
+  const restedSleeper = makePet({
+    isAsleep: true,
+    mood: 'sleeping',
+    stats: { hunger: 80, happiness: 80, energy: 92, health: 80, cleanliness: 80, bond: 80 },
+  });
+
+  assert.equal(getProactivePetSuggestion({ pet: tiredSleeper }).actionId, undefined);
+  assert.equal(getProactivePetSuggestion({ pet: restedSleeper }).actionId, 'sleep');
+});
+
+test('proactive pet suggestion explains recent behavior changes', async () => {
+  const pet = makePet({
+    formationComplete: true,
+    lastUpdated: '2026-05-04T01:00:00.000Z',
+  });
+  const result = await applyPersonalityCommand(pet, {
+    type: 'bond',
+    at: '2026-05-04T01:00:00.000Z',
+    commandId: 'cmd-proactive-bond',
+  }, {
+    currentSync: 10,
+  });
+  const record = createExplainabilityRecord(result, '2026-05-04T01:00:00.000Z');
+
+  const suggestion = getProactivePetSuggestion({
+    pet: { ...result.pet, lastUpdated: '2026-05-04T01:00:00.000Z' },
+    latestRecord: record,
+  });
+
+  assert.equal(suggestion.source, 'after_action');
+  assert.equal(suggestion.priority >= 80, true);
 });
 
 await testAsync('personality command handler gates influences with serializable cooldown state', async () => {

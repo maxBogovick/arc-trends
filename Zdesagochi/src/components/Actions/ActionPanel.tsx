@@ -3,6 +3,15 @@ import { useEffect, useState } from 'react';
 import { usePetStore } from '../../store/petStore';
 import type { Account, FoodItem, Pet } from '../../api';
 import {
+  PET_ACTIONS,
+  PET_ACTION_BY_ID,
+  PET_ACTION_META,
+  bestFoodForPet,
+  loadingKey,
+  runSupportedPetAction,
+  type SupportedPetActionId,
+} from './petActionControls';
+import {
   getRecommendedPetActions,
   type ActionRecommendation,
 } from '../../personality/guidanceSelectors';
@@ -12,7 +21,7 @@ import {
 type ColCount = 4 | 5 | 6 | 7 | 8;
 
 interface ActionConfig {
-  id: string;
+  id: SupportedPetActionId;
   disabled?: (pet: Pet, food: FoodItem | null) => boolean;
   tooltip?: (pet: Pet, food: FoodItem | null) => string;
 }
@@ -22,98 +31,9 @@ interface ActionConfig {
 const COLS_KEY = 'zdesagochi:flat-grid-cols:v1';
 const COL_OPTIONS: ColCount[] = [4, 5, 6, 7, 8];
 
-const ACTIONS: ActionConfig[] = [
-  {
-    id: 'feed',
-    disabled: (p, food) => p.isAsleep || p.stats.hunger > 90 || !food,
-    tooltip: (p, food) => {
-      if (p.isAsleep) return 'Питомец спит';
-      if (!food) return 'Еда не загружена';
-      if (p.stats.hunger > 90) return 'Питомец уже сыт';
-      return `${food.emoji} ${food.name}`;
-    },
-  },
-  {
-    id: 'bathe',
-    disabled: p => p.isAsleep || p.stats.cleanliness > 90,
-    tooltip: p =>
-      p.isAsleep ? 'Питомец спит' : p.stats.cleanliness > 90 ? 'Питомец чистый' : 'Восстановить чистоту',
-  },
-  {
-    id: 'heal',
-    disabled: p =>
-      p.isAsleep || (p.stats.health > 85 && p.traumaLevel < 40 && p.emergentState !== 'shadow_form'),
-    tooltip: p =>
-      p.isAsleep ? 'Питомец спит' : p.stats.health > 85 ? 'Лечение не нужно' : 'Поддержать здоровье',
-  },
-  {
-    id: 'play',
-    disabled: p => p.isAsleep || p.stats.energy < 10,
-    tooltip: p =>
-      p.isAsleep ? 'Питомец спит' : p.stats.energy < 10 ? 'Нет энергии' : 'Классическая игра',
-  },
-  {
-    id: 'play_puzzle',
-    disabled: p => p.isAsleep || p.stats.energy < 8,
-    tooltip: p =>
-      p.isAsleep ? 'Питомец спит' : p.stats.energy < 8 ? 'Нет энергии' : 'Любопытство и порядок',
-  },
-  {
-    id: 'play_social',
-    disabled: p => p.isAsleep || p.stats.energy < 10,
-    tooltip: p =>
-      p.isAsleep ? 'Питомец спит' : p.stats.energy < 10 ? 'Нет энергии' : 'Социальность через игру',
-  },
-  {
-    id: 'bond',
-    disabled: p => p.isAsleep,
-    tooltip: p => p.isAsleep ? 'Питомец спит' : 'Тёплый контакт',
-  },
-  {
-    id: 'bond_listen',
-    disabled: p => p.isAsleep,
-    tooltip: p => p.isAsleep ? 'Питомец спит' : 'Снижает тревожность',
-  },
-  {
-    id: 'bond_praise',
-    disabled: p => p.isAsleep,
-    tooltip: p => p.isAsleep ? 'Питомец спит' : 'Учит уверенности',
-  },
-  {
-    id: 'sleep',
-    tooltip: p => p.isAsleep ? 'Мягко разбудить' : 'Уложить спать',
-  },
-  {
-    id: 'sleep_nap',
-    disabled: p => p.isAsleep,
-    tooltip: p => p.isAsleep ? 'Уже спит' : 'Короткое восстановление',
-  },
-  {
-    id: 'sleep_ritual',
-    disabled: p => p.isAsleep,
-    tooltip: p => p.isAsleep ? 'Уже спит' : 'Спокойный режим',
-  },
-];
-
-const ACTION_BY_ID = new Map(ACTIONS.map(a => [a.id, a]));
-
-const ACTION_META: Record<string, {
-  emoji: (pet: Pet, food: FoodItem | null) => string;
-  label: string;
-}> = {
-  feed: { emoji: (_p, f) => f?.emoji ?? '🍔', label: 'Еда' },
-  bathe: { emoji: () => '🛁', label: 'Мыть' },
-  heal: { emoji: () => '💊', label: 'Лечить' },
-  play: { emoji: () => '🎮', label: 'Игра' },
-  play_puzzle: { emoji: () => '🧩', label: 'Пазл' },
-  play_social: { emoji: () => '🫶', label: 'Вместе' },
-  bond: { emoji: () => '🤗', label: 'Обнять' },
-  bond_listen: { emoji: () => '👂', label: 'Слушать' },
-  bond_praise: { emoji: () => '✨', label: 'Похвала' },
-  sleep: { emoji: p => p.isAsleep ? '☀️' : '😴', label: 'Сон' },
-  sleep_nap: { emoji: () => '💤', label: 'Дрёма' },
-  sleep_ritual: { emoji: () => '🌙', label: 'Ритуал' },
-};
+const ACTIONS: ActionConfig[] = PET_ACTIONS;
+const ACTION_BY_ID = PET_ACTION_BY_ID;
+const ACTION_META = PET_ACTION_META;
 
 const COL_SCALE: Record<ColCount, { ico: number; lbl: number }> = {
   4: { ico: 28, lbl: 10 },
@@ -131,19 +51,6 @@ function readCols(): ColCount {
   return COL_OPTIONS.includes(v as ColCount) ? (v as ColCount) : 6;
 }
 
-function bestFoodForPet(pet: Pet, foods: FoodItem[]): FoodItem | null {
-  if (!foods.length) return null;
-  if (pet.stats.hunger <= 25)
-    return [...foods].sort((a, b) => b.hungerRestore - a.hungerRestore)[0];
-  if (pet.stats.health <= 70)
-    return [...foods].sort((a, b) => (b.healthBonus - a.healthBonus) || (b.hungerRestore - a.hungerRestore))[0];
-  const gentle = ['apple', 'milk', 'salad'];
-  return (
-    foods.find(f => gentle.includes(f.id)) ??
-    [...foods].sort((a, b) => (b.healthBonus - a.healthBonus) || (a.hungerRestore - b.hungerRestore))[0]
-  );
-}
-
 function getGuardianHint(pet: Pet, account: Account): string | null {
   const g = account.memoryGuardian;
   if (!g) return null;
@@ -151,10 +58,6 @@ function getGuardianHint(pet: Pet, account: Account): string | null {
   if (pet.confusedState) return '🔮 Дай впечатлениям улечься через спокойный сон.';
   if (pet.traumaLevel >= 40) return '🔮 Сейчас лучше заботливые действия.';
   return g.guidance[0] ? `🔮 ${g.guidance[0]}` : null;
-}
-
-function loadingKey(id: string) {
-  return id === 'play' ? 'play_classic' : id;
 }
 
 // ─── Food Picker ──────────────────────────────────────────────────────────────
@@ -269,10 +172,11 @@ function RecPill({
   loading: string | null;
   onAction: (id: string) => void;
 }) {
-  const meta = ACTION_META[rec.actionId];
-  const cfg = ACTION_BY_ID.get(rec.actionId);
+  const actionId = rec.actionId as SupportedPetActionId;
+  const meta = ACTION_META[actionId];
+  const cfg = ACTION_BY_ID.get(actionId);
   const disabled = (cfg?.disabled?.(pet, food) ?? false) || !!loading;
-  const busy = loading === rec.actionId || loading === loadingKey(rec.actionId);
+  const busy = loading === rec.actionId || loading === loadingKey(actionId);
 
   return (
     <motion.button
@@ -314,11 +218,12 @@ function GridCell({
   cols: ColCount;
   onAction: (id: string) => void;
 }) {
-  const meta = ACTION_META[id];
-  const cfg = ACTION_BY_ID.get(id)!;
+  const actionId = id as SupportedPetActionId;
+  const meta = ACTION_META[actionId];
+  const cfg = ACTION_BY_ID.get(actionId)!;
   const scale = COL_SCALE[cols];
   const disabled = (cfg.disabled?.(pet, food) ?? false) || !!loading;
-  const busy = loading === id || loading === loadingKey(id);
+  const busy = loading === id || loading === loadingKey(actionId);
 
   return (
     <motion.button
@@ -386,32 +291,30 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
 
   const bestFood = bestFoodForPet(pet, foods);
   const recommendations = getRecommendedPetActions(pet)
-    .filter(r => ACTION_BY_ID.has(r.actionId))
+    .filter(r => ACTION_BY_ID.has(r.actionId as SupportedPetActionId))
     .slice(0, 6);
   const hotIds = new Set(recommendations.map(r => r.actionId));
   const guardianHint = getGuardianHint(pet, account);
 
-  const handleAction = async (id: string) => {
-    if (id === 'feed') {
-      if (!foods.length) { notify('Еда пока не загружена', 'error'); return; }
-      // toggle food picker
-      setFoodPickerOpen(v => !v);
-      return;
-    }
-    setFoodPickerOpen(false);
-    switch (id) {
-      case 'play': onPlayGame(); break;
-      case 'play_puzzle': await playWithPet('puzzle'); break;
-      case 'play_social': await playWithPet('social'); break;
-      case 'sleep': pet.isAsleep ? await wakePet('gentle') : await sleepPet(); break;
-      case 'sleep_nap': await sleepPet('nap'); break;
-      case 'sleep_ritual': await sleepPet('ritual'); break;
-      case 'bathe': await bathePet(); break;
-      case 'heal': await healPet(); break;
-      case 'bond': await bondWithPet(); break;
-      case 'bond_listen': await bondWithPet('listen'); break;
-      case 'bond_praise': await bondWithPet('praise'); break;
-    }
+  const handleAction = async (id: SupportedPetActionId) => {
+    if (id !== 'feed') setFoodPickerOpen(false);
+    await runSupportedPetAction(id, {
+      pet,
+      foods,
+      onPlayGame,
+      onOpenFoodPicker: () => {
+        if (!foods.length) { notify('Еда пока не загружена', 'error'); return; }
+        setFoodPickerOpen(v => !v);
+      },
+      feedPet,
+      playWithPet,
+      sleepPet,
+      wakePet,
+      bathePet,
+      healPet,
+      bondWithPet,
+      notify,
+    });
   };
 
   const handleFeedPick = async (foodId: string) => {
@@ -421,8 +324,7 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
 
   // rec pills also open food picker for 'feed'
   const handleRecAction = async (id: string) => {
-    if (id === 'feed') { handleAction('feed'); return; }
-    await handleAction(id);
+    await handleAction(id as SupportedPetActionId);
   };
 
   return (
@@ -515,7 +417,7 @@ export function ActionPanel({ onPlayGame }: { onPlayGame: () => void }) {
             isHot={hotIds.has(id)}
             isActive={id === 'feed' && foodPickerOpen}
             cols={cols}
-            onAction={handleAction}
+            onAction={id => handleAction(id as SupportedPetActionId)}
           />
         ))}
       </div>

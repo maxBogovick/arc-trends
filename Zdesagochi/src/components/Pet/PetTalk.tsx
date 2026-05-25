@@ -1,7 +1,11 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { Pet } from '../../api';
 import type { BehaviorMode } from './usePetBehaviorState';
+import { ExplainabilityLog } from '../../api/explainability';
+import { getProactivePetSuggestion, type ProactivePetSuggestion } from '../../personality/proactiveSuggestions';
+import type { SupportedPetActionId } from '../../personality/petActionIds';
+import { PET_ACTION_META } from '../Actions/petActionControls';
 
 const MESSAGES: Record<string, string[]> = {
   sick:     ['Мне плохо... дай лекарство 🤒', 'Моя голова кружится... 😵'],
@@ -37,8 +41,8 @@ const MOOD_DOT: Partial<Record<string, string>> = {
   content:  '#818CF8',
 };
 
-// Pet is too busy to talk during these modes
-const SILENT_MODES = new Set<BehaviorMode>(['eating', 'playing', 'cleaning', 'medicine', 'sleeping']);
+// Pet is too busy to talk during active animations, but sleep can still surface wake/rest hints.
+const SILENT_MODES = new Set<BehaviorMode>(['eating', 'playing', 'cleaning', 'medicine']);
 
 function pickMessage(pet: Pet): string {
   const pool: string[] = [];
@@ -52,36 +56,82 @@ function pickMessage(pet: Pet): string {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+function loadLatestRecord() {
+  if (typeof window === 'undefined') return null;
+  return new ExplainabilityLog(window.localStorage).select()?.record ?? null;
+}
+
 interface Props {
   pet: Pet;
   mode: BehaviorMode;
+  actionLoading?: string | null;
+  canRunSuggestionAction?: (actionId: SupportedPetActionId) => boolean;
+  onSuggestionAction?: (actionId: SupportedPetActionId) => void | Promise<void>;
 }
 
-export function PetTalk({ pet, mode }: Props) {
-  const [message, setMessage] = useState(() => pickMessage(pet));
+export function PetTalk({
+  pet,
+  mode,
+  actionLoading = null,
+  canRunSuggestionAction,
+  onSuggestionAction,
+}: Props) {
+  const suggestion = useMemo(
+    () => getProactivePetSuggestion({ pet, latestRecord: loadLatestRecord() }),
+    [
+      pet.lastUpdated,
+      pet.mood,
+      pet.isAsleep,
+      pet.emergentState,
+      pet.confusedState,
+      pet.traumaLevel,
+      pet.evolutionReadinessTarget,
+      pet.currentTargetZone,
+      pet.evolutionProposal?.proposedAt,
+      pet.stats.hunger,
+      pet.stats.energy,
+      pet.stats.health,
+      pet.stats.cleanliness,
+      pet.stats.bond,
+    ],
+  );
+  const [message, setMessage] = useState(() => suggestion.message || pickMessage(pet));
+  const [activeSuggestion, setActiveSuggestion] = useState<ProactivePetSuggestion>(suggestion);
+  const cycleIndexRef = useRef(0);
   const [visible, setVisible] = useState(true);
 
   const isSilent = SILENT_MODES.has(mode);
+  const actionId = activeSuggestion.actionId;
+  const canRunAction = Boolean(
+    actionId &&
+    onSuggestionAction &&
+    !actionLoading &&
+    (canRunSuggestionAction?.(actionId) ?? true),
+  );
 
   useEffect(() => {
     const cycle = () => {
       setVisible(false);
       setTimeout(() => {
-        setMessage(pickMessage(pet));
+        const next = getProactivePetSuggestion({ pet, latestRecord: loadLatestRecord() });
+        cycleIndexRef.current += 1;
+        setActiveSuggestion(next);
+        setMessage(cycleIndexRef.current % 3 === 0 && next.source !== 'after_action' ? pickMessage(pet) : next.message || pickMessage(pet));
         setVisible(true);
       }, 500);
     };
     const t = setInterval(cycle, 6000);
-    setMessage(pickMessage(pet));
+    setActiveSuggestion(suggestion);
+    setMessage(suggestion.message || pickMessage(pet));
     setVisible(true);
     return () => clearInterval(t);
-  }, [pet.mood, pet.stats.hunger, pet.stats.bond, pet.stats.cleanliness]);
+  }, [pet, suggestion]);
 
   const bg  = MOOD_BG[pet.mood]  ?? 'rgba(255,255,255,0.95)';
   const dot = MOOD_DOT[pet.mood] ?? '#818CF8';
 
   return (
-    <div className="absolute -top-14 left-1/2 -translate-x-1/2 w-max max-w-[200px] pointer-events-none z-10">
+    <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-max max-w-[240px] pointer-events-none z-10">
       <AnimatePresence>
         {visible && !isSilent && (
           <motion.div
@@ -95,12 +145,35 @@ export function PetTalk({ pet, mode }: Props) {
               border: `1.5px solid ${dot}55`,
               color: '#1E1147',
               boxShadow: `0 4px 16px ${dot}22, 0 1px 4px rgba(0,0,0,0.08)`,
-              whiteSpace: 'nowrap',
+              whiteSpace: 'normal',
             }}
           >
             {/* Mood accent dot */}
             <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: dot, marginRight: 5, verticalAlign: 'middle', boxShadow: `0 0 5px ${dot}88` }} />
             {message}
+            {actionId && canRunAction && (
+              <button
+                type="button"
+                onPointerDown={event => event.stopPropagation()}
+                onClick={event => {
+                  event.stopPropagation();
+                  void onSuggestionAction?.(actionId);
+                }}
+                className="pointer-events-auto ml-2 rounded-full border"
+                title={activeSuggestion.reason}
+                style={{
+                  padding: '2px 7px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: '#065F46',
+                  background: '#ECFDF5',
+                  borderColor: '#6EE7B7',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {PET_ACTION_META[actionId].label}
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

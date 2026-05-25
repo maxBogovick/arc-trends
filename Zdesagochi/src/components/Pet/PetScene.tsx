@@ -17,6 +17,7 @@ import { BehaviorEffects } from './BehaviorEffects';
 import { EvolutionProposalBanner } from '../personality/EvolutionProposalBanner';
 import { ShadowCatharsisProgress } from '../personality/ShadowCatharsisProgress';
 import { usePerformancePolicy } from '../../performance/usePerformancePolicy';
+import type { SupportedPetActionId } from '../../personality/petActionIds';
 
 export const MOOD_LABELS: Record<PetMood, { text: string; emoji: string; color: string }> = {
   ecstatic: { text: 'В восторге!', emoji: '🤩', color: 'text-yellow-600' },
@@ -49,10 +50,27 @@ interface PetBodyProps {
   moodTransitionDuration: number;
   motionEnabled: boolean;
   mouseInRoom?: boolean;
+  actionLoading?: string | null;
+  canRunSuggestionAction?: (actionId: SupportedPetActionId) => boolean;
+  onSuggestionAction?: (actionId: SupportedPetActionId) => void | Promise<void>;
   onPointerDown?: (e: React.PointerEvent) => void;
 }
 
-function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moodTransitionDuration, motionEnabled, mouseInRoom = false, onPointerDown }: PetBodyProps) {
+function PetBody({
+  pet,
+  mode,
+  petX,
+  petY = 0,
+  facingRight,
+  sceneInteraction,
+  moodTransitionDuration,
+  motionEnabled,
+  mouseInRoom = false,
+  actionLoading,
+  canRunSuggestionAction,
+  onSuggestionAction,
+  onPointerDown,
+}: PetBodyProps) {
   const effectiveDarkness = useDarkness();
   const brightness = Math.max(0.05, 1 - effectiveDarkness * 0.88);
   const isSleeping = mode === 'sleeping' || pet.isAsleep;
@@ -98,7 +116,13 @@ function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moo
           }}
           transition={{ duration: isCarried ? 0.3 : 3, repeat: isCarried || !motionEnabled ? 0 : Infinity, ease: 'easeInOut' }}
         />
-        <PetTalk pet={pet} mode={mode} />
+        <PetTalk
+          pet={pet}
+          mode={mode}
+          actionLoading={actionLoading}
+          canRunSuggestionAction={canRunSuggestionAction}
+          onSuggestionAction={onSuggestionAction}
+        />
         {motionEnabled && (
           <BehaviorEffects pet={pet} mode={mode} sceneInteraction={sceneInteraction} facingRight={facingRight} />
         )}
@@ -116,7 +140,15 @@ function PetBody({ pet, mode, petX, petY = 0, facingRight, sceneInteraction, moo
 }
 
 // ── PetScene ──────────────────────────────────────────────────────────────────
-export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
+export function PetScene({
+  actionPanel,
+  canRunSuggestionAction,
+  onSuggestionAction,
+}: {
+  actionPanel?: ReactNode;
+  canRunSuggestionAction?: (actionId: SupportedPetActionId) => boolean;
+  onSuggestionAction?: (actionId: SupportedPetActionId) => void | Promise<void>;
+}) {
   const performancePolicy = usePerformancePolicy();
   const {
     pet,
@@ -396,6 +428,9 @@ export function PetScene({ actionPanel }: { actionPanel?: ReactNode }) {
           moodTransitionDuration={travelDuration}
           motionEnabled={performancePolicy.motionEnabled}
           mouseInRoom={mouseInRoom}
+          actionLoading={actionLoading}
+          canRunSuggestionAction={canRunSuggestionAction}
+          onSuggestionAction={onSuggestionAction}
           onPointerDown={handlePetPointerDown}
         />
 

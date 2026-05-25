@@ -10,9 +10,27 @@ import { MoodGraph } from '../personality/MoodGraph';
 import { PersonalityCard } from '../personality/PersonalityCard';
 import { EvolutionInspector } from '../personality/EvolutionInspector';
 import { CoreMemoriesPanel } from '../personality/CoreMemoriesPanel';
+import {
+  bestFoodForPet,
+  isPetActionDisabled,
+  runSupportedPetAction,
+} from '../Actions/petActionControls';
+import type { SupportedPetActionId } from '../../personality/petActionIds';
 
 export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
-  const { pet, isLoading } = usePetStore();
+  const {
+    pet,
+    isLoading,
+    foods,
+    feedPet,
+    playWithPet,
+    sleepPet,
+    wakePet,
+    bathePet,
+    healPet,
+    bondWithPet,
+    notify,
+  } = usePetStore();
 
   if (isLoading && !pet) {
     return (
@@ -32,6 +50,27 @@ export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
 
   if (!pet) return null;
 
+  const canRunSuggestionAction = (actionId: SupportedPetActionId) => {
+    const food = bestFoodForPet(pet, foods);
+    return !isPetActionDisabled(actionId, pet, food);
+  };
+
+  const handleSuggestionAction = async (actionId: SupportedPetActionId) => {
+    await runSupportedPetAction(actionId, {
+      pet,
+      foods,
+      onPlayGame,
+      feedPet,
+      playWithPet,
+      sleepPet,
+      wakePet,
+      bathePet,
+      healPet,
+      bondWithPet,
+      notify,
+    });
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr_260px] gap-5 items-start">
       {/* Left column */}
@@ -42,7 +81,11 @@ export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
 
       {/* Center — Pet */}
       <div className="flex flex-col items-center gap-4 lg:py-2">
-        <PetScene actionPanel={<ActionPanel onPlayGame={onPlayGame} />} />
+        <PetScene
+          actionPanel={<ActionPanel onPlayGame={onPlayGame} />}
+          canRunSuggestionAction={canRunSuggestionAction}
+          onSuggestionAction={handleSuggestionAction}
+        />
         <EmergentStateBanner />
         <div className="w-full" style={{ maxWidth: '520px' }}>
           <CoreMemoriesPanel />
