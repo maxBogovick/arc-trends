@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { usePetStore } from '../../store/petStore';
-import type { Pet } from '../../api';
+import type { InventoryItem, Pet, Room, ShopItem } from '../../api';
 import { useDarkness } from './RoomScene';
 import { PetDisplay } from './PetDisplay';
 import { PetTalk } from './PetTalk';
@@ -18,6 +18,8 @@ import { EvolutionProposalBanner } from '../personality/EvolutionProposalBanner'
 import { ShadowCatharsisProgress } from '../personality/ShadowCatharsisProgress';
 import { usePerformancePolicy } from '../../performance/usePerformancePolicy';
 import type { SupportedPetActionId } from '../../personality/petActionIds';
+import type { ActivityTarget } from '../../personality/timeOfDayActivities';
+import type { ProactivePetSuggestion } from '../../personality/proactiveSuggestions';
 
 export const MOOD_LABELS: Record<PetMood, { text: string; emoji: string; color: string }> = {
   ecstatic: { text: 'В восторге!', emoji: '🤩', color: 'text-yellow-600' },
@@ -51,8 +53,12 @@ interface PetBodyProps {
   motionEnabled: boolean;
   mouseInRoom?: boolean;
   actionLoading?: string | null;
+  inventory?: InventoryItem[];
+  rooms?: Room[];
+  shopItems?: ShopItem[];
   canRunSuggestionAction?: (actionId: SupportedPetActionId) => boolean;
   onSuggestionAction?: (actionId: SupportedPetActionId) => void | Promise<void>;
+  onSuggestionTarget?: (target: ActivityTarget, suggestion: ProactivePetSuggestion) => void | Promise<void>;
   onPointerDown?: (e: React.PointerEvent) => void;
 }
 
@@ -67,8 +73,12 @@ function PetBody({
   motionEnabled,
   mouseInRoom = false,
   actionLoading,
+  inventory = [],
+  rooms = [],
+  shopItems = [],
   canRunSuggestionAction,
   onSuggestionAction,
+  onSuggestionTarget,
   onPointerDown,
 }: PetBodyProps) {
   const effectiveDarkness = useDarkness();
@@ -120,8 +130,12 @@ function PetBody({
           pet={pet}
           mode={mode}
           actionLoading={actionLoading}
+          inventory={inventory}
+          rooms={rooms}
+          shopItems={shopItems}
           canRunSuggestionAction={canRunSuggestionAction}
           onSuggestionAction={onSuggestionAction}
+          onSuggestionTarget={onSuggestionTarget}
         />
         {motionEnabled && (
           <BehaviorEffects pet={pet} mode={mode} sceneInteraction={sceneInteraction} facingRight={facingRight} />
@@ -144,15 +158,20 @@ export function PetScene({
   actionPanel,
   canRunSuggestionAction,
   onSuggestionAction,
+  onSuggestionTarget,
 }: {
   actionPanel?: ReactNode;
   canRunSuggestionAction?: (actionId: SupportedPetActionId) => boolean;
   onSuggestionAction?: (actionId: SupportedPetActionId) => void | Promise<void>;
+  onSuggestionTarget?: (target: ActivityTarget, suggestion: ProactivePetSuggestion) => void | Promise<void>;
 }) {
   const performancePolicy = usePerformancePolicy();
   const {
     pet,
     actionLoading,
+    inventory,
+    shopItems,
+    rooms,
     placedFurniture,
     updateRoomFurniture,
     equippedTailId,
@@ -429,8 +448,12 @@ export function PetScene({
           motionEnabled={performancePolicy.motionEnabled}
           mouseInRoom={mouseInRoom}
           actionLoading={actionLoading}
+          inventory={inventory}
+          rooms={rooms}
+          shopItems={shopItems}
           canRunSuggestionAction={canRunSuggestionAction}
           onSuggestionAction={onSuggestionAction}
+          onSuggestionTarget={onSuggestionTarget}
           onPointerDown={handlePetPointerDown}
         />
 

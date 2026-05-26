@@ -1,16 +1,30 @@
 import type { ExplainabilityRecord } from '../api/explainability';
-import type { Pet } from '../api/types';
+import type { InventoryItem, Pet, Room, ShopItem } from '../api/types';
 import { getPersonality } from '@zdesagochi/personality-pet-preset';
 import { getRecommendedPetActions, type ActionRecommendation } from './guidanceSelectors';
 import { isSupportedPetActionId, type SupportedPetActionId } from './petActionIds';
+import {
+  getTimeOfDayActivitySuggestion,
+  type ActivityTarget,
+  type DismissedActivityState,
+  type PendingActivityState,
+  type QuietHoursConfig,
+  type TimeOfDaySuggestionDebug,
+  type TimeOfDayTuningConfig,
+} from './timeOfDayActivities';
+import type { TimeOfDayActivityConfigPatch } from './timeOfDayActivityConfig';
 
 export interface ProactivePetSuggestion {
   id: string;
   message: string;
   actionId?: SupportedPetActionId;
+  activityId?: string;
+  target?: ActivityTarget;
+  ctaLabel?: string;
+  debug?: TimeOfDaySuggestionDebug;
   reason: string;
   priority: number;
-  source: 'need' | 'personality' | 'evolution' | 'recovery' | 'after_action' | 'mood';
+  source: 'need' | 'personality' | 'evolution' | 'recovery' | 'after_action' | 'time_of_day' | 'mood';
   tone: 'urgent' | 'gentle' | 'playful' | 'proud' | 'neutral';
 }
 
@@ -18,6 +32,20 @@ export interface ProactiveSuggestionInput {
   pet: Pet;
   latestRecord?: ExplainabilityRecord | null;
   recommendations?: ActionRecommendation[];
+  now?: Date;
+  inventory?: InventoryItem[];
+  rooms?: Room[];
+  shopItems?: ShopItem[];
+  dismissedActivities?: DismissedActivityState[];
+  pendingActivities?: PendingActivityState[];
+  scheduleOffsetHours?: number;
+  lastRoutineSuggestionAt?: string | null;
+  tuningConfig?: TimeOfDayTuningConfig;
+  quietHours?: QuietHoursConfig;
+  includeDebug?: boolean;
+  abCohort?: string;
+  copyVariantSeed?: string;
+  configPatch?: TimeOfDayActivityConfigPatch;
 }
 
 const ACTION_REQUESTS: Record<SupportedPetActionId, string> = {
@@ -63,13 +91,69 @@ const PERSONALITY_TONE: Partial<Record<string, Partial<Record<SupportedPetAction
 };
 
 export function getProactivePetSuggestion(input: ProactiveSuggestionInput): ProactivePetSuggestion {
-  const afterAction = getAfterActionSuggestion(input.pet, input.latestRecord);
+  const critical = getCriticalStateSuggestion(input.pet);
+  if (critical) return critical;
+
+  const blockedAction = getBlockedActionSuggestion(input.pet, input.latestRecord);
+  if (blockedAction) return blockedAction;
+
+  const afterAction = getImportantAfterActionSuggestion(input.pet, input.latestRecord);
   if (afterAction) return afterAction;
 
   const stateSuggestion = getStateSuggestion(input.pet);
   if (stateSuggestion) return stateSuggestion;
 
   const recommendations = input.recommendations ?? getRecommendedPetActions(input.pet);
+  const evolutionRecommendation = recommendations.find(
+    (item): item is ActionRecommendation & { actionId: SupportedPetActionId } =>
+      item.evidence === 'assistant_guidance' && isSupportedPetActionId(item.actionId),
+  );
+  if (evolutionRecommendation) {
+    const actionId = evolutionRecommendation.actionId;
+    return {
+      id: `recommendation:${actionId}`,
+      message: phraseForAction(input.pet, actionId),
+      actionId,
+      reason: evolutionRecommendation.reason,
+      priority: evolutionRecommendation.score,
+      source: 'evolution',
+      tone: toneForAction(actionId),
+    };
+  }
+
+  const timeSuggestion = getTimeOfDayActivitySuggestion({
+    pet: input.pet,
+    now: input.now,
+    inventory: input.inventory,
+    rooms: input.rooms,
+    shopItems: input.shopItems,
+    dismissedActivities: input.dismissedActivities,
+    pendingActivities: input.pendingActivities,
+    scheduleOffsetHours: input.scheduleOffsetHours,
+    lastRoutineSuggestionAt: input.lastRoutineSuggestionAt,
+    tuningConfig: input.tuningConfig,
+    quietHours: input.quietHours,
+    includeDebug: input.includeDebug,
+    abCohort: input.abCohort,
+    copyVariantSeed: input.copyVariantSeed,
+    configPatch: input.configPatch,
+  });
+  if (timeSuggestion.score > 1 || timeSuggestion.target) {
+    return {
+      id: timeSuggestion.id,
+      activityId: timeSuggestion.activityId,
+      message: timeSuggestion.message,
+      actionId: timeSuggestion.actionId,
+      target: timeSuggestion.target,
+      ctaLabel: timeSuggestion.ctaLabel,
+      debug: timeSuggestion.debug,
+      reason: timeSuggestion.reason,
+      priority: timeSuggestion.score,
+      source: 'time_of_day',
+      tone: timeSuggestion.actionId?.startsWith('play') ? 'playful' : 'gentle',
+    };
+  }
+
   const recommendation = recommendations.find(
     (item): item is ActionRecommendation & { actionId: SupportedPetActionId } =>
       isSupportedPetActionId(item.actionId),
@@ -101,10 +185,9 @@ export function getProactivePetSuggestion(input: ProactiveSuggestionInput): Proa
   };
 }
 
-function getAfterActionSuggestion(pet: Pet, record?: ExplainabilityRecord | null): ProactivePetSuggestion | null {
+function getBlockedActionSuggestion(_pet: Pet, record?: ExplainabilityRecord | null): ProactivePetSuggestion | null {
   if (!record || record.command.type === 'sync') return null;
-  const ageMs = Math.abs(new Date(pet.lastUpdated).getTime() - new Date(record.recordedAt).getTime());
-  if (!Number.isFinite(ageMs) || ageMs > 30_000) return null;
+  if (!isFreshRecord(record)) return null;
 
   if (record.blockedAction) {
     return {
@@ -116,6 +199,13 @@ function getAfterActionSuggestion(pet: Pet, record?: ExplainabilityRecord | null
       tone: 'gentle',
     };
   }
+
+  return null;
+}
+
+function getImportantAfterActionSuggestion(pet: Pet, record?: ExplainabilityRecord | null): ProactivePetSuggestion | null {
+  if (!record || record.command.type === 'sync') return null;
+  if (!isFreshRecord(record, pet)) return null;
 
   const proposal = record.events.find(event => event.type === 'evolution_proposed');
   if (proposal?.type === 'evolution_proposed') {
@@ -167,19 +257,7 @@ function getAfterActionSuggestion(pet: Pet, record?: ExplainabilityRecord | null
   return null;
 }
 
-function getStateSuggestion(pet: Pet): ProactivePetSuggestion | null {
-  if (pet.isAsleep) {
-    return {
-      id: 'state:sleeping',
-      message: pet.stats.energy >= 85 ? 'Я выспался, разбуди меня мягко.' : 'Я еще сплю, дай мне восстановиться.',
-      actionId: pet.stats.energy >= 85 ? 'sleep' : undefined,
-      reason: 'Питомец спит.',
-      priority: pet.stats.energy >= 85 ? 100 : 70,
-      source: 'need',
-      tone: 'gentle',
-    };
-  }
-
+function getCriticalStateSuggestion(pet: Pet): ProactivePetSuggestion | null {
   if (pet.confusedState) {
     return {
       id: 'state:confused',
@@ -211,6 +289,23 @@ function getStateSuggestion(pet: Pet): ProactivePetSuggestion | null {
   if (cleanliness < 25) return need('need:cleanliness', 'Мне некомфортно грязным. Помоемся?', 'bathe', 'Чистота критически низкая.', 90, 'gentle');
   if (bond < 25) return need('need:bond', 'Мне нужно немного твоего внимания.', 'bond', 'Связь критически низкая.', 88, 'gentle');
 
+  return null;
+}
+
+function getStateSuggestion(pet: Pet): ProactivePetSuggestion | null {
+  if (pet.isAsleep) {
+    return {
+      id: 'state:sleeping',
+      message: pet.stats.energy >= 85 ? 'Я выспался, разбуди меня мягко.' : 'Я еще сплю, дай мне восстановиться.',
+      actionId: pet.stats.energy >= 85 ? 'sleep' : undefined,
+      target: pet.stats.energy >= 85 ? { kind: 'action', actionId: 'sleep' } : undefined,
+      reason: 'Питомец спит.',
+      priority: pet.stats.energy >= 85 ? 100 : 70,
+      source: 'need',
+      tone: 'gentle',
+    };
+  }
+
   if (pet.evolutionProposal) {
     const target = getPersonality(pet.evolutionProposal.targetPersonalityId);
     return {
@@ -224,6 +319,12 @@ function getStateSuggestion(pet: Pet): ProactivePetSuggestion | null {
   }
 
   return null;
+}
+
+function isFreshRecord(record: ExplainabilityRecord, pet?: Pet): boolean {
+  const reference = pet?.lastUpdated ?? record.recordedAt;
+  const ageMs = Math.abs(new Date(reference).getTime() - new Date(record.recordedAt).getTime());
+  return Number.isFinite(ageMs) && ageMs <= 30_000;
 }
 
 function need(

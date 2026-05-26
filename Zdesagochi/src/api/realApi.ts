@@ -6,7 +6,8 @@
 import type {
   ApiService, Pet, FoodItem, PlayResult, ShopItem, InventoryItem, BuyResult,
   Achievement, ClaimResult, DailyQuest, QuestClaimResult, Room, LeaderboardEntry, PetEvent,
-  NewLifeResult, PersonalityTelemetrySample,
+  NewLifeResult, PersonalityTelemetrySample, SignedProactiveConfig, ProactiveAnalyticsRecord,
+  ProactiveAuditRecord,
 } from './types';
 
 interface PetActionResult {
@@ -212,4 +213,19 @@ export class RealApiService implements ApiService {
   // Рейтинг / Еда
   getLeaderboard()          { return this.req<LeaderboardEntry[]>('/api/leaderboard'); }
   getFoods()                { return this.req<FoodItem[]>('/api/foods'); }
+
+  // Proactive routine config / analytics
+  getProactiveConfig()      { return this.req<SignedProactiveConfig | null>('/api/proactive/config'); }
+  publishProactiveConfig(config: unknown) {
+    return this.post<SignedProactiveConfig>('/api/admin/proactive/config', { config });
+  }
+  ingestProactiveAnalytics(payload: unknown) {
+    return this.post<{ accepted: boolean; id: string }>('/api/proactive/analytics', { payload });
+  }
+  getProactiveAnalytics(limit = 100) {
+    return this.req<ProactiveAnalyticsRecord[]>(`/api/admin/proactive/analytics?limit=${encodeURIComponent(limit)}`);
+  }
+  getProactiveAudit(limit = 100) {
+    return this.req<ProactiveAuditRecord[]>(`/api/admin/proactive/audit?limit=${encodeURIComponent(limit)}`);
+  }
 }

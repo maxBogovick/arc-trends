@@ -7,7 +7,8 @@
 import type {
   Account, ApiService, Pet, FoodItem, PlayResult, ShopItem, InventoryItem, BuyResult,
   Achievement, ClaimResult, DailyQuest, QuestClaimResult, Room, LeaderboardEntry,
-  PetEvent, PetMood, PetStage, NewLifeResult,
+  PetEvent, PetMood, PetStage, NewLifeResult, SignedProactiveConfig,
+  ProactiveAnalyticsRecord, ProactiveAuditRecord,
 } from './types';
 import type {
   BehavioralFlag, BehavioralCounters, MoodSnapshot,
@@ -385,6 +386,9 @@ const S = {
   roomBuyCount: 0,
   healthySyncs: 0,
   memoryPerfect: 0,
+  proactiveConfig: null as SignedProactiveConfig | null,
+  proactiveAnalytics: [] as ProactiveAnalyticsRecord[],
+  proactiveAudit: [] as ProactiveAuditRecord[],
 };
 
 let eventCounter = 0;
@@ -994,6 +998,54 @@ export class MockApiService implements ApiService {
 
   async getLeaderboard() { await delay(rand(200, 380)); return [...LEADERBOARD]; }
   async getFoods() { await delay(rand(100, 200)); return [...FOODS]; }
+
+  async getProactiveConfig(): Promise<SignedProactiveConfig | null> {
+    await delay(rand(80, 160));
+    return S.proactiveConfig ? { ...S.proactiveConfig } : null;
+  }
+
+  async publishProactiveConfig(config: unknown): Promise<SignedProactiveConfig> {
+    await delay(rand(120, 220));
+    const value = config as { version?: string };
+    if (!value.version) throw new Error('config.version is required');
+    const signed = {
+      ...(config as Record<string, unknown>),
+      version: value.version,
+      signature: `mock-signature:${value.version}`,
+      created_at: mockNow().toISOString(),
+    };
+    S.proactiveConfig = signed;
+    S.proactiveAudit.unshift({
+      id: `mock-audit-${S.proactiveAudit.length + 1}`,
+      actor_user_id: 'mock-admin',
+      action: 'proactive_config.publish',
+      details: { version: value.version },
+      created_at: signed.created_at,
+    });
+    return { ...signed };
+  }
+
+  async ingestProactiveAnalytics(payload: unknown): Promise<{ accepted: boolean; id: string }> {
+    await delay(rand(80, 150));
+    const id = `mock-proactive-analytics-${S.proactiveAnalytics.length + 1}`;
+    S.proactiveAnalytics.unshift({
+      id,
+      user_id: 'mock-user',
+      payload,
+      created_at: mockNow().toISOString(),
+    });
+    return { accepted: true, id };
+  }
+
+  async getProactiveAnalytics(limit = 100): Promise<ProactiveAnalyticsRecord[]> {
+    await delay(rand(80, 150));
+    return S.proactiveAnalytics.slice(0, limit).map(row => ({ ...row }));
+  }
+
+  async getProactiveAudit(limit = 100): Promise<ProactiveAuditRecord[]> {
+    await delay(rand(80, 150));
+    return S.proactiveAudit.slice(0, limit).map(row => ({ ...row }));
+  }
 
   // ─── Внутренние утилиты ────────────────────────────────────────────────────
 

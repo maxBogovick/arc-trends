@@ -20,7 +20,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     config::Config,
-    handlers::{auth, economy, health, pet, progress, rooms, sse, sync},
+    handlers::{auth, economy, health, pet, progress, proactive, rooms, sse, sync},
     metrics::metrics_handler,
     middleware::rate_limit::rate_limit_middleware,
     openapi::ApiDoc,
@@ -81,12 +81,20 @@ pub fn build_router(state: AppState, prometheus_handle: PrometheusHandle) -> Rou
         .route("/rooms/equip", post(rooms::equip_room))
         .route("/leaderboard", get(rooms::get_leaderboard));
 
+    let proactive_routes = Router::new()
+        .route("/proactive/config", get(proactive::get_config))
+        .route("/proactive/analytics", post(proactive::ingest_analytics))
+        .route("/admin/proactive/config", post(proactive::publish_config))
+        .route("/admin/proactive/analytics", get(proactive::get_analytics))
+        .route("/admin/proactive/audit", get(proactive::get_audit));
+
     let api_router = Router::new()
         .nest("/auth", auth_routes)
         .nest("/pet", pet_routes)
         .merge(economy_routes)
         .merge(progress_routes)
         .merge(room_routes)
+        .merge(proactive_routes)
         .route("/sse/pet", get(sse::pet_stream));
 
     use utoipa::OpenApi as _;

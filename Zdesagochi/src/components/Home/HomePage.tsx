@@ -16,12 +16,17 @@ import {
   runSupportedPetAction,
 } from '../Actions/petActionControls';
 import type { SupportedPetActionId } from '../../personality/petActionIds';
+import type { ActivityTarget } from '../../personality/timeOfDayActivities';
+import type { ProactivePetSuggestion } from '../../personality/proactiveSuggestions';
+import { recordActivityCompletion } from '../../personality/proactiveSuggestionState';
 
 export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
   const {
     pet,
     isLoading,
     foods,
+    inventory,
+    rooms,
     feedPet,
     playWithPet,
     sleepPet,
@@ -29,6 +34,9 @@ export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
     bathePet,
     healPet,
     bondWithPet,
+    useInventoryItem,
+    equipRoom,
+    setActiveTab,
     notify,
   } = usePetStore();
 
@@ -69,6 +77,55 @@ export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
       bondWithPet,
       notify,
     });
+    if (typeof window !== 'undefined') {
+      recordActivityCompletion(window.localStorage, { kind: 'action', actionId }, new Date());
+    }
+  };
+
+  const handleSuggestionTarget = async (target: ActivityTarget, _suggestion: ProactivePetSuggestion) => {
+    switch (target.kind) {
+      case 'inventory_item': {
+        if (target.itemId && inventory.some(entry => entry.itemId === target.itemId && entry.quantity > 0)) {
+          await useInventoryItem(target.itemId);
+          if (typeof window !== 'undefined') {
+            recordActivityCompletion(window.localStorage, { kind: 'inventory_item', itemId: target.itemId }, new Date());
+          }
+          return;
+        }
+        setActiveTab('inventory');
+        break;
+      }
+      case 'room': {
+        const room = target.roomId ? rooms.find(item => item.id === target.roomId && item.unlocked) : null;
+        if (room) {
+          await equipRoom(room.id);
+          if (typeof window !== 'undefined') {
+            recordActivityCompletion(window.localStorage, { kind: 'room_equipped', roomId: room.id }, new Date());
+          }
+          return;
+        }
+        setActiveTab('room');
+        break;
+      }
+      case 'deep_link': {
+        if (target.destination === 'inventory') setActiveTab('inventory');
+        if (target.destination === 'shop') setActiveTab('shop');
+        if (target.destination === 'room') setActiveTab('room');
+        if (target.destination === 'assistant') {
+          setActiveTab('personality_assistant');
+          if (typeof window !== 'undefined') {
+            recordActivityCompletion(window.localStorage, { kind: 'assistant_viewed' }, new Date());
+          }
+        }
+        break;
+      }
+      case 'future_command':
+        notify('Эта активность ещё готовится', 'info');
+        break;
+      case 'action':
+        await handleSuggestionAction(target.actionId);
+        break;
+    }
   };
 
   return (
@@ -85,6 +142,7 @@ export function HomePage({ onPlayGame }: { onPlayGame: () => void }) {
           actionPanel={<ActionPanel onPlayGame={onPlayGame} />}
           canRunSuggestionAction={canRunSuggestionAction}
           onSuggestionAction={handleSuggestionAction}
+          onSuggestionTarget={handleSuggestionTarget}
         />
         <EmergentStateBanner />
         <div className="w-full" style={{ maxWidth: '520px' }}>

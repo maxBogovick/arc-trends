@@ -2,6 +2,7 @@ export type {
   ApiService, Pet, FoodItem, PlayResult, ShopItem, InventoryItem, BuyResult,
   Achievement, ClaimResult, DailyQuest, QuestClaimResult, Room, LeaderboardEntry,
   PetEvent, PetStats, PetMood, PetStage, ItemType, ItemRarity, Account, MemoryGuardian, NewLifeResult,
+  SignedProactiveConfig, ProactiveAuditRecord, ProactiveAnalyticsRecord,
 } from './types';
 
 export {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import type { Account, Pet, PetStage, PetMood } from '../src/api/types';
+import type { Account, InventoryItem, Pet, PetStage, PetMood, Room } from '../src/api/types';
 import {
   MockApiService,
   advanceMockTime,
@@ -18,6 +18,36 @@ import { resolvePerformancePolicy } from '../src/performance/performancePolicy';
 import { buildPersonalityAssistantReport } from '../src/personality/personalityAssistant';
 import { getRecommendedPetActions } from '../src/personality/guidanceSelectors';
 import { getProactivePetSuggestion } from '../src/personality/proactiveSuggestions';
+import {
+  completePendingActivities,
+  getTimeOfDayActivityDebugReport,
+  createPendingActivity,
+  dismissActivity,
+  getDayPeriod,
+  getTimeOfDayActivitySuggestion,
+  isQuietHoursActive,
+  shouldResetScheduleOffset,
+} from '../src/personality/timeOfDayActivities';
+import {
+  computeLearnedScheduleOffset,
+  exportActivityAnalytics,
+  fetchRemoteProactiveConfig,
+  getOrCreateAbCohort,
+  loadActivityAnalytics,
+  loadEffectiveProactiveRuntimeSettings,
+  loadProactiveRuntimeSettings,
+  recordDailyAppOpen,
+  recordSuggestionAnalytics,
+  saveRemoteProactiveConfig,
+  saveProactiveRuntimeSettings,
+  signRemoteProactiveConfig,
+  verifyRemoteProactiveConfigSignature,
+} from '../src/personality/proactiveSuggestionState';
+import {
+  DEFAULT_TIME_OF_DAY_ACTIVITY_CONFIG,
+  resolveTimeOfDayActivityConfig,
+} from '../src/personality/timeOfDayActivityConfig';
+import { TIME_OF_DAY_ACTIVITY_CONFIG_PATCH_SCHEMA } from '../src/personality/timeOfDayActivityConfigSchema';
 import { fromPersonalityState, toPersonalityState } from '../src/api/personalityPetAdapter';
 import {
   deleteOfflinePetSave,
@@ -212,6 +242,41 @@ function makeMemoryStorage(initial: Record<string, string> = {}): OfflineKeyValu
     removeItem(key: string) {
       values.delete(key);
     },
+  };
+}
+
+function localDate(hour: number, minute = 0): Date {
+  return new Date(2026, 4, 4, hour, minute, 0, 0);
+}
+
+function makeInventoryItem(id: string, type: InventoryItem['item']['type']): InventoryItem {
+  return {
+    itemId: id,
+    quantity: 1,
+    item: {
+      id,
+      type,
+      name: id,
+      emoji: '•',
+      description: '',
+      price: 1,
+      rarity: 'common',
+      effect: {},
+    },
+  };
+}
+
+function makeRoom(id: string, unlocked = true): Room {
+  return {
+    id,
+    name: id,
+    emoji: '•',
+    description: '',
+    price: 1,
+    unlocked,
+    gradient: '',
+    floorGradient: '',
+    decorations: [],
   };
 }
 
@@ -2105,6 +2170,350 @@ test('proactive pet suggestion explains recent behavior changes', async () => {
 
   assert.equal(suggestion.source, 'after_action');
   assert.equal(suggestion.priority >= 80, true);
+});
+
+test('time-of-day periods support adaptive offset and timezone reset guard', () => {
+  assert.equal(getDayPeriod(localDate(7, 30)), 'early_morning');
+  assert.equal(getDayPeriod(localDate(8, 30)), 'morning');
+  assert.equal(getDayPeriod(localDate(8, 30), 1), 'early_morning');
+  assert.equal(getDayPeriod(localDate(23, 0)), 'night');
+  assert.equal(shouldResetScheduleOffset(-120, 180), true);
+  assert.equal(shouldResetScheduleOffset(-120, 0), false);
+});
+
+test('time-of-day behavior is driven by centralized activity config', () => {
+  assert.equal(DEFAULT_TIME_OF_DAY_ACTIVITY_CONFIG.periods.length, 5);
+  assert.equal(DEFAULT_TIME_OF_DAY_ACTIVITY_CONFIG.activityRules.length >= 20, true);
+  assert.equal(DEFAULT_TIME_OF_DAY_ACTIVITY_CONFIG.activityRules.some(rule => rule.activityId === 'breakfast'), true);
+  assert.equal(DEFAULT_TIME_OF_DAY_ACTIVITY_CONFIG.scoring.boundaryLookaheadMinutes, 15);
+  assert.equal(DEFAULT_TIME_OF_DAY_ACTIVITY_CONFIG.fallbacks.night, 'Тише. Я буду рядом.');
+});
+
+test('time-of-day config patch can override periods fallbacks scoring and rules declaratively', () => {
+  const patched = resolveTimeOfDayActivityConfig({
+    fallbackOverrides: { morning: 'Тестовый fallback.' },
+    scoring: { boundaryLookaheadMinutes: 30 },
+    activityRuleOverrides: { breakfast: { baseScore: 999 } },
+    disabledActivityIds: ['shop_explore'],
+  });
+
+  assert.equal(patched.fallbacks.morning, 'Тестовый fallback.');
+  assert.equal(patched.scoring.boundaryLookaheadMinutes, 30);
+  assert.equal(patched.activityRules.find(rule => rule.activityId === 'breakfast')?.baseScore, 999);
+  assert.equal(patched.activityRules.some(rule => rule.activityId === 'shop_explore'), false);
+});
+
+test('time-of-day config patch schema documents externally editable fields', () => {
+  assert.equal(TIME_OF_DAY_ACTIVITY_CONFIG_PATCH_SCHEMA.title, 'TimeOfDayActivityConfigPatch');
+  assert.equal(Boolean(TIME_OF_DAY_ACTIVITY_CONFIG_PATCH_SCHEMA.properties.activityRules), true);
+  assert.equal(Boolean(TIME_OF_DAY_ACTIVITY_CONFIG_PATCH_SCHEMA.properties.activityRuleOverrides), true);
+  assert.equal(Boolean(TIME_OF_DAY_ACTIVITY_CONFIG_PATCH_SCHEMA.properties.scoring), true);
+  assert.equal(Boolean(TIME_OF_DAY_ACTIVITY_CONFIG_PATCH_SCHEMA.properties.defaultQuietHours), true);
+});
+
+await testAsync('proactive pet suggestion keeps critical needs above after-action feedback and routines', async () => {
+  const result = await applyPersonalityCommand(makePet({
+    formationComplete: true,
+    lastUpdated: '2026-05-04T09:00:00.000Z',
+  }), {
+    type: 'bond',
+    at: '2026-05-04T09:00:00.000Z',
+    commandId: 'cmd-critical-priority-bond',
+  }, {
+    currentSync: 10,
+  });
+  const record = createExplainabilityRecord(result, '2026-05-04T09:00:00.000Z');
+  const criticalPet = makePet({
+    stats: { hunger: 10, happiness: 82, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    lastUpdated: '2026-05-04T09:00:00.000Z',
+  });
+
+  const suggestion = getProactivePetSuggestion({
+    pet: criticalPet,
+    latestRecord: record,
+    now: localDate(9),
+  });
+
+  assert.equal(suggestion.source, 'need');
+  assert.equal(suggestion.actionId, 'feed');
+  assert.equal(suggestion.tone, 'urgent');
+});
+
+test('time-of-day suggestions treat breakfast as preventive morning care', () => {
+  const suggestion = getTimeOfDayActivitySuggestion({
+    pet: makePet({
+      personality: 'foodie',
+      stats: { hunger: 70, happiness: 82, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    }),
+    now: localDate(9),
+  });
+
+  assert.equal(suggestion.activityId, 'breakfast');
+  assert.equal(suggestion.actionId, 'feed');
+  assert.equal(suggestion.period, 'morning');
+});
+
+test('time-of-day scoring blocks unavailable inventory targets with availability multipliers', () => {
+  const withoutItem = getTimeOfDayActivitySuggestion({
+    pet: makePet({ personality: 'anxious' }),
+    now: localDate(20),
+    inventory: [],
+  });
+  const withItem = getTimeOfDayActivitySuggestion({
+    pet: makePet({ personality: 'anxious' }),
+    now: localDate(20),
+    inventory: [makeInventoryItem('music_box', 'decoration')],
+  });
+
+  assert.notEqual(withoutItem.activityId, 'music_break');
+  assert.equal(withItem.activityId, 'music_break');
+  assert.equal(withItem.target?.kind, 'inventory_item');
+});
+
+test('time-of-day night activity exceptions stay limited to feral and chaotic personalities', () => {
+  const boldNight = getTimeOfDayActivitySuggestion({
+    pet: makePet({ personality: 'bold', stats: { hunger: 80, happiness: 80, energy: 95, health: 80, cleanliness: 80, bond: 80 } }),
+    now: localDate(22),
+    rooms: [makeRoom('forest')],
+  });
+  const feralNight = getTimeOfDayActivitySuggestion({
+    pet: makePet({ personality: 'feral', stats: { hunger: 80, happiness: 80, energy: 95, health: 80, cleanliness: 80, bond: 80 } }),
+    now: localDate(22),
+    rooms: [makeRoom('forest')],
+  });
+
+  assert.notEqual(boldNight.actionId, 'play');
+  assert.equal(feralNight.activityId, 'night_patrol');
+  assert.equal(feralNight.target?.kind, 'room');
+});
+
+test('time-of-day dismissal cooldown suppresses the dismissed activity', () => {
+  const pet = makePet({
+    personality: 'foodie',
+    stats: { hunger: 70, happiness: 82, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  });
+  const now = localDate(9);
+  const first = getTimeOfDayActivitySuggestion({ pet, now });
+  const dismissedActivities = dismissActivity(first.activityId, now);
+  const second = getTimeOfDayActivitySuggestion({
+    pet,
+    now: localDate(9, 1),
+    dismissedActivities,
+  });
+
+  assert.equal(first.activityId, 'breakfast');
+  assert.notEqual(second.activityId, 'breakfast');
+});
+
+test('time-of-day deep-link pending state completes only after matching follow-up action', () => {
+  const now = localDate(14);
+  const pending = createPendingActivity({
+    activityId: 'toy_rotation',
+    target: { kind: 'inventory_item', itemType: 'toy' },
+  }, now);
+
+  assert.notEqual(pending, null);
+
+  const mismatch = completePendingActivities([pending!], { kind: 'inventory_item', itemType: 'food' }, localDate(14, 1));
+  assert.deepEqual(mismatch.completedActivityIds, []);
+  assert.equal(mismatch.pending.length, 1);
+
+  const completed = completePendingActivities(mismatch.pending, { kind: 'inventory_item', itemType: 'toy' }, localDate(14, 1));
+  assert.deepEqual(completed.completedActivityIds, ['toy_rotation']);
+  assert.equal(completed.pending.length, 0);
+});
+
+test('time-of-day boundary guard uses next period near hard boundary', () => {
+  const suggestion = getTimeOfDayActivitySuggestion({
+    pet: makePet({
+      personality: 'bold',
+      stats: { hunger: 82, happiness: 80, energy: 95, health: 80, cleanliness: 80, bond: 80 },
+    }),
+    now: localDate(11, 50),
+  });
+
+  assert.equal(suggestion.period, 'day');
+  assert.notEqual(suggestion.activityId, 'breakfast');
+});
+
+test('proactive schedule learning derives a clamped offset from first daily opens', () => {
+  const samples = [
+    { dateKey: '2026-05-01', firstOpenMinute: 10 * 60, timezoneOffsetMinutes: -120 },
+    { dateKey: '2026-05-02', firstOpenMinute: 10 * 60 + 30, timezoneOffsetMinutes: -120 },
+    { dateKey: '2026-05-03', firstOpenMinute: 11 * 60, timezoneOffsetMinutes: -120 },
+  ];
+
+  assert.equal(computeLearnedScheduleOffset(samples), 2);
+  assert.equal(computeLearnedScheduleOffset([
+    { dateKey: '2026-05-01', firstOpenMinute: 3 * 60, timezoneOffsetMinutes: -120 },
+    { dateKey: '2026-05-02', firstOpenMinute: 4 * 60, timezoneOffsetMinutes: -120 },
+  ]), -2);
+});
+
+test('proactive schedule learning records one sample per day and resets after timezone travel', () => {
+  const storage = makeMemoryStorage();
+  const first = recordDailyAppOpen(storage, new Date(2026, 4, 1, 10, 0));
+  const sameDay = recordDailyAppOpen(storage, new Date(2026, 4, 1, 12, 0));
+
+  assert.equal(first.samples.length, 1);
+  assert.equal(sameDay.samples.length, 1);
+
+  const originalOffset = Date.prototype.getTimezoneOffset;
+  try {
+    Date.prototype.getTimezoneOffset = () => originalOffset.call(new Date()) + 5 * 60;
+    const traveled = recordDailyAppOpen(storage, new Date(2026, 4, 2, 10, 0));
+    assert.equal(traveled.samples.length, 1);
+    assert.equal(traveled.learnedOffsetHours, 0);
+  } finally {
+    Date.prototype.getTimezoneOffset = originalOffset;
+  }
+});
+
+test('quiet hours suppress routine suggestions without changing critical priority contract', () => {
+  const quiet = { enabled: true, startHour: 22, endHour: 7 };
+  assert.equal(isQuietHoursActive(localDate(23), quiet), true);
+  assert.equal(isQuietHoursActive(localDate(12), quiet), false);
+
+  const suggestion = getTimeOfDayActivitySuggestion({
+    pet: makePet({ personality: 'feral', stats: { hunger: 80, happiness: 80, energy: 95, health: 80, cleanliness: 80, bond: 80 } }),
+    now: localDate(23),
+    rooms: [makeRoom('forest')],
+    quietHours: quiet,
+  });
+
+  assert.equal(suggestion.activityId, 'night:fallback');
+  assert.equal(suggestion.target, undefined);
+});
+
+test('time-of-day tuning can disable or boost activities and exposes debug candidates', () => {
+  const pet = makePet({
+    personality: 'foodie',
+    stats: { hunger: 70, happiness: 82, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+  });
+  const disabled = getTimeOfDayActivitySuggestion({
+    pet,
+    now: localDate(9),
+    tuningConfig: { disabledActivityIds: ['breakfast'] },
+  });
+  const boosted = getTimeOfDayActivitySuggestion({
+    pet: makePet({ personality: 'playful', stats: { hunger: 70, happiness: 82, energy: 80, health: 80, cleanliness: 80, bond: 80 } }),
+    now: localDate(9),
+    tuningConfig: { activityScoreMultipliers: { breakfast: 5 } },
+  });
+  const debug = getTimeOfDayActivityDebugReport({ pet, now: localDate(9) });
+
+  assert.notEqual(disabled.activityId, 'breakfast');
+  assert.equal(boosted.activityId, 'breakfast');
+  assert.equal(debug.candidates.some(candidate => candidate.activityId === 'breakfast' && candidate.score > 0), true);
+});
+
+test('proactive analytics and runtime settings persist in storage', () => {
+  const storage = makeMemoryStorage();
+  recordSuggestionAnalytics(storage, 'breakfast', 'shown', localDate(9));
+  recordSuggestionAnalytics(storage, 'breakfast', 'opened', localDate(9, 1));
+  recordSuggestionAnalytics(storage, 'breakfast', 'completed', localDate(9, 2));
+  saveProactiveRuntimeSettings(storage, {
+    tuningConfig: { activityScoreMultipliers: { breakfast: 1.5 } },
+    quietHours: { enabled: true, startHour: 21, endHour: 6 },
+  });
+
+  const analytics = loadActivityAnalytics(storage);
+  const settings = loadProactiveRuntimeSettings(storage);
+
+  assert.equal(analytics.activities.breakfast.shown, 1);
+  assert.equal(analytics.activities.breakfast.opened, 1);
+  assert.equal(analytics.activities.breakfast.completed, 1);
+  assert.equal(settings.quietHours.enabled, true);
+  assert.equal(settings.quietHours.startHour, 21);
+  assert.equal(settings.tuningConfig.activityScoreMultipliers?.breakfast, 1.5);
+});
+
+test('time-of-day copy variants are deterministic per pet cohort and day', () => {
+  const input = {
+    pet: makePet({
+      id: 'copy-pet',
+      personality: 'foodie',
+      stats: { hunger: 70, happiness: 82, energy: 80, health: 80, cleanliness: 80, bond: 80 },
+    }),
+    now: localDate(9),
+    abCohort: 'routine_soft',
+    copyVariantSeed: 'copy-pet',
+  };
+
+  const first = getTimeOfDayActivitySuggestion(input);
+  const second = getTimeOfDayActivitySuggestion(input);
+
+  assert.equal(first.activityId, 'breakfast');
+  assert.equal(first.message, second.message);
+});
+
+await testAsync('remote proactive config merges with local settings and cohort tuning', async () => {
+  const storage = makeMemoryStorage();
+  saveProactiveRuntimeSettings(storage, {
+    tuningConfig: { activityScoreMultipliers: { breakfast: 1.2 } },
+    quietHours: { enabled: false, startHour: 22, endHour: 7 },
+    abCohort: 'control',
+  });
+
+  await fetchRemoteProactiveConfig(storage, 'https://config.test/proactive.json', async () => ({
+    ok: true,
+    json: async () => ({
+      version: 'test-v1',
+      quietHours: { enabled: true, startHour: 21 },
+      tuningConfig: { disabledActivityIds: ['shop_explore'] },
+      experiments: {
+        enabled: true,
+        cohorts: ['routine_bold'],
+        cohortScoreMultipliers: { routine_bold: { active_training: 2 } },
+      },
+    }),
+  } as Response));
+
+  const settings = loadEffectiveProactiveRuntimeSettings(storage);
+
+  assert.equal(settings.remoteConfig?.version, 'test-v1');
+  assert.equal(settings.quietHours.enabled, true);
+  assert.equal(settings.quietHours.startHour, 21);
+  assert.equal(settings.abCohort, 'routine_bold');
+  assert.equal(settings.tuningConfig.activityScoreMultipliers?.breakfast, 1.2);
+  assert.equal(settings.tuningConfig.disabledActivityIds?.includes('shop_explore'), true);
+  assert.equal(settings.tuningConfig.cohortScoreMultipliers?.routine_bold.active_training, 2);
+});
+
+test('A/B cohort persists and analytics export includes settings snapshot', () => {
+  const storage = makeMemoryStorage();
+  const first = getOrCreateAbCohort(storage, ['a', 'b']);
+  const second = getOrCreateAbCohort(storage, ['a', 'b']);
+  saveRemoteProactiveConfig(storage, { version: 'export-v1', tuningConfig: { globalScoreMultiplier: 1.1 } });
+  recordSuggestionAnalytics(storage, 'breakfast', 'shown', localDate(9));
+
+  const exported = JSON.parse(exportActivityAnalytics(storage)) as {
+    analytics: { activities: Record<string, { shown: number }> };
+    settings: { remoteConfig?: { version: string } };
+  };
+
+  assert.equal(first, second);
+  assert.equal(exported.analytics.activities.breakfast.shown, 1);
+  assert.equal(exported.settings.remoteConfig?.version, 'export-v1');
+});
+
+await testAsync('remote proactive config signature verification rejects tampering', async () => {
+  const unsigned = {
+    version: 'signed-v1',
+    tuningConfig: { activityScoreMultipliers: { breakfast: 1.2 } },
+  };
+  const signature = await signRemoteProactiveConfig(unsigned, 'test-secret');
+
+  assert.equal(await verifyRemoteProactiveConfigSignature({ ...unsigned, signature }, 'test-secret'), true);
+
+  await assert.rejects(
+    () => verifyRemoteProactiveConfigSignature({
+      ...unsigned,
+      signature,
+      tuningConfig: { activityScoreMultipliers: { breakfast: 9 } },
+    }, 'test-secret'),
+    /signature mismatch/,
+  );
 });
 
 await testAsync('personality command handler gates influences with serializable cooldown state', async () => {

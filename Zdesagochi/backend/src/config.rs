@@ -11,6 +11,8 @@ pub struct Config {
     pub port: u16,
     pub environment: String,
     pub cors_origins: Vec<String>,
+    pub proactive_admin_emails: Vec<String>,
+    pub proactive_config_signing_secret: String,
     #[allow(dead_code)]
     pub log_level: String,
     pub rate_limit_requests_per_minute: u64,
@@ -26,7 +28,7 @@ impl Config {
             database_url: std::env::var("DATABASE_URL").context("DATABASE_URL must be set")?,
             redis_url: std::env::var("REDIS_URL")
                 .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
-            jwt_secret,
+            jwt_secret: jwt_secret.clone(),
             jwt_expiry_seconds: std::env::var("JWT_EXPIRY_SECONDS")
                 .unwrap_or_else(|_| "3600".to_string())
                 .parse()
@@ -46,6 +48,14 @@ impl Config {
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect(),
+            proactive_admin_emails: std::env::var("PROACTIVE_ADMIN_EMAILS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_ascii_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect(),
+            proactive_config_signing_secret: std::env::var("PROACTIVE_CONFIG_SIGNING_SECRET")
+                .unwrap_or_else(|_| jwt_secret.clone()),
             log_level: std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
             rate_limit_requests_per_minute: std::env::var("RATE_LIMIT_REQUESTS_PER_MINUTE")
                 .unwrap_or_else(|_| "60".to_string())

@@ -5,6 +5,19 @@ import type { BehaviorMode } from './usePetBehaviorState';
 import { ExplainabilityLog } from '../../api/explainability';
 import { getProactivePetSuggestion, type ProactivePetSuggestion } from '../../personality/proactiveSuggestions';
 import type { SupportedPetActionId } from '../../personality/petActionIds';
+import type { InventoryItem, Room, ShopItem } from '../../api';
+import type { ActivityTarget } from '../../personality/timeOfDayActivities';
+import {
+  dismissSuggestionActivity,
+  getLastRoutineSuggestionAt,
+  loadDismissedActivities,
+  loadEffectiveProactiveRuntimeSettings,
+  loadPendingActivities,
+  recordDailyAppOpen,
+  recordSuggestionAnalytics,
+  setLastRoutineSuggestionAt,
+  startPendingActivity,
+} from '../../personality/proactiveSuggestionState';
 import { PET_ACTION_META } from '../Actions/petActionControls';
 
 const MESSAGES: Record<string, string[]> = {
@@ -61,23 +74,55 @@ function loadLatestRecord() {
   return new ExplainabilityLog(window.localStorage).select()?.record ?? null;
 }
 
+function buildSuggestion(pet: Pet, inventory: InventoryItem[], rooms: Room[], shopItems: ShopItem[]) {
+  const storage = typeof window === 'undefined' ? null : window.localStorage;
+  const schedule = storage ? recordDailyAppOpen(storage) : { learnedOffsetHours: 0 };
+  const settings = storage ? loadEffectiveProactiveRuntimeSettings(storage) : null;
+  return getProactivePetSuggestion({
+    pet,
+    latestRecord: loadLatestRecord(),
+    inventory,
+    rooms,
+    shopItems,
+    dismissedActivities: storage ? loadDismissedActivities(storage) : [],
+    pendingActivities: storage ? loadPendingActivities(storage) : [],
+    lastRoutineSuggestionAt: storage ? getLastRoutineSuggestionAt(storage) : null,
+    scheduleOffsetHours: schedule.learnedOffsetHours,
+    tuningConfig: settings?.tuningConfig,
+    quietHours: settings?.quietHours,
+    configPatch: settings?.configPatch,
+    abCohort: settings?.abCohort,
+    copyVariantSeed: pet.id,
+    includeDebug: true,
+    now: new Date(),
+  });
+}
+
 interface Props {
   pet: Pet;
   mode: BehaviorMode;
   actionLoading?: string | null;
+  inventory?: InventoryItem[];
+  rooms?: Room[];
+  shopItems?: ShopItem[];
   canRunSuggestionAction?: (actionId: SupportedPetActionId) => boolean;
   onSuggestionAction?: (actionId: SupportedPetActionId) => void | Promise<void>;
+  onSuggestionTarget?: (target: ActivityTarget, suggestion: ProactivePetSuggestion) => void | Promise<void>;
 }
 
 export function PetTalk({
   pet,
   mode,
   actionLoading = null,
+  inventory = [],
+  rooms = [],
+  shopItems = [],
   canRunSuggestionAction,
   onSuggestionAction,
+  onSuggestionTarget,
 }: Props) {
   const suggestion = useMemo(
-    () => getProactivePetSuggestion({ pet, latestRecord: loadLatestRecord() }),
+    () => buildSuggestion(pet, inventory, rooms, shopItems),
     [
       pet.lastUpdated,
       pet.mood,
@@ -93,27 +138,34 @@ export function PetTalk({
       pet.stats.health,
       pet.stats.cleanliness,
       pet.stats.bond,
+      inventory,
+      rooms,
+      shopItems,
     ],
   );
   const [message, setMessage] = useState(() => suggestion.message || pickMessage(pet));
   const [activeSuggestion, setActiveSuggestion] = useState<ProactivePetSuggestion>(suggestion);
   const cycleIndexRef = useRef(0);
+  const shownSuggestionRef = useRef<string | null>(null);
   const [visible, setVisible] = useState(true);
+  const [debugOpen, setDebugOpen] = useState(false);
 
   const isSilent = SILENT_MODES.has(mode);
   const actionId = activeSuggestion.actionId;
+  const target = activeSuggestion.target;
+  const ctaLabel = activeSuggestion.ctaLabel ?? (actionId ? PET_ACTION_META[actionId].label : undefined);
   const canRunAction = Boolean(
-    actionId &&
-    onSuggestionAction &&
+    (actionId || target) &&
+    (actionId ? onSuggestionAction : onSuggestionTarget) &&
     !actionLoading &&
-    (canRunSuggestionAction?.(actionId) ?? true),
+    (actionId ? (canRunSuggestionAction?.(actionId) ?? true) : true),
   );
 
   useEffect(() => {
     const cycle = () => {
       setVisible(false);
       setTimeout(() => {
-        const next = getProactivePetSuggestion({ pet, latestRecord: loadLatestRecord() });
+        const next = buildSuggestion(pet, inventory, rooms, shopItems);
         cycleIndexRef.current += 1;
         setActiveSuggestion(next);
         setMessage(cycleIndexRef.current % 3 === 0 && next.source !== 'after_action' ? pickMessage(pet) : next.message || pickMessage(pet));
@@ -125,7 +177,17 @@ export function PetTalk({
     setMessage(suggestion.message || pickMessage(pet));
     setVisible(true);
     return () => clearInterval(t);
-  }, [pet, suggestion]);
+  }, [pet, suggestion, inventory, rooms, shopItems]);
+
+  useEffect(() => {
+    if (!visible || activeSuggestion.source !== 'time_of_day' || !activeSuggestion.activityId) return;
+    const key = `${activeSuggestion.id}:${activeSuggestion.activityId}`;
+    if (shownSuggestionRef.current === key) return;
+    shownSuggestionRef.current = key;
+    if (typeof window !== 'undefined') {
+      recordSuggestionAnalytics(window.localStorage, activeSuggestion.activityId, 'shown', new Date());
+    }
+  }, [activeSuggestion, visible]);
 
   const bg  = MOOD_BG[pet.mood]  ?? 'rgba(255,255,255,0.95)';
   const dot = MOOD_DOT[pet.mood] ?? '#818CF8';
@@ -151,13 +213,52 @@ export function PetTalk({
             {/* Mood accent dot */}
             <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: dot, marginRight: 5, verticalAlign: 'middle', boxShadow: `0 0 5px ${dot}88` }} />
             {message}
-            {actionId && canRunAction && (
+            {activeSuggestion.source !== 'mood' && activeSuggestion.activityId && (
               <button
                 type="button"
                 onPointerDown={event => event.stopPropagation()}
                 onClick={event => {
                   event.stopPropagation();
-                  void onSuggestionAction?.(actionId);
+                  if (typeof window !== 'undefined') {
+                    dismissSuggestionActivity(window.localStorage, activeSuggestion.activityId!, new Date());
+                  }
+                  setDebugOpen(false);
+                  setVisible(false);
+                }}
+                className="pointer-events-auto ml-1 rounded-full"
+                title="Скрыть это предложение"
+                style={{
+                  padding: '1px 5px',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color: '#6B7280',
+                  background: 'rgba(255,255,255,0.55)',
+                  border: '1px solid rgba(148,163,184,0.35)',
+                }}
+              >
+                ×
+              </button>
+            )}
+            {ctaLabel && canRunAction && (
+              <button
+                type="button"
+                onPointerDown={event => event.stopPropagation()}
+                onClick={event => {
+                  event.stopPropagation();
+                  if (typeof window !== 'undefined') {
+                    if (activeSuggestion.source === 'time_of_day') {
+                      setLastRoutineSuggestionAt(window.localStorage, new Date().toISOString());
+                    }
+                    if (activeSuggestion.target && activeSuggestion.activityId) {
+                      recordSuggestionAnalytics(window.localStorage, activeSuggestion.activityId, 'opened', new Date());
+                      startPendingActivity(window.localStorage, {
+                        activityId: activeSuggestion.activityId,
+                        target: activeSuggestion.target,
+                      }, new Date());
+                    }
+                  }
+                  if (actionId) void onSuggestionAction?.(actionId);
+                  else if (target) void onSuggestionTarget?.(target, activeSuggestion);
                 }}
                 className="pointer-events-auto ml-2 rounded-full border"
                 title={activeSuggestion.reason}
@@ -171,8 +272,48 @@ export function PetTalk({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {PET_ACTION_META[actionId].label}
+                {ctaLabel}
               </button>
+            )}
+            {activeSuggestion.source === 'time_of_day' && activeSuggestion.debug && (
+              <button
+                type="button"
+                onPointerDown={event => event.stopPropagation()}
+                onClick={event => {
+                  event.stopPropagation();
+                  setDebugOpen(value => !value);
+                }}
+                className="pointer-events-auto ml-1 rounded-full border"
+                title="Почему выбрано это предложение"
+                style={{
+                  padding: '2px 6px',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color: '#4F46E5',
+                  background: '#EEF2FF',
+                  borderColor: '#C7D2FE',
+                }}
+              >
+                ?
+              </button>
+            )}
+            {debugOpen && activeSuggestion.debug && (
+              <div className="pointer-events-auto mt-2 rounded-xl border border-indigo-100 bg-white/80 p-2 text-left">
+                <div className="flex items-center justify-between gap-2 text-[10px] text-gray-500">
+                  <span>period: {activeSuggestion.debug.period}</span>
+                  <span>{activeSuggestion.debug.quietHoursActive ? 'quiet' : 'active'}</span>
+                </div>
+                <div className="mt-1 space-y-1">
+                  {activeSuggestion.debug.candidates.slice(0, 3).map(candidate => (
+                    <div key={candidate.activityId} className="flex justify-between gap-2 text-[10px]">
+                      <span className="truncate text-gray-600">{candidate.activityId}</span>
+                      <span className={candidate.blockedBy ? 'text-rose-500' : 'text-indigo-600'}>
+                        {candidate.blockedBy ?? Math.round(candidate.score)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </motion.div>
         )}

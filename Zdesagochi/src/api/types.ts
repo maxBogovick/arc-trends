@@ -315,6 +315,30 @@ export interface LeaderboardEntry {
   score: number;
 }
 
+// ─── Proactive routine config / analytics ───────────────────────────────────
+
+export interface SignedProactiveConfig {
+  version: string;
+  signature: string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+export interface ProactiveAuditRecord {
+  id: string;
+  actor_user_id: string;
+  action: string;
+  details: unknown;
+  created_at: string;
+}
+
+export interface ProactiveAnalyticsRecord {
+  id: string;
+  user_id: string;
+  payload: unknown;
+  created_at: string;
+}
+
 // ─── Контракт API ─────────────────────────────────────────────────────────────
 
 export interface ApiService {
@@ -334,6 +358,11 @@ export interface ApiService {
   updatePetName(name: string): Promise<Pet>;
   getPetEvents(): Promise<PetEvent[]>;
   getPersonalityTelemetry?(): Promise<PersonalityTelemetrySample[]>;
+  getProactiveConfig(): Promise<SignedProactiveConfig | null>;
+  publishProactiveConfig(config: unknown): Promise<SignedProactiveConfig>;
+  ingestProactiveAnalytics(payload: unknown): Promise<{ accepted: boolean; id: string }>;
+  getProactiveAnalytics(limit?: number): Promise<ProactiveAnalyticsRecord[]>;
+  getProactiveAudit(limit?: number): Promise<ProactiveAuditRecord[]>;
 
   // Магазин / Инвентарь
   getCoins(): Promise<{ coins: number }>;

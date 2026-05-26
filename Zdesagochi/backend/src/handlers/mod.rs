@@ -4,6 +4,7 @@ pub mod economy;
 pub mod health;
 pub mod pet;
 pub mod progress;
+pub mod proactive;
 pub mod rooms;
 pub mod sse;
 pub mod sync;

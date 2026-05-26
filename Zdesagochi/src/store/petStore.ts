@@ -5,7 +5,7 @@ import {
   getMockAccount, setMockCoinsForClient,
   type ApiMode, type Pet, type FoodItem, type ShopItem, type InventoryItem,
   type Achievement, type DailyQuest, type Room, type LeaderboardEntry, type PetEvent,
-  type Account,
+  type Account, type SignedProactiveConfig, type ProactiveAnalyticsRecord, type ProactiveAuditRecord,
 } from '../api';
 import { getSkin, SKINS } from '../data/skins';
 import { type BodyShapeId } from '../data/bodyShapes';
@@ -149,6 +149,9 @@ interface PetStore {
   apiBaseUrl: string;
   notifications: Notification[];
   debugTimeScale: number;
+  proactiveConfig: SignedProactiveConfig | null;
+  proactiveAnalytics: ProactiveAnalyticsRecord[];
+  proactiveAudit: ProactiveAuditRecord[];
   ownedSkins: string[];
   equippedSkinId: string;
   equippedBodyId: BodyShapeId;
@@ -215,6 +218,10 @@ interface PetStore {
   recordHistory: () => void;
 
   setActiveTab(tab: TabId): void;
+  loadProactiveConfig(): Promise<void>;
+  publishProactiveConfig(config: unknown): Promise<void>;
+  ingestProactiveAnalytics(payload: unknown): Promise<void>;
+  loadProactiveAdminData(): Promise<void>;
   setApiMode(mode: ApiMode): void;
   setApiBaseUrl(url: string): void;
   buySkin(skinId: string): void;
@@ -495,7 +502,7 @@ export const usePetStore = create<PetStore>((set, get) => {
     foods: [], shopItems: [], inventory: [], achievements: [], quests: [],
     rooms: [], leaderboard: [], events: [],
     apiMode: 'mock', apiBaseUrl: 'http://localhost:3000',
-    notifications: [], debugTimeScale: getMockTimeScale(),
+    notifications: [], debugTimeScale: getMockTimeScale(), proactiveConfig: null, proactiveAnalytics: [], proactiveAudit: [],
     ownedSkins: [...new Set([...defaultOwnedSkins, ...(savedUi.ownedSkins ?? [])])],
     equippedSkinId: savedUi.equippedSkinId ?? 'default',
     equippedBodyId: savedUi.equippedBodyId ?? 'blob',
@@ -785,6 +792,46 @@ export const usePetStore = create<PetStore>((set, get) => {
       get().loadCoins();
     },
     setApiBaseUrl(url) { set({ apiBaseUrl: url }); },
+
+    async loadProactiveConfig() {
+      try {
+        set({ proactiveConfig: await api().getProactiveConfig() });
+      } catch (e) {
+        get().notify((e as Error).message, 'error');
+      }
+    },
+
+    async publishProactiveConfig(config) {
+      try {
+        const proactiveConfig = await api().publishProactiveConfig(config);
+        set({ proactiveConfig });
+        get().notify('Proactive config опубликован', 'success');
+      } catch (e) {
+        get().notify((e as Error).message, 'error');
+      }
+    },
+
+    async ingestProactiveAnalytics(payload) {
+      try {
+        await api().ingestProactiveAnalytics(payload);
+      } catch {
+        // Analytics export must never interrupt the pet flow.
+      }
+    },
+
+    async loadProactiveAdminData() {
+      try {
+        const svc = api();
+        const [proactiveConfig, proactiveAnalytics, proactiveAudit] = await Promise.all([
+          svc.getProactiveConfig(),
+          svc.getProactiveAnalytics(100),
+          svc.getProactiveAudit(100),
+        ]);
+        set({ proactiveConfig, proactiveAnalytics, proactiveAudit });
+      } catch (e) {
+        get().notify((e as Error).message, 'error');
+      }
+    },
 
     setDebugTimeScale(scale) {
       const next = setMockTimeScale(scale);
